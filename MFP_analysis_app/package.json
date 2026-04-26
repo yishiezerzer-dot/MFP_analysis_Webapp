@@ -1,0 +1,16 @@
+{
+  "name": "mfp-analysis-app",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"pnpm dev:api\" \"pnpm dev:web\"",
+    "dev:api": ".venv/bin/python -m uvicorn web.backend.app.main:app --reload --host 127.0.0.1 --port 8000",
+    "dev:web": "pnpm --filter mfp-analysis-web dev",
+    "build": "pnpm --filter mfp-analysis-web build",
+    "install:all": ".venv/bin/pip install -r requirements.txt -r web/backend/requirements.txt && pnpm install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "packageManager": "pnpm@10.32.1"
+}

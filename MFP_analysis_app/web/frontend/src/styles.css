@@ -1,0 +1,237 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Theme tokens
+ *
+ * Tailwind's `ink-*` and `brand-*` palettes are wired to these CSS variables
+ * (see tailwind.config.js). Swapping `data-theme` on <html> instantly
+ * re-colors every themed utility across the app. RGB values are stored as
+ * space-separated triplets so `<alpha-value>` syntax keeps working for
+ * /opacity modifiers like `bg-ink-50/50`.
+ *
+ *   day           – light mode (default).
+ *   night         – dark mode; ink ramp is inverted (dark surfaces, light
+ *                   text) while the brand blue lightens slightly so button
+ *                   labels stay readable on dark.
+ *   night-vision  – very dark theme dominated by red tones for low-light
+ *                   viewing. Brand + accent slots become red/orange so the
+ *                   UI reads as a muted amber on near-black.
+ * ------------------------------------------------------------------------- */
+
+:root,
+[data-theme="day"] {
+  --ink-50:  247 248 250;
+  --ink-100: 238 241 246;
+  --ink-200: 221 227 236;
+  --ink-300: 193 203 216;
+  --ink-400: 143 157 174;
+  --ink-500: 100 114 138;
+  --ink-600:  70  83 106;
+  --ink-700:  50  60  80;
+  --ink-800:  30  38  54;
+  --ink-900:  15  20  32;
+
+  --brand-50:  238 242 250;
+  --brand-100: 221 229 243;
+  --brand-200: 184 201 229;
+  --brand-300: 144 172 209;
+  --brand-400: 108 143 194;
+  --brand-500:  85 115 185;
+  --brand-600:  68  94 155;
+  --brand-700:  56  76 125;
+  --brand-800:  43  58  96;
+  --brand-900:  29  40  67;
+
+  /* App-level chrome. `--surface` is used wherever components render a
+   * real <div class="bg-white"> – see the override rules further down. */
+  --canvas: 247 248 250;          /* body background */
+  --surface: 255 255 255;         /* card / panel surface */
+  --surface-raised: 255 255 255;  /* popovers, dropdowns */
+
+  color-scheme: light;
+}
+
+[data-theme="night"] {
+  /* Neutrals: low index = dark (surfaces, borders), high index = light (text). */
+  --ink-50:   22  27  38;
+  --ink-100:  30  38  54;
+  --ink-200:  52  62  82;
+  --ink-300:  78  90 112;
+  --ink-400: 128 140 160;
+  --ink-500: 170 182 200;
+  --ink-600: 198 208 223;
+  --ink-700: 218 224 235;
+  --ink-800: 232 236 244;
+  --ink-900: 243 245 250;
+
+  /* Brand lightens slightly so buttons don't disappear on dark surfaces. */
+  --brand-50:   29  40  67;
+  --brand-100:  43  58  96;
+  --brand-200:  56  76 125;
+  --brand-300:  68  94 155;
+  --brand-400: 138 169 220;
+  --brand-500: 118 148 206;
+  --brand-600:  92 124 190;
+  --brand-700:  68  94 155;
+  --brand-800:  56  76 125;
+  --brand-900:  43  58  96;
+
+  --canvas:         11  14  22;
+  --surface:        22  27  38;
+  --surface-raised: 30  38  54;
+
+  color-scheme: dark;
+}
+
+[data-theme="night-vision"] {
+  /* A dark near-black canvas with red-dominant ink so every text element
+   * reads as amber-red on black, similar to navigation / astronomy UIs. */
+  --ink-50:   18   6   6;
+  --ink-100:  28   8   8;
+  --ink-200:  60  18  18;
+  --ink-300:  96  28  28;
+  --ink-400: 150  56  56;
+  --ink-500: 196  78  78;
+  --ink-600: 220 100 100;
+  --ink-700: 236 120 120;
+  --ink-800: 248 142 142;
+  --ink-900: 255 175 170;
+
+  /* "Brand" in this theme is the same red family, shifted a bit brighter
+   * so primary buttons stand out against the near-black canvas. */
+  --brand-50:   40  10  10;
+  --brand-100:  60  16  16;
+  --brand-200:  90  24  24;
+  --brand-300: 130  40  40;
+  --brand-400: 230  80  80;
+  --brand-500: 210  60  60;
+  --brand-600: 178  40  40;
+  --brand-700: 140  28  28;
+  --brand-800: 100  20  20;
+  --brand-900:  70  14  14;
+
+  --canvas:          8   3   3;
+  --surface:        18   6   6;
+  --surface-raised: 28   8   8;
+
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------------------
+ * `bg-white` override
+ *
+ * A lot of surfaces (cards, panels, popovers, inputs) use Tailwind's literal
+ * `bg-white`. We redirect that to the current theme's surface color so dark
+ * themes don't show a sea of white cards. We scope the override to non-default
+ * themes so day mode keeps its pixel-perfect #ffffff. `text-white` is NOT
+ * overridden – it must remain white so button labels on brand-500 stay
+ * readable across every theme.
+ * ------------------------------------------------------------------------- */
+
+[data-theme="night"] .bg-white,
+[data-theme="night-vision"] .bg-white {
+  background-color: rgb(var(--surface));
+}
+
+[data-theme="night"] .hover\:bg-white:hover,
+[data-theme="night-vision"] .hover\:bg-white:hover {
+  background-color: rgb(var(--surface));
+}
+
+/* Keep the send-button SVG + other `fill-white` usages from being redirected
+ * – we only target *background* utilities above, so fill/stroke stay white. */
+
+/* ---------------------------------------------------------------------------
+ * Root elements
+ * ------------------------------------------------------------------------- */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: rgb(var(--canvas));
+  color: rgb(var(--ink-900));
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+/* A global, cheap color transition so theme switches feel smooth instead of
+ * a hard flash. `will-change` is deliberately omitted – a plain transition
+ * on the three relevant properties keeps GPU cost low while still fading. */
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+/* ---------------------------------------------------------------------------
+ * Design-system shortcuts
+ * ------------------------------------------------------------------------- */
+
+.card {
+  @apply rounded-xl border border-ink-200 bg-white shadow-card;
+}
+
+.btn {
+  @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors;
+}
+
+.btn-primary {
+  @apply btn bg-brand-500 text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-ink-400;
+}
+
+.btn-ghost {
+  @apply btn text-ink-700 hover:bg-ink-100;
+}
+
+.nav-item {
+  @apply flex items-center gap-2 rounded-md px-3 py-2 text-sm text-ink-600 hover:bg-ink-100;
+}
+
+.nav-item.active {
+  @apply bg-brand-500 text-white hover:bg-brand-500;
+}
+
+.label {
+  @apply text-xs uppercase tracking-wider text-ink-500;
+}
+
+.kbd {
+  @apply rounded border border-ink-200 bg-ink-50 px-1.5 py-0.5 font-mono text-xs text-ink-700;
+}
+
+.input {
+  @apply rounded border border-ink-200 bg-white px-2 py-1 text-sm outline-none transition-colors focus:border-brand-500;
+}
+
+/* Native <select> elements styled with `.input` get a custom chevron pinned
+ * 8px from the right edge, consistent across sizes / focus / disabled
+ * states. Text padding-left stays at the shared `.input` default (px-2);
+ * padding-right is widened so the label never overlaps the chevron. The
+ * stroke color is baked per theme so the chevron remains visible against
+ * both light and dark surfaces. */
+select.input {
+  @apply appearance-none pr-7;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none' stroke='%2364728a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 14px 14px;
+}
+
+select.input:disabled {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none' stroke='%238f9dae' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+}
+
+[data-theme="night"] select.input {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none' stroke='%23aab6c8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+}
+
+[data-theme="night-vision"] select.input {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none' stroke='%23c44e4e' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+}

@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/layout/pageheader.tsx","./src/layout/usermenu.tsx","./src/theme/themeprovider.tsx","./src/views/aiview.tsx","./src/views/datastudioview.tsx","./src/views/ftirview.tsx","./src/views/lcmsview.tsx","./src/views/platereaderview.tsx","./src/views/stubview.tsx"],"version":"5.9.3"}

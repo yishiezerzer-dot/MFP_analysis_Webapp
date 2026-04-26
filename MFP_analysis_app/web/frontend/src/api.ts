@@ -1,0 +1,579 @@
+/**
+ * Thin typed wrapper around the FastAPI backend.
+ */
+
+export interface LCMSUVMeta {
+  available: boolean;
+  filename?: string;
+  n_points?: number;
+  rt_min?: number;
+  rt_max?: number;
+  x_col?: string;
+  y_col?: string;
+  unit_guess?: string;
+  warnings?: string[];
+}
+
+export interface LCMSSessionSummary {
+  session_id: string;
+  display_name: string;
+  path: string;
+  ms1_count: number;
+  rt_min: number | null;
+  rt_max: number | null;
+  polarities: string[];
+  stats: Record<string, unknown>;
+  uv?: LCMSUVMeta;
+}
+
+export interface UVPeak {
+  rt_min: number;
+  signal: number;
+}
+
+export type UVChromatogramResponse =
+  | {
+      available: false;
+      reason: string;
+    }
+  | {
+      available: true;
+      meta: LCMSUVMeta;
+      rt_min: number[];
+      signal: number[];
+      peaks: UVPeak[];
+    };
+
+export interface TICData {
+  rt_min: number[];
+  tic: number[];
+  polarity: (string | null)[];
+}
+
+export interface SpectrumLabel {
+  mz: number;
+  intensity: number;
+}
+
+export interface SpectrumData {
+  meta: {
+    spectrum_id: string;
+    rt_min: number;
+    tic: number;
+    polarity: string | null;
+    n_peaks: number;
+  };
+  mz: number[];
+  intensity: number[];
+  labels: SpectrumLabel[];
+}
+
+async function handle<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const j = await res.json();
+      detail = (j && (j.detail ?? j.message)) || detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(`HTTP ${res.status}: ${detail}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// --- Plate Reader types ---
+
+export interface PlateSessionSummary {
+  session_id: string;
+  display_name: string;
+  path: string;
+  sheets: string[];
+}
+
+export interface PlatePreview {
+  columns: string[];
+  rows: string[][];
+  n_rows_total: number;
+  n_cols_total: number;
+  n_rows_preview: number;
+}
+
+export type MICPlotType = "bar" | "line" | "scatter";
+export type MICControlStyle = "bars" | "line";
+
+export interface MICRequestBody {
+  sheet_name?: string | null;
+  use_first_row_as_header: boolean;
+  sample_rows: number[];
+  control_rows: number[];
+  concentration_columns: string[];
+  tick_text: string;
+  auto_tick_labels_power2: boolean;
+  title: string;
+  x_label: string;
+  y_label: string;
+  plot_type: MICPlotType;
+  control_style: MICControlStyle;
+}
+
+export interface MICResult {
+  config: {
+    use_first_row_as_header: boolean;
+    sample_rows: number[];
+    control_rows: number[];
+    concentration_columns: string[];
+    tick_labels: string[];
+    auto_tick_labels_power2: boolean;
+    title: string;
+    x_label: string;
+    y_label: string;
+    plot_type: MICPlotType;
+    control_style: MICControlStyle;
+    invert_x: boolean;
+    sample_color: string;
+    control_color: string;
+  };
+  result: {
+    concentrations: number[];
+    x_tick_labels: string[];
+    sample_mean: number[];
+    sample_std: number[];
+    control_mean: number[] | null;
+    control_std: number[] | null;
+  };
+  sample_nan_ratio: number;
+}
+
+// --- FTIR types ---
+
+export type FTIRYMode = "absorbance" | "transmittance";
+export type FTIRBaseline = "none" | "polyfit";
+export type FTIRNormalize = "none" | "max" | "area";
+
+export interface FTIRSessionSummary {
+  session_id: string;
+  display_name: string;
+  path: string;
+  n_points: number;
+  wn_min: number | null;
+  wn_max: number | null;
+  y_min: number | null;
+  y_max: number | null;
+  y_mode: FTIRYMode;
+  meta: Record<string, string | number>;
+}
+
+export interface FTIRPreprocessOptions {
+  mode: FTIRYMode;
+  smoothing_window: number;
+  poly_order: number;
+  baseline: FTIRBaseline;
+  normalize: FTIRNormalize;
+}
+
+export interface FTIRSpectrumResponse {
+  wn: number[];
+  y: number[];
+  n_points_full: number;
+  n_points_returned: number;
+  mode: FTIRYMode;
+  preprocess: {
+    smoothing_window: number;
+    poly_order: number;
+    baseline: FTIRBaseline;
+    normalize: FTIRNormalize;
+  };
+}
+
+export interface FTIRPeak {
+  wn: number;
+  y: number;
+  prominence: number;
+  width_cm1: number | null;
+  left_base_wn: number | null;
+  right_base_wn: number | null;
+}
+
+export interface FTIRAssignmentCandidate {
+  id: string;
+  label: string;
+  score: number;
+  reasons: string[];
+}
+
+export interface FTIRAssignment {
+  wn: number;
+  peak_metrics: {
+    wn: number;
+    height: number | null;
+    width: number | null;
+    prominence: number | null;
+    sharpness: number | null;
+    shape: string;
+    intensity: string;
+  };
+  candidates: FTIRAssignmentCandidate[];
+}
+
+export interface FTIRPeaksResponse {
+  peaks: FTIRPeak[];
+  assignments: FTIRAssignment[] | null;
+}
+
+export interface FTIRPeaksRequest extends FTIRPreprocessOptions {
+  min_prominence: number;
+  min_height?: number | null;
+  min_distance_cm1: number;
+  top_n: number;
+  assign: boolean;
+  assign_top_n?: number;
+  assign_min_score?: number;
+}
+
+export interface FTIRSpectrumRequest extends FTIRPreprocessOptions {
+  max_points: number;
+}
+
+// --- Data Studio types ---
+
+export interface DSSessionSummary {
+  session_id: string;
+  display_name: string;
+  path: string;
+  sheets: string[];
+  sheet_name: string | null;
+  header_row: number;
+  decimal_comma: boolean;
+  shape: [number, number] | null;
+}
+
+export interface DSSchema {
+  columns: string[];
+  dtypes: string[];
+  numeric_columns: string[];
+  n_rows: number;
+  n_cols: number;
+  schema_hash: string;
+}
+
+export interface DSTransformStep {
+  type:
+    | "select_columns"
+    | "rename"
+    | "to_numeric"
+    | "fillna"
+    | "normalize"
+    | "baseline"
+    | "log"
+    | "rolling_mean";
+  columns?: string[];
+  mode?: string;
+  mapping?: Record<string, string>;
+  errors?: string;
+  value?: unknown;
+  method?: string;
+  range?: [number, number];
+  base?: number;
+  offset?: number;
+  window?: number;
+  center?: boolean;
+}
+
+export interface DSPreview {
+  columns: string[];
+  rows: (string | number | null)[][];
+  n_rows_preview: number;
+  n_rows_total: number;
+  n_cols_total: number;
+  schema: DSSchema;
+  warnings: string[];
+}
+
+export type DSNormMode = "none" | "minmax" | "zscore";
+
+export interface DSPlotResponse {
+  x: (number | string | null)[] | null;
+  series: { name: string; y: (number | null)[] }[];
+  meta: {
+    x_col: string | null;
+    x_is_numeric?: boolean;
+    n_series: number;
+    n_points_full?: number;
+    n_points_returned?: number;
+  };
+}
+
+export interface DSHistResponse {
+  series: { name: string; counts: number[]; edges: number[] }[];
+  meta: { bins: number };
+}
+
+export interface DSLoadOptions {
+  sheet_name?: string | null;
+  header_row: number;
+  decimal_comma: boolean;
+}
+
+// --- AI Assistant types ---
+
+export type AIProvider = "demo" | "openai" | "ollama";
+
+export interface AIProviderStatus {
+  openai: {
+    available: boolean;
+    sdk: boolean;
+    api_key_env_var: string;
+    has_api_key: boolean;
+    default_model: string;
+  };
+  ollama: {
+    available: boolean | null;
+    base_url: string;
+    default_model: string;
+  };
+  demo: { available: boolean };
+  default: AIProvider;
+  system_prompt: string;
+}
+
+export interface AIContextSession {
+  session_id: string;
+  display_name: string;
+}
+
+export type AIModuleName = "LCMS" | "FTIR" | "Plate Reader" | "Data Studio";
+
+export type AIContextSnapshot = Record<
+  AIModuleName,
+  { sessions: AIContextSession[]; summary: string }
+>;
+
+export interface AIAssistantMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+export interface AIChatRequest {
+  messages: AIAssistantMessage[];
+  provider: AIProvider;
+  model?: string | null;
+  active_module?: string | null;
+  session_ids?: string[];
+  include_context?: boolean;
+  ollama_base_url?: string | null;
+}
+
+export interface AIAssistantResponsePayload {
+  text: string;
+  is_mock: boolean;
+  used_context: boolean;
+  model: string;
+  error: string | null;
+}
+
+export interface AIChatResponse {
+  response: AIAssistantResponsePayload;
+  mode_hint: string;
+  used_context: {
+    active_module: string;
+    loaded_filenames: string[];
+    module_summary: string;
+  } | null;
+}
+
+export const api = {
+  health: () => fetch("/api/health").then((r) => handle<{ status: string }>(r)),
+
+  ai: {
+    status: () => fetch("/api/ai/status").then((r) => handle<AIProviderStatus>(r)),
+    context: () => fetch("/api/ai/context").then((r) => handle<AIContextSnapshot>(r)),
+    chat: (body: AIChatRequest) =>
+      fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<AIChatResponse>(r)),
+  },
+
+  dataStudio: {
+    upload: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return fetch("/api/data-studio/sessions", { method: "POST", body: fd }).then((r) =>
+        handle<DSSessionSummary>(r),
+      );
+    },
+    list: () =>
+      fetch("/api/data-studio/sessions").then((r) => handle<DSSessionSummary[]>(r)),
+    get: (sid: string) =>
+      fetch(`/api/data-studio/sessions/${sid}`).then((r) => handle<DSSessionSummary>(r)),
+    remove: (sid: string) =>
+      fetch(`/api/data-studio/sessions/${sid}`, { method: "DELETE" }).then((r) =>
+        handle<{ deleted: boolean }>(r),
+      ),
+    updateLoad: (sid: string, body: DSLoadOptions) =>
+      fetch(`/api/data-studio/sessions/${sid}/load`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<DSSessionSummary>(r)),
+    schema: (sid: string) =>
+      fetch(`/api/data-studio/sessions/${sid}/schema`).then((r) => handle<DSSchema>(r)),
+    preview: (sid: string, body: { transforms: DSTransformStep[]; max_rows?: number }) =>
+      fetch(`/api/data-studio/sessions/${sid}/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<DSPreview>(r)),
+    plot: (
+      sid: string,
+      body: {
+        transforms: DSTransformStep[];
+        x_col: string | null;
+        y_cols: string[];
+        y_normalize?: DSNormMode;
+        x_normalize?: DSNormMode;
+        max_points?: number;
+      },
+    ) =>
+      fetch(`/api/data-studio/sessions/${sid}/plot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<DSPlotResponse>(r)),
+    histogram: (
+      sid: string,
+      body: { transforms: DSTransformStep[]; y_cols: string[]; bins?: number },
+    ) =>
+      fetch(`/api/data-studio/sessions/${sid}/histogram`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<DSHistResponse>(r)),
+  },
+
+  ftir: {
+    upload: (file: File, yMode: FTIRYMode = "absorbance") => {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("y_mode", yMode);
+      return fetch("/api/ftir/sessions", { method: "POST", body: fd }).then((r) =>
+        handle<FTIRSessionSummary>(r),
+      );
+    },
+    list: () => fetch("/api/ftir/sessions").then((r) => handle<FTIRSessionSummary[]>(r)),
+    get: (sid: string) =>
+      fetch(`/api/ftir/sessions/${sid}`).then((r) => handle<FTIRSessionSummary>(r)),
+    remove: (sid: string) =>
+      fetch(`/api/ftir/sessions/${sid}`, { method: "DELETE" }).then((r) =>
+        handle<{ deleted: boolean }>(r),
+      ),
+    spectrum: (sid: string, body: FTIRSpectrumRequest) =>
+      fetch(`/api/ftir/sessions/${sid}/spectrum`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<FTIRSpectrumResponse>(r)),
+    peaks: (sid: string, body: FTIRPeaksRequest) =>
+      fetch(`/api/ftir/sessions/${sid}/peaks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<FTIRPeaksResponse>(r)),
+    library: () =>
+      fetch("/api/ftir/library").then((r) => handle<{ version: string; n_entries: number }>(r)),
+  },
+
+  plateReader: {
+    upload: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return fetch("/api/plate-reader/sessions", { method: "POST", body: fd }).then((r) =>
+        handle<PlateSessionSummary>(r),
+      );
+    },
+    list: () => fetch("/api/plate-reader/sessions").then((r) => handle<PlateSessionSummary[]>(r)),
+    get: (sid: string) =>
+      fetch(`/api/plate-reader/sessions/${sid}`).then((r) => handle<PlateSessionSummary>(r)),
+    loadSheet: (
+      sid: string,
+      body: { sheet_name?: string | null; use_first_row_as_header: boolean; max_rows?: number },
+    ) =>
+      fetch(`/api/plate-reader/sessions/${sid}/load`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<PlatePreview>(r)),
+    runMIC: (sid: string, body: MICRequestBody) =>
+      fetch(`/api/plate-reader/sessions/${sid}/mic`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<MICResult>(r)),
+    remove: (sid: string) =>
+      fetch(`/api/plate-reader/sessions/${sid}`, { method: "DELETE" }).then((r) =>
+        handle<{ deleted: boolean }>(r),
+      ),
+  },
+
+  lcms: {
+    upload: (file: File, rtUnit: "minutes" | "seconds" = "minutes") => {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("rt_unit", rtUnit);
+      return fetch("/api/lcms/sessions", { method: "POST", body: fd }).then((r) =>
+        handle<LCMSSessionSummary>(r),
+      );
+    },
+    list: () => fetch("/api/lcms/sessions").then((r) => handle<LCMSSessionSummary[]>(r)),
+    get: (sid: string) =>
+      fetch(`/api/lcms/sessions/${sid}`).then((r) => handle<LCMSSessionSummary>(r)),
+    tic: (sid: string, polarity?: "positive" | "negative") => {
+      const qs = polarity ? `?polarity=${polarity}` : "";
+      return fetch(`/api/lcms/sessions/${sid}/tic${qs}`).then((r) => handle<TICData>(r));
+    },
+    spectrum: (
+      sid: string,
+      opts: { rt_min: number; polarity?: "positive" | "negative"; top_n?: number; min_rel?: number },
+    ) => {
+      const params = new URLSearchParams({ rt_min: String(opts.rt_min) });
+      if (opts.polarity) params.set("polarity", opts.polarity);
+      if (opts.top_n !== undefined) params.set("top_n", String(opts.top_n));
+      if (opts.min_rel !== undefined) params.set("min_rel", String(opts.min_rel));
+      return fetch(`/api/lcms/sessions/${sid}/spectrum?${params.toString()}`).then((r) =>
+        handle<SpectrumData>(r),
+      );
+    },
+    uploadUV: (sid: string, file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return fetch(`/api/lcms/sessions/${sid}/uv`, {
+        method: "POST",
+        body: fd,
+      }).then((r) => handle<LCMSSessionSummary>(r));
+    },
+    uv: (
+      sid: string,
+      opts?: { top_n?: number; min_rel?: number; min_distance_min?: number },
+    ) => {
+      const params = new URLSearchParams();
+      if (opts?.top_n !== undefined) params.set("top_n", String(opts.top_n));
+      if (opts?.min_rel !== undefined) params.set("min_rel", String(opts.min_rel));
+      if (opts?.min_distance_min !== undefined)
+        params.set("min_distance_min", String(opts.min_distance_min));
+      const qs = params.toString() ? `?${params.toString()}` : "";
+      return fetch(`/api/lcms/sessions/${sid}/uv${qs}`).then((r) =>
+        handle<UVChromatogramResponse>(r),
+      );
+    },
+    removeUV: (sid: string) =>
+      fetch(`/api/lcms/sessions/${sid}/uv`, { method: "DELETE" }).then((r) =>
+        handle<{ deleted: boolean }>(r),
+      ),
+    remove: (sid: string) =>
+      fetch(`/api/lcms/sessions/${sid}`, { method: "DELETE" }).then((r) =>
+        handle<{ deleted: boolean }>(r),
+      ),
+  },
+};

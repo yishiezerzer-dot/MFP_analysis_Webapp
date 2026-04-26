@@ -1,0 +1,16 @@
+.venv/
+.venv-work/
+.venv-laptop/
+__pycache__/
+*.pyc
+
+# Node / web
+node_modules/
+web/frontend/dist/
+web/frontend/.vite/
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
