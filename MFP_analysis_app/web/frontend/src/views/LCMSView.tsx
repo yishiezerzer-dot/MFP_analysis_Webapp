@@ -8,20 +8,560 @@ import {
   useState,
 } from "react";
 import Plot from "react-plotly.js";
-import type { PlotMouseEvent } from "plotly.js";
+import type { PlotMouseEvent, PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
 import {
   api,
   LCMSSessionSummary,
+  PolymerSettings,
   SpectrumData,
+  SpectrumLabel,
   TICData,
   UVChromatogramResponse,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 
+let pendingPlotResizeFrame: number | null = null;
+
+function schedulePlotResize() {
+  if (typeof window === "undefined" || pendingPlotResizeFrame !== null) return;
+  pendingPlotResizeFrame = window.requestAnimationFrame(() => {
+    pendingPlotResizeFrame = null;
+    window.dispatchEvent(new Event("resize"));
+  });
+}
+
+function useContainerSize(
+  ref: React.RefObject<HTMLDivElement>,
+  fallbackHeight = 300,
+): { height: number; width?: number } {
+  const [size, setSize] = useState<{ height: number; width?: number }>({
+    height: fallbackHeight,
+  });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const h = Math.floor(entry.contentRect.height);
+      const w = Math.floor(entry.contentRect.width);
+      setSize((prev) => {
+        const height = h > 0 ? h : prev.height;
+        const width = w > 0 ? w : prev.width;
+        return height === prev.height && width === prev.width ? prev : { height, width };
+      });
+      schedulePlotResize();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref, fallbackHeight]);
+  return size;
+}
+
 type Polarity = "all" | "positive" | "negative";
 type RtUnit = "minutes" | "seconds";
 type TabId = "navigate" | "view" | "annotate" | "polymer";
+type GraphId = "tic" | "uv" | "spectrum";
+type FrameMode = "none" | "half" | "full";
+type UVLabelOrientation = "horizontal" | "vertical";
+
+interface AxisLimits {
+  xMin: number | null;
+  xMax: number | null;
+  yMin: number | null;
+  yMax: number | null;
+}
+
+interface LabelSettings {
+  enabled: boolean;
+  fontSize: number;
+  color: string;
+}
+
+interface ChartSettings {
+  title: string;
+  xTitle: string;
+  yTitle: string;
+  height: number;
+  color: string;
+  lineWidth: number;
+  barWidth: number;
+  titleSize: number;
+  axisTitleSize: number;
+  tickSize: number;
+  showGrid: boolean;
+  frameMode: FrameMode;
+  showScaleBars: boolean;
+  axis: AxisLimits;
+  labels: LabelSettings;
+}
+
+interface GraphSettings {
+  tic: ChartSettings;
+  uv: ChartSettings;
+  spectrum: ChartSettings;
+}
+
+interface UVTextLabel {
+  id: string;
+  kind: "polymer" | "custom";
+  uv_rt_min: number;
+  signal: number;
+  text: string;
+  source_ms_rt_min?: number;
+  source_peak_index?: number;
+  ax?: number;
+  ay?: number;
+  axRef?: "pixel" | "x";
+  ayRef?: "pixel" | "y";
+}
+
+interface UVLabelAnchor {
+  uv_rt_min: number;
+  signal: number;
+  source_peak_index?: number;
+}
+
+interface CustomUvLabelDraft {
+  id?: string;
+  text: string;
+  rtText: string;
+  snap: boolean;
+}
+
+interface UVLabelLayoutOffset {
+  id: string;
+  ax: number;
+  ay: number;
+  axRef?: "pixel" | "x";
+  ayRef?: "pixel" | "y";
+}
+
+interface PolymerSharedSettings {
+  enabled: boolean;
+  monomers_text: string;
+  bond_delta: number;
+  extra_delta: number;
+  charges: string;
+  decarb: boolean;
+  oxid: boolean;
+  cluster: boolean;
+  max_dp: number;
+  tol_value: number;
+  tol_unit: "Da" | "ppm";
+  min_rel_int: number;
+}
+
+type PolymerMonomerCategory = "hydroxy" | "amino";
+
+interface PolymerMonomerPreset {
+  id: string;
+  category: PolymerMonomerCategory;
+  name: string;
+  abbr: string;
+  mass: number;
+  selected: boolean;
+  custom?: boolean;
+}
+
+interface PolymerModeSettings {
+  adduct_mass: number;
+  cluster_adduct_mass: number;
+  adduct_na: boolean;
+  adduct_k: boolean;
+  adduct_cl: boolean;
+  adduct_formate: boolean;
+  adduct_acetate: boolean;
+}
+
+interface PolymerUiSettings {
+  shared: PolymerSharedSettings;
+  positive: PolymerModeSettings;
+  negative: PolymerModeSettings;
+  monomers: PolymerMonomerPreset[];
+}
+
+const DEFAULT_AXIS_LIMITS: AxisLimits = {
+  xMin: null,
+  xMax: null,
+  yMin: null,
+  yMax: null,
+};
+
+const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
+  tic: {
+    title: "",
+    xTitle: "RT",
+    yTitle: "TIC",
+    height: 360,
+    color: "#1e2636",
+    lineWidth: 1.5,
+    barWidth: 0.5,
+    titleSize: 14,
+    axisTitleSize: 13,
+    tickSize: 12,
+    showGrid: true,
+    frameMode: "half",
+    showScaleBars: true,
+    axis: { ...DEFAULT_AXIS_LIMITS },
+    labels: { enabled: false, fontSize: 10, color: "#46536a" },
+  },
+  uv: {
+    title: "",
+    xTitle: "RT",
+    yTitle: "Signal",
+    height: 320,
+    color: "#5573b9",
+    lineWidth: 1.5,
+    barWidth: 0.5,
+    titleSize: 14,
+    axisTitleSize: 13,
+    tickSize: 12,
+    showGrid: true,
+    frameMode: "half",
+    showScaleBars: true,
+    axis: { ...DEFAULT_AXIS_LIMITS },
+    labels: { enabled: false, fontSize: 10, color: "#46536a" },
+  },
+  spectrum: {
+    title: "",
+    xTitle: "m/z",
+    yTitle: "intensity",
+    height: 360,
+    color: "#323c50",
+    lineWidth: 1.5,
+    barWidth: 0.5,
+    titleSize: 14,
+    axisTitleSize: 13,
+    tickSize: 12,
+    showGrid: true,
+    frameMode: "half",
+    showScaleBars: true,
+    axis: { ...DEFAULT_AXIS_LIMITS },
+    labels: { enabled: true, fontSize: 10, color: "#46536a" },
+  },
+};
+
+const GRAPH_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.graphSettings.default";
+const POLYMER_MONOMER_PRESETS_STORAGE_KEY = "mfp.lcms.polymerMonomerPresets";
+const UV_PEAK_FETCH_LIMIT = 250;
+const UV_LABEL_STAIR_X_STEP_MIN = 0.5;
+const UV_LABEL_STAIR_Y_STEP_PX = 5;
+const UV_LABEL_STAIR_BASE_Y_PX = 24;
+
+const BUILT_IN_POLYMER_MONOMERS: PolymerMonomerPreset[] = [
+  { id: "hydroxy:glycolic-acid", category: "hydroxy", name: "Glycolic acid", abbr: "GA", mass: 76.016044, selected: false },
+  { id: "hydroxy:lactic-acid", category: "hydroxy", name: "Lactic acid", abbr: "LA", mass: 90.031694, selected: false },
+  { id: "hydroxy:phenyllactic-acid", category: "hydroxy", name: "Phenyllactic acid", abbr: "PLA", mass: 166.062994, selected: false },
+  { id: "hydroxy:mandelic-acid", category: "hydroxy", name: "Mandelic acid", abbr: "MA", mass: 152.047344, selected: false },
+  { id: "hydroxy:hydroxybutyric-acid", category: "hydroxy", name: "Hydroxybutyric acid", abbr: "HBA", mass: 104.047344, selected: false },
+  { id: "amino:alanine", category: "amino", name: "Alanine", abbr: "Ala", mass: 89.047678, selected: false },
+  { id: "amino:arginine", category: "amino", name: "Arginine", abbr: "Arg", mass: 174.111676, selected: false },
+  { id: "amino:asparagine", category: "amino", name: "Asparagine", abbr: "Asn", mass: 132.053492, selected: false },
+  { id: "amino:aspartic-acid", category: "amino", name: "Aspartic acid", abbr: "Asp", mass: 133.037508, selected: false },
+  { id: "amino:cysteine", category: "amino", name: "Cysteine", abbr: "Cys", mass: 121.019749, selected: false },
+  { id: "amino:glutamine", category: "amino", name: "Glutamine", abbr: "Gln", mass: 146.069142, selected: false },
+  { id: "amino:glutamic-acid", category: "amino", name: "Glutamic acid", abbr: "Glu", mass: 147.053158, selected: false },
+  { id: "amino:glycine", category: "amino", name: "Glycine", abbr: "Gly", mass: 75.032028, selected: false },
+  { id: "amino:histidine", category: "amino", name: "Histidine", abbr: "His", mass: 155.069477, selected: false },
+  { id: "amino:isoleucine", category: "amino", name: "Isoleucine", abbr: "Ile", mass: 131.094629, selected: false },
+  { id: "amino:leucine", category: "amino", name: "Leucine", abbr: "Leu", mass: 131.094629, selected: false },
+  { id: "amino:lysine", category: "amino", name: "Lysine", abbr: "Lys", mass: 146.105528, selected: false },
+  { id: "amino:methionine", category: "amino", name: "Methionine", abbr: "Met", mass: 149.051049, selected: false },
+  { id: "amino:phenylalanine", category: "amino", name: "Phenylalanine", abbr: "Phe", mass: 165.078979, selected: false },
+  { id: "amino:proline", category: "amino", name: "Proline", abbr: "Pro", mass: 115.063329, selected: false },
+  { id: "amino:serine", category: "amino", name: "Serine", abbr: "Ser", mass: 105.042593, selected: false },
+  { id: "amino:threonine", category: "amino", name: "Threonine", abbr: "Thr", mass: 119.058243, selected: false },
+  { id: "amino:tryptophan", category: "amino", name: "Tryptophan", abbr: "Trp", mass: 204.089878, selected: false },
+  { id: "amino:tyrosine", category: "amino", name: "Tyrosine", abbr: "Tyr", mass: 181.073893, selected: false },
+  { id: "amino:valine", category: "amino", name: "Valine", abbr: "Val", mass: 117.078979, selected: false },
+  { id: "amino:ornithine", category: "amino", name: "Ornithine", abbr: "Orn", mass: 132.089878, selected: false },
+  { id: "amino:dab", category: "amino", name: "2,4-Diaminobutyric acid", abbr: "DAB", mass: 118.074228, selected: false },
+  { id: "amino:dpr", category: "amino", name: "2,3-Diaminopropionic acid", abbr: "DPR", mass: 104.058578, selected: false },
+];
+
+const DEFAULT_POLYMER_SHARED_SETTINGS: PolymerSharedSettings = {
+  enabled: false,
+  monomers_text: "",
+  bond_delta: -18.010565,
+  extra_delta: 0,
+  charges: "1",
+  decarb: false,
+  oxid: false,
+  cluster: false,
+  max_dp: 12,
+  tol_value: 0.02,
+  tol_unit: "Da",
+  min_rel_int: 0.01,
+};
+
+const DEFAULT_POLYMER_UI_SETTINGS: PolymerUiSettings = {
+  shared: DEFAULT_POLYMER_SHARED_SETTINGS,
+  positive: {
+    adduct_mass: 1.007276,
+    cluster_adduct_mass: 1.007276,
+    adduct_na: false,
+    adduct_k: false,
+    adduct_cl: false,
+    adduct_formate: false,
+    adduct_acetate: false,
+  },
+  negative: {
+    adduct_mass: -1.007276,
+    cluster_adduct_mass: -1.007276,
+    adduct_na: false,
+    adduct_k: false,
+    adduct_cl: false,
+    adduct_formate: false,
+    adduct_acetate: false,
+  },
+  monomers: BUILT_IN_POLYMER_MONOMERS,
+};
+
+function clonePolymerMonomers(monomers: PolymerMonomerPreset[]): PolymerMonomerPreset[] {
+  return monomers.map((monomer) => ({ ...monomer }));
+}
+
+function loadPolymerMonomerPresets(): PolymerMonomerPreset[] {
+  const builtIns = clonePolymerMonomers(BUILT_IN_POLYMER_MONOMERS);
+  if (typeof window === "undefined") return builtIns;
+  try {
+    const stored = window.localStorage.getItem(POLYMER_MONOMER_PRESETS_STORAGE_KEY);
+    if (!stored) return builtIns;
+    const saved = JSON.parse(stored) as PolymerMonomerPreset[];
+    const savedById = new Map(saved.map((monomer) => [monomer.id, monomer]));
+    const merged = builtIns.map((monomer) => {
+      const savedMonomer = savedById.get(monomer.id);
+      return savedMonomer
+        ? {
+            ...monomer,
+            abbr: savedMonomer.abbr || monomer.abbr,
+            selected: Boolean(savedMonomer.selected),
+          }
+        : monomer;
+    });
+    for (const monomer of saved) {
+      if (monomer.custom && !merged.some((existing) => existing.id === monomer.id)) {
+        merged.push({
+          ...monomer,
+          selected: Boolean(monomer.selected),
+          custom: true,
+        });
+      }
+    }
+    return merged;
+  } catch {
+    return builtIns;
+  }
+}
+
+function savePolymerMonomerPresets(monomers: PolymerMonomerPreset[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(POLYMER_MONOMER_PRESETS_STORAGE_KEY, JSON.stringify(monomers));
+}
+
+function loadPolymerUiSettings(): PolymerUiSettings {
+  return {
+    ...DEFAULT_POLYMER_UI_SETTINGS,
+    shared: { ...DEFAULT_POLYMER_SHARED_SETTINGS },
+    positive: { ...DEFAULT_POLYMER_UI_SETTINGS.positive },
+    negative: { ...DEFAULT_POLYMER_UI_SETTINGS.negative },
+    monomers: loadPolymerMonomerPresets(),
+  };
+}
+
+function polymerMonomerText(settings: PolymerUiSettings): string {
+  const presetLines = settings.monomers
+    .filter((monomer) => monomer.selected)
+    .map((monomer) => `${monomer.abbr.trim() || monomer.name} ${monomer.mass.toFixed(6)}`);
+  const otherLines = settings.shared.monomers_text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return [...presetLines, ...otherLines].join("\n");
+}
+
+function toApiPolymerSettings(
+  settings: PolymerUiSettings,
+  polarity: Exclude<Polarity, "all">,
+): PolymerSettings {
+  const profile = settings[polarity];
+  return {
+    ...settings.shared,
+    monomers_text: polymerMonomerText(settings),
+    ...profile,
+    adduct_na: polarity === "positive" ? profile.adduct_na : false,
+    adduct_k: polarity === "positive" ? profile.adduct_k : false,
+    adduct_cl: polarity === "negative" ? profile.adduct_cl : false,
+    adduct_formate: polarity === "negative" ? profile.adduct_formate : false,
+    adduct_acetate: polarity === "negative" ? profile.adduct_acetate : false,
+  };
+}
+
+function makeUvLabelId(sourceMsRt: number, uvRt: number, text: string, index: number): string {
+  return `${sourceMsRt.toFixed(6)}:${uvRt.toFixed(6)}:${index}:${text}`;
+}
+
+function makeCustomUvLabelId(uvRt: number, text: string): string {
+  return `custom:${uvRt.toFixed(6)}:${Date.now()}:${text}`;
+}
+
+function cleanLabelText(text: string): string {
+  return text.replace(/\s+z=1\b/gi, "").replace(/\s{2,}/g, " ").trim();
+}
+
+type LabeledSpectrumLabel = SpectrumLabel & { text: string };
+
+function spectrumLabelsForUv(sp: SpectrumData): LabeledSpectrumLabel[] {
+  const labeledByPeak = new Map<number, LabeledSpectrumLabel>();
+  const candidates = [
+    ...(sp.polymer_labels ?? []),
+    ...sp.labels.filter((label) => label.source === "polymer"),
+  ];
+  for (const label of candidates) {
+    if (!label.text) continue;
+    const text = cleanLabelText(label.text);
+    if (!text) continue;
+    const key = label.peak_index ?? Number(label.mz.toFixed(4));
+    const current = labeledByPeak.get(key);
+    if (!current || label.intensity > current.intensity) {
+      labeledByPeak.set(key, { ...label, text });
+    }
+  }
+  return [...labeledByPeak.values()].sort((a, b) => b.intensity - a.intensity);
+}
+
+function parsePolymerLabelGroup(text: string): string {
+  const core = text
+    .replace(/\s+z=\d+.*$/i, "")
+    .replace(/\s+\([^)]*\)\s*$/g, "")
+    .trim();
+  const groups = core
+    .split(/\s+\+\s+/)
+    .map((part) => part.match(/^\s*\d+-([A-Za-z][A-Za-z0-9]*)/)?.[1])
+    .filter((value): value is string => Boolean(value));
+  return groups.length > 0 ? [...new Set(groups)].join("+") : "custom";
+}
+
+function parseHydroxyCount(text: string, hydroxyAbbreviations: Set<string>): number {
+  const core = text
+    .replace(/\s+z=\d+.*$/i, "")
+    .replace(/\s+\([^)]*\)\s*$/g, "")
+    .trim();
+  const matches = [...core.matchAll(/(\d+)-([A-Za-z][A-Za-z0-9]*)/g)];
+  let hydroxyCount = 0;
+  for (const match of matches) {
+    const count = Number.parseInt(match[1], 10);
+    const abbr = match[2].toUpperCase();
+    if (Number.isFinite(count) && hydroxyAbbreviations.has(abbr)) {
+      hydroxyCount += count;
+    }
+  }
+  if (hydroxyCount > 0) return hydroxyCount;
+  const fallback = matches.at(-1);
+  return fallback ? Number.parseInt(fallback[1], 10) || 0 : 0;
+}
+
+function arrangeUvLabelsAsSeriesStairs(
+  labels: UVTextLabel[],
+  xOffsetMin: number,
+  rtScale: number,
+  xStepMin: number,
+  yStepPx: number,
+  yUnitsPerPx: number,
+  uvRtMin: number[],
+  uvSignal: number[],
+  hydroxyAbbreviations: Set<string>,
+): UVLabelLayoutOffset[] {
+  const offsets: UVLabelLayoutOffset[] = [];
+  for (const cluster of [labels]) {
+    const clusterMinRt = Math.min(...cluster.map((label) => label.uv_rt_min));
+    const clusterMaxRt = Math.max(...cluster.map((label) => label.uv_rt_min));
+    const clusterCenterRt = (clusterMinRt + clusterMaxRt) / 2;
+    const rtPad = Math.max(UV_LABEL_STAIR_X_STEP_MIN, (clusterMaxRt - clusterMinRt) * 0.05);
+    const localSignals = uvRtMin
+      .map((rt, index) => ({ rt, signal: uvSignal[index] }))
+      .filter(
+        (point) =>
+          Number.isFinite(point.rt) &&
+          Number.isFinite(point.signal) &&
+          point.rt >= clusterMinRt - rtPad &&
+          point.rt <= clusterMaxRt + rtPad,
+      )
+      .map((point) => point.signal);
+    const localMaxSignal =
+      localSignals.length > 0
+        ? Math.max(...localSignals)
+        : Math.max(...cluster.map((label) => label.signal));
+    const grouped = new Map<number, UVTextLabel[]>();
+    for (const label of cluster) {
+      const key = parseHydroxyCount(label.text, hydroxyAbbreviations);
+      grouped.set(key, [...(grouped.get(key) ?? []), label]);
+    }
+    const rows = [...grouped.entries()]
+      .sort((a, b) => {
+        if (a[0] !== b[0]) return a[0] - b[0];
+        const aRt = Math.min(...a[1].map((label) => label.uv_rt_min));
+        const bRt = Math.min(...b[1].map((label) => label.uv_rt_min));
+        return aRt - bRt;
+      })
+      .map(([_hydroxyCount, rowLabels]) =>
+        [...rowLabels].sort((a, b) => a.uv_rt_min - b.uv_rt_min || a.text.localeCompare(b.text)),
+      );
+    const groupGapSlots = 1;
+    const totalSlots = rows.reduce(
+      (sum, rowLabels, rowIndex) =>
+        sum + rowLabels.length + (rowIndex > 0 ? groupGapSlots : 0),
+      0,
+    );
+    const blockCenter = (Math.max(1, totalSlots) - 1) / 2;
+    let slotCursor = 0;
+    rows.forEach((rowLabels, rowIndex) => {
+      if (rowIndex > 0) slotCursor += groupGapSlots;
+      const rowStartSlot = slotCursor;
+      rowLabels.forEach((label, labelIndex) => {
+        const slot = rowStartSlot + labelIndex;
+        offsets.push({
+          id: label.id,
+          ax:
+            (clusterCenterRt +
+              xOffsetMin +
+              (slot - blockCenter) * xStepMin) *
+            rtScale,
+          ay:
+            localMaxSignal +
+            (UV_LABEL_STAIR_BASE_Y_PX - rowIndex * yStepPx) * yUnitsPerPx,
+          axRef: "x",
+          ayRef: "y",
+        });
+      });
+      slotCursor += rowLabels.length;
+    });
+  }
+  return offsets;
+}
+
+function cloneGraphSettings(settings: GraphSettings): GraphSettings {
+  return JSON.parse(JSON.stringify(settings)) as GraphSettings;
+}
+
+function loadGraphSettingsDefault(): GraphSettings {
+  if (typeof window === "undefined") return cloneGraphSettings(DEFAULT_GRAPH_SETTINGS);
+  try {
+    const stored = window.localStorage.getItem(GRAPH_SETTINGS_DEFAULT_STORAGE_KEY);
+    return stored
+      ? (JSON.parse(stored) as GraphSettings)
+      : cloneGraphSettings(DEFAULT_GRAPH_SETTINGS);
+  } catch {
+    return cloneGraphSettings(DEFAULT_GRAPH_SETTINGS);
+  }
+}
+
+function saveGraphSettingsDefault(settings: GraphSettings) {
+  window.localStorage.setItem(
+    GRAPH_SETTINGS_DEFAULT_STORAGE_KEY,
+    JSON.stringify(settings),
+  );
+}
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -42,6 +582,32 @@ function nearestIndex(arr: number[], value: number): number {
 function formatRange(a: number | null, b: number | null): string {
   if (a == null || b == null) return "—";
   return `${a.toFixed(2)} – ${b.toFixed(2)}`;
+}
+
+function formatRt(rtMin: number, unit: RtUnit): string {
+  return unit === "seconds" ? `${(rtMin * 60).toFixed(2)} s` : `${rtMin.toFixed(3)} min`;
+}
+
+function axisRange(min: number | null, max: number | null): [number, number] | undefined {
+  return min != null && max != null ? [min, max] : undefined;
+}
+
+function axisTitle(text: string, size: number) {
+  return { text, font: { size } };
+}
+
+function axisFrame(settings: ChartSettings) {
+  const ticks: "" | "outside" = settings.showScaleBars ? "outside" : "";
+  return {
+    showline: settings.frameMode !== "none",
+    mirror: settings.frameMode === "full",
+    linecolor: "#46536a",
+    linewidth: 1,
+    ticks,
+    ticklen: settings.showScaleBars ? 6 : 0,
+    tickwidth: settings.showScaleBars ? 1 : 0,
+    tickcolor: "#46536a",
+  };
 }
 
 function toCSV(rows: string[][]): string {
@@ -92,17 +658,27 @@ export function LCMSView() {
   const [uvTransferCount, setUvTransferCount] = useState(3);
   const [uvProminence, setUvProminence] = useState(0.05);
   const [uvMinDistance, setUvMinDistance] = useState(0.2);
-  const [showConfidenceUV, setShowConfidenceUV] = useState(false);
+  const [snapUvLabels, setSnapUvLabels] = useState(true);
+  const [uvLabelOrientation, setUvLabelOrientation] =
+    useState<UVLabelOrientation>("vertical");
+  const [uvLabelStairXStep, setUvLabelStairXStep] =
+    useState(UV_LABEL_STAIR_X_STEP_MIN);
+  const [uvLabelStairYStep, setUvLabelStairYStep] =
+    useState(UV_LABEL_STAIR_Y_STEP_PX);
 
   // Annotate – overlay
   const [showOverlayLabels, setShowOverlayLabels] = useState(false);
   const [multiDragOverlay, setMultiDragOverlay] = useState(false);
+  const [polymerSettings, setPolymerSettings] =
+    useState<PolymerUiSettings>(() => loadPolymerUiSettings());
+  const [uvTextLabels, setUvTextLabels] = useState<UVTextLabel[]>([]);
 
   // View – region select
   const [regionSelect, setRegionSelect] = useState(false);
 
   // RT navigation
   const [selectedRt, setSelectedRt] = useState<number | null>(null);
+  const [selectedUvRt, setSelectedUvRt] = useState<number | null>(null);
   const [rtJumpText, setRtJumpText] = useState("");
 
   // IO state
@@ -115,7 +691,12 @@ export function LCMSView() {
   const [findMzOpen, setFindMzOpen] = useState(false);
   const [eicOpen, setEicOpen] = useState(false);
   const [graphSettingsOpen, setGraphSettingsOpen] = useState(false);
+  const [graphSettings, setGraphSettings] = useState<GraphSettings>(() =>
+    loadGraphSettingsDefault(),
+  );
   const [polymerDialogOpen, setPolymerDialogOpen] = useState(false);
+  const [customUvLabelDraft, setCustomUvLabelDraft] =
+    useState<CustomUvLabelDraft | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const uvFileRef = useRef<HTMLInputElement>(null);
@@ -126,6 +707,13 @@ export function LCMSView() {
   );
 
   const pol = polarity === "all" ? undefined : polarity;
+  const activePolymerSettings = useMemo(
+    () =>
+      polarity === "all" || !polymerSettings.shared.enabled
+        ? undefined
+        : toApiPolymerSettings(polymerSettings, polarity),
+    [polarity, polymerSettings],
+  );
 
   // --- data loading ---------------------------------------------------------
 
@@ -138,6 +726,10 @@ export function LCMSView() {
       })
       .catch((err) => setError(String(err)));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    savePolymerMonomerPresets(polymerSettings.monomers);
+  }, [polymerSettings.monomers]);
 
   useEffect(() => {
     if (!activeSid) {
@@ -157,34 +749,379 @@ export function LCMSView() {
     }
     api.lcms
       .uv(activeSid, {
-        top_n: uvTransferCount > 0 ? Math.max(1, uvTransferCount) * 3 : 8,
+        top_n: UV_PEAK_FETCH_LIMIT,
         min_rel: uvProminence,
         min_distance_min: uvMinDistance,
       })
       .then(setUv)
       .catch((err) => setError(String(err)));
-  }, [activeSid, uvProminence, uvMinDistance, uvTransferCount]);
+  }, [activeSid, uvProminence, uvMinDistance]);
 
   // --- callbacks ------------------------------------------------------------
 
+  const snapUvRtToNearestPeak = useCallback((rtMin: number): UVLabelAnchor | null => {
+    if (!uv || uv.available !== true) return null;
+    if (uv.peaks.length > 0) {
+      let bestIndex = 0;
+      for (let i = 1; i < uv.peaks.length; i += 1) {
+        if (
+          Math.abs(uv.peaks[i].rt_min - rtMin) <
+          Math.abs(uv.peaks[bestIndex].rt_min - rtMin)
+        ) {
+          bestIndex = i;
+        }
+      }
+      const peak = uv.peaks[bestIndex];
+      return {
+        uv_rt_min: peak.rt_min,
+        signal: peak.signal,
+        source_peak_index: bestIndex,
+      };
+    }
+    const uvIndex = nearestIndex(uv.rt_min, rtMin);
+    if (uvIndex < 0) return null;
+    return {
+      uv_rt_min: uv.rt_min[uvIndex],
+      signal: uv.signal[uvIndex],
+      source_peak_index: uvIndex,
+    };
+  }, [uv]);
+
+  const uvAnchorAtRt = useCallback(
+    (rtMin: number, snap: boolean): UVLabelAnchor | null => {
+      if (!uv || uv.available !== true) return null;
+      if (snap) return snapUvRtToNearestPeak(rtMin);
+      const uvIndex = nearestIndex(uv.rt_min, rtMin);
+      if (uvIndex < 0) return null;
+      return {
+        uv_rt_min: uv.rt_min[uvIndex],
+        signal: uv.signal[uvIndex],
+        source_peak_index: uvIndex,
+      };
+    },
+    [snapUvRtToNearestPeak, uv],
+  );
+
+  const addSpectrumLabelsToUv = useCallback((sp: SpectrumData, anchors: UVLabelAnchor[]) => {
+    if (!uv || uv.available !== true || anchors.length === 0) return 0;
+    const topLabels = [...spectrumLabelsForUv(sp)]
+      .sort((a, b) => b.intensity - a.intensity)
+      .slice(0, Math.max(1, uvTransferCount));
+    if (topLabels.length === 0) return 0;
+    const nextLabels = anchors.flatMap((anchor) =>
+      topLabels.map((label, index) => ({
+        id: makeUvLabelId(
+          sp.meta.rt_min,
+          anchor.uv_rt_min,
+          label.text,
+          index,
+        ),
+        kind: label.source === "polymer" ? "polymer" as const : "custom" as const,
+        uv_rt_min: anchor.uv_rt_min,
+        signal: anchor.signal,
+        text: label.text,
+        source_ms_rt_min: sp.meta.rt_min,
+        source_peak_index: anchor.source_peak_index,
+        ax:
+          (anchor.uv_rt_min +
+            uvOffset +
+            index * UV_LABEL_STAIR_X_STEP_MIN) *
+          (rtUnit === "seconds" ? 60 : 1),
+        axRef: "x" as const,
+        ayRef: "pixel" as const,
+        ay: uvLabelOrientation === "vertical" ? -72 - index * 26 : -42 - index * 22,
+      })),
+    );
+    setUvTextLabels((prev) => [
+      ...prev.filter(
+        (label) =>
+          label.kind === "custom" ||
+          !anchors.some((anchor) => Math.abs(label.uv_rt_min - anchor.uv_rt_min) < 1e-6),
+      ),
+      ...nextLabels,
+    ]);
+    return nextLabels.length;
+  }, [rtUnit, uv, uvLabelOrientation, uvOffset, uvTransferCount]);
+
+  const storeUvLabelsFromSpectrum = useCallback(
+    (sp: SpectrumData, uvRtMin: number, options?: { snap?: boolean }) => {
+      const anchor = uvAnchorAtRt(uvRtMin, options?.snap ?? snapUvLabels);
+      if (!anchor) {
+        setInfo("No UV point is available for the selected RT.");
+        return 0;
+      }
+      const count = addSpectrumLabelsToUv(sp, [anchor]);
+      if (count === 0) setInfo("No MS/polymer labels are available to transfer.");
+      return count;
+    },
+    [addSpectrumLabelsToUv, snapUvLabels, uvAnchorAtRt],
+  );
+
   const loadSpectrum = useCallback(
-    (rtMin: number) => {
+    (rtMin: number, options?: { uvRtMin?: number; forceUvTransfer?: boolean }) => {
       if (!activeSid) return;
       setBusy(true);
       setSelectedRt(rtMin);
+      setSelectedUvRt(options?.uvRtMin ?? null);
       api.lcms
         .spectrum(activeSid, {
           rt_min: rtMin,
           polarity: pol,
           top_n: Math.max(1, spectrumTopN),
           min_rel: Math.max(0, spectrumMinRel),
+          polymer: activePolymerSettings,
         })
-        .then(setSpectrum)
+        .then((sp) => {
+          setSpectrum(sp);
+          if (transferMsToUv || options?.forceUvTransfer) {
+            storeUvLabelsFromSpectrum(sp, options?.uvRtMin ?? rtMin - uvOffset, {
+              snap: snapUvLabels,
+            });
+          }
+        })
         .catch((err) => setError(String(err)))
         .finally(() => setBusy(false));
     },
-    [activeSid, pol, spectrumTopN, spectrumMinRel],
+    [
+      activeSid,
+      pol,
+      spectrumTopN,
+      spectrumMinRel,
+      activePolymerSettings,
+      transferMsToUv,
+      uvOffset,
+      snapUvLabels,
+      storeUvLabelsFromSpectrum,
+    ],
   );
+
+  const transferSelectedSpectrumToUv = useCallback(() => {
+    if (selectedRt == null) {
+      setInfo("Click a point on the TIC or UV chromatogram to select an RT first.");
+      return;
+    }
+    const uvRtMin = selectedUvRt ?? selectedRt - uvOffset;
+    if (spectrum && Math.abs(spectrum.meta.rt_min - selectedRt) < 0.02) {
+      storeUvLabelsFromSpectrum(spectrum, uvRtMin, { snap: snapUvLabels });
+      return;
+    }
+    loadSpectrum(selectedRt, { uvRtMin, forceUvTransfer: true });
+  }, [
+    loadSpectrum,
+    selectedRt,
+    selectedUvRt,
+    snapUvLabels,
+    spectrum,
+    storeUvLabelsFromSpectrum,
+    uvOffset,
+  ]);
+
+  const setTransferMsToUvAndMaybeApply = useCallback(
+    (enabled: boolean) => {
+      setTransferMsToUv(enabled);
+      if (enabled && selectedRt != null) {
+        window.setTimeout(() => transferSelectedSpectrumToUv(), 0);
+      }
+    },
+    [selectedRt, transferSelectedSpectrumToUv],
+  );
+
+  const moveUvLabel = useCallback((id: string, patch: Partial<UVTextLabel>) => {
+    setUvTextLabels((prev) =>
+      prev.map((label) => (label.id === id ? { ...label, ...patch } : label)),
+    );
+  }, []);
+
+  const deleteUvLabel = useCallback((id: string) => {
+    setUvTextLabels((prev) => prev.filter((label) => label.id !== id));
+  }, []);
+
+  const openCustomUvLabel = useCallback(() => {
+    const rtMin = selectedUvRt ?? (selectedRt != null ? selectedRt - uvOffset : null);
+    if (rtMin == null) {
+      setInfo("Click a point on the UV chromatogram or TIC before adding a custom UV label.");
+      return;
+    }
+    setCustomUvLabelDraft({
+      text: "",
+      rtText: rtMin.toFixed(4),
+      snap: snapUvLabels,
+    });
+  }, [selectedRt, selectedUvRt, snapUvLabels, uvOffset]);
+
+  const editUvLabel = useCallback((label: UVTextLabel) => {
+    setCustomUvLabelDraft({
+      id: label.id,
+      text: label.text,
+      rtText: label.uv_rt_min.toFixed(4),
+      snap: snapUvLabels,
+    });
+  }, [snapUvLabels]);
+
+  const saveCustomUvLabel = useCallback(
+    (draft: CustomUvLabelDraft) => {
+      const text = draft.text.trim();
+      const rtMin = parseFloat(draft.rtText);
+      if (!text) {
+        setInfo("Enter label text before saving.");
+        return;
+      }
+      if (!Number.isFinite(rtMin)) {
+        setInfo("Enter a valid UV RT before saving the custom label.");
+        return;
+      }
+      const anchor = uvAnchorAtRt(rtMin, draft.snap);
+      if (!anchor) {
+        setInfo("No UV chromatogram point is available for that RT.");
+        return;
+      }
+      const existing = draft.id
+        ? uvTextLabels.find((label) => label.id === draft.id)
+        : undefined;
+      const next: UVTextLabel = {
+        id: draft.id ?? makeCustomUvLabelId(anchor.uv_rt_min, text),
+        kind: existing?.kind ?? "custom",
+        uv_rt_min: anchor.uv_rt_min,
+        signal: anchor.signal,
+        text,
+        source_ms_rt_min: existing?.source_ms_rt_min ?? selectedRt ?? undefined,
+        source_peak_index: anchor.source_peak_index,
+        ax: existing?.ax ?? 0,
+        axRef: existing?.axRef ?? "pixel",
+        ayRef: existing?.ayRef ?? "pixel",
+        ay: existing?.ay ?? -36,
+      };
+      setUvTextLabels((prev) =>
+        draft.id
+          ? prev.map((label) => (label.id === draft.id ? { ...label, ...next } : label))
+          : [...prev, next],
+      );
+      setCustomUvLabelDraft(null);
+    },
+    [selectedRt, uvAnchorAtRt, uvTextLabels],
+  );
+
+  const autoLabelUvPeaks = useCallback(async () => {
+    if (!uv || uv.available !== true) {
+      setInfo("Attach a UV chromatogram before auto-labeling UV peaks.");
+      return;
+    }
+    if (!activeSid) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const freshUv = await api.lcms.uv(activeSid, {
+        top_n: UV_PEAK_FETCH_LIMIT,
+        min_rel: uvProminence,
+        min_distance_min: uvMinDistance,
+      });
+      setUv(freshUv);
+      const peaks = freshUv.available === true ? freshUv.peaks : [];
+      if (peaks.length === 0) {
+        setInfo("No UV peaks were detected with the current UV peak settings.");
+        return;
+      }
+      let labeledPeaks = 0;
+      let labelCount = 0;
+      for (let peakIndex = 0; peakIndex < peaks.length; peakIndex += 1) {
+        const peak = peaks[peakIndex];
+        const sp = await api.lcms.spectrum(activeSid, {
+          rt_min: peak.rt_min + uvOffset,
+          polarity: pol,
+          top_n: Math.max(1, spectrumTopN),
+          min_rel: Math.max(0, spectrumMinRel),
+          polymer: activePolymerSettings,
+        });
+        const count = addSpectrumLabelsToUv(sp, [
+          {
+            uv_rt_min: peak.rt_min,
+            signal: peak.signal,
+            source_peak_index: peakIndex,
+          },
+        ]);
+        if (count > 0) {
+          labeledPeaks += 1;
+          labelCount += count;
+        }
+      }
+      setInfo(
+        `Auto-labeled ${labelCount} label${labelCount === 1 ? "" : "s"} on ${labeledPeaks} UV peak${labeledPeaks === 1 ? "" : "s"}.`,
+      );
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    activePolymerSettings,
+    activeSid,
+    addSpectrumLabelsToUv,
+    pol,
+    spectrumMinRel,
+    spectrumTopN,
+    uv,
+    uvMinDistance,
+    uvOffset,
+    uvProminence,
+  ]);
+
+  const autoArrangeUvLabels = useCallback(() => {
+    if (uvTextLabels.length === 0) {
+      setInfo("There are no UV labels to arrange.");
+      return;
+    }
+    const sortedIds = [...uvTextLabels]
+      .sort((a, b) => a.uv_rt_min - b.uv_rt_min)
+      .map((label) => label.id);
+    const uvRtMin = uv?.available === true ? uv.rt_min : uvTextLabels.map((label) => label.uv_rt_min);
+    const uvSignals = uv?.available === true ? uv.signal : uvTextLabels.map((label) => label.signal);
+    const finiteSignals = uvSignals.filter((value) => Number.isFinite(value));
+    const signalMin = finiteSignals.length > 0 ? Math.min(...finiteSignals) : 0;
+    const signalMax = finiteSignals.length > 0 ? Math.max(...finiteSignals) : 1;
+    const yMin = graphSettings.uv.axis.yMin ?? Math.min(signalMin, 0);
+    const yMax = graphSettings.uv.axis.yMax ?? Math.max(signalMax, 1);
+    const yRange = Math.max(Number.EPSILON, yMax - yMin);
+    const plotAreaHeightPx = Math.max(80, graphSettings.uv.height - 50);
+    const yUnitsPerPx = yRange / plotAreaHeightPx;
+    const hydroxyAbbreviations = new Set(
+      polymerSettings.monomers
+        .filter((monomer) => monomer.category === "hydroxy")
+        .flatMap((monomer) => [monomer.abbr, monomer.name])
+        .map((value) => value.trim().toUpperCase())
+        .filter(Boolean),
+    );
+    const arranged = new Map<string, UVLabelLayoutOffset>();
+    arrangeUvLabelsAsSeriesStairs(
+      uvTextLabels,
+      uvOffset,
+      rtUnit === "seconds" ? 60 : 1,
+      Math.max(0, uvLabelStairXStep),
+      Math.max(0, uvLabelStairYStep),
+      yUnitsPerPx,
+      uvRtMin,
+      uvSignals,
+      hydroxyAbbreviations,
+    ).forEach((offset) => {
+      arranged.set(offset.id, offset);
+    });
+    setUvTextLabels((prev) =>
+      prev
+        .map((label) => ({ ...label, ...(arranged.get(label.id) ?? {}) }))
+        .sort((a, b) => sortedIds.indexOf(a.id) - sortedIds.indexOf(b.id)),
+    );
+    setInfo(`Arranged ${uvTextLabels.length} UV labels in local series stairs.`);
+  }, [
+    graphSettings.uv.axis.yMax,
+    graphSettings.uv.axis.yMin,
+    graphSettings.uv.height,
+    polymerSettings.monomers,
+    rtUnit,
+    uv,
+    uvLabelStairXStep,
+    uvLabelStairYStep,
+    uvOffset,
+    uvTextLabels,
+  ]);
 
   const onUpload = async (file: File) => {
     setBusy(true);
@@ -195,6 +1132,8 @@ export function LCMSView() {
       setActiveSid(s.session_id);
       setSpectrum(null);
       setSelectedRt(null);
+      setSelectedUvRt(null);
+      setUvTextLabels([]);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -210,6 +1149,8 @@ export function LCMSView() {
       setSpectrum(null);
       setTic(null);
       setSelectedRt(null);
+      setSelectedUvRt(null);
+      setUvTextLabels([]);
     }
   };
 
@@ -223,7 +1164,7 @@ export function LCMSView() {
         prev.map((s) => (s.session_id === summary.session_id ? summary : s)),
       );
       const data = await api.lcms.uv(activeSid, {
-        top_n: 8,
+        top_n: UV_PEAK_FETCH_LIMIT,
         min_rel: uvProminence,
         min_distance_min: uvMinDistance,
       });
@@ -244,6 +1185,7 @@ export function LCMSView() {
         available: false,
         reason: "No UV chromatogram attached to this dataset.",
       });
+      setUvTextLabels([]);
       setSessions((prev) =>
         prev.map((s) =>
           s.session_id === activeSid ? { ...s, uv: { available: false } } : s,
@@ -377,7 +1319,8 @@ export function LCMSView() {
         bestLag = lag;
       }
     }
-    const offset = bestLag * step;
+    // Positive offset means UV elutes first and is shifted forward onto MS time.
+    const offset = -bestLag * step;
     setUvOffset(offset);
     setUvOffsetText(offset.toFixed(3));
     setInfo(`Auto-aligned UV to MS: offset ${offset.toFixed(3)} min`);
@@ -427,9 +1370,23 @@ export function LCMSView() {
     }
   };
 
-  const onTICClick = (ev: Readonly<PlotMouseEvent>) => {
+  const rtFromPlotClick = (ev: Readonly<PlotMouseEvent>) => {
     const p = ev.points?.[0];
-    if (p && typeof p.x === "number") loadSpectrum(p.x);
+    if (!p || typeof p.x !== "number") return null;
+    return rtUnit === "seconds" ? p.x / 60 : p.x;
+  };
+
+  const onTICClick = (ev: Readonly<PlotMouseEvent>) => {
+    const rtMin = rtFromPlotClick(ev);
+    if (rtMin != null) loadSpectrum(rtMin);
+  };
+
+  const onUVClick = (ev: Readonly<PlotMouseEvent>) => {
+    const displayedRtMin = rtFromPlotClick(ev);
+    if (displayedRtMin != null) {
+      const uvRtMin = displayedRtMin - uvOffset;
+      loadSpectrum(displayedRtMin, { uvRtMin });
+    }
   };
 
   // --- header ---------------------------------------------------------------
@@ -518,6 +1475,7 @@ export function LCMSView() {
                   selectedRt={selectedRt}
                   rtUnit={rtUnit}
                   regionSelect={regionSelect}
+                  settings={graphSettings.tic}
                 />
               )}
               {showUV && (
@@ -525,9 +1483,20 @@ export function LCMSView() {
                   uv={uv}
                   busy={uvBusy}
                   xOffset={uvOffset}
+                  selectedUvRt={
+                    selectedUvRt ?? (selectedRt != null ? selectedRt - uvOffset : null)
+                  }
+                  labels={uvTextLabels}
                   rtUnit={rtUnit}
                   onPickFile={() => uvFileRef.current?.click()}
                   onRemove={onRemoveUV}
+                  onClick={onUVClick}
+                  onClearLabels={() => setUvTextLabels([])}
+                  onDeleteLabel={deleteUvLabel}
+                  onEditLabel={editUvLabel}
+                  onMoveLabel={moveUvLabel}
+                  labelOrientation={uvLabelOrientation}
+                  settings={graphSettings.uv}
                 />
               )}
               {showSpectrum && (
@@ -535,6 +1504,10 @@ export function LCMSView() {
                   spectrum={spectrum}
                   annotate={annotateSpectrum}
                   showDragHint={enableDragLabels}
+                  selectedRt={selectedRt}
+                  rtUnit={rtUnit}
+                  settings={graphSettings.spectrum}
+                  polymerEnabled={Boolean(activePolymerSettings)}
                 />
               )}
             </>
@@ -616,39 +1589,35 @@ export function LCMSView() {
           setEnableDragLabels={setEnableDragLabels}
           // Annotate – UV
           transferMsToUv={transferMsToUv}
-          setTransferMsToUv={setTransferMsToUv}
+          setTransferMsToUv={setTransferMsToUvAndMaybeApply}
           uvTransferCount={uvTransferCount}
           setUvTransferCount={setUvTransferCount}
           uvProminence={uvProminence}
           setUvProminence={setUvProminence}
           uvMinDistance={uvMinDistance}
           setUvMinDistance={setUvMinDistance}
-          showConfidenceUV={showConfidenceUV}
-          setShowConfidenceUV={setShowConfidenceUV}
-          onLabelSelectedRT={() => {
-            if (selectedRt == null) {
-              setInfo("Click a point on the TIC to select an RT first.");
-              return;
-            }
-            loadSpectrum(selectedRt);
-          }}
-          onAutoLabelUV={() => {
-            if (activeSid)
-              api.lcms
-                .uv(activeSid, {
-                  top_n: uvTransferCount > 0 ? uvTransferCount : 8,
-                  min_rel: uvProminence,
-                  min_distance_min: uvMinDistance,
-                })
-                .then(setUv)
-                .catch((err) => setError(String(err)));
-          }}
+          snapUvLabels={snapUvLabels}
+          setSnapUvLabels={setSnapUvLabels}
+          uvLabelOrientation={uvLabelOrientation}
+          setUvLabelOrientation={setUvLabelOrientation}
+          uvLabelStairXStep={uvLabelStairXStep}
+          setUvLabelStairXStep={setUvLabelStairXStep}
+          uvLabelStairYStep={uvLabelStairYStep}
+          setUvLabelStairYStep={setUvLabelStairYStep}
+          onLabelSelectedRT={transferSelectedSpectrumToUv}
+          onAutoLabelUV={autoLabelUvPeaks}
+          onCustomUvLabel={openCustomUvLabel}
+          onAutoArrangeLabels={autoArrangeUvLabels}
+          canAddCustomUvLabel={uv?.available === true && (selectedUvRt != null || selectedRt != null)}
+          uvLabelCount={uvTextLabels.length}
           // Annotate – overlay
           showOverlayLabels={showOverlayLabels}
           setShowOverlayLabels={setShowOverlayLabels}
           multiDragOverlay={multiDragOverlay}
           setMultiDragOverlay={setMultiDragOverlay}
           // Polymer
+          polymerSettings={polymerSettings}
+          setPolymerSettings={setPolymerSettings}
           onPolymerDialog={() => setPolymerDialogOpen(true)}
         />
       </div>
@@ -668,10 +1637,32 @@ export function LCMSView() {
       )}
       {eicOpen && <EICDialog onClose={() => setEicOpen(false)} />}
       {graphSettingsOpen && (
-        <GraphSettingsDialog onClose={() => setGraphSettingsOpen(false)} />
+        <GraphSettingsDialog
+          settings={graphSettings}
+          onChange={setGraphSettings}
+          onSetDefault={() => {
+            saveGraphSettingsDefault(graphSettings);
+            setInfo("Saved current graph settings as the default.");
+          }}
+          onReset={() => setGraphSettings(loadGraphSettingsDefault())}
+          onClose={() => setGraphSettingsOpen(false)}
+        />
       )}
       {polymerDialogOpen && (
-        <PolymerDialog onClose={() => setPolymerDialogOpen(false)} />
+        <PolymerDialog
+          polarity={polarity}
+          settings={polymerSettings}
+          onChange={setPolymerSettings}
+          onClose={() => setPolymerDialogOpen(false)}
+        />
+      )}
+      {customUvLabelDraft && (
+        <CustomUvLabelDialog
+          draft={customUvLabelDraft}
+          onChange={setCustomUvLabelDraft}
+          onClose={() => setCustomUvLabelDraft(null)}
+          onSave={saveCustomUvLabel}
+        />
       )}
     </div>
   );
@@ -1037,16 +2028,28 @@ interface ToolsPanelProps {
   setUvProminence: (v: number) => void;
   uvMinDistance: number;
   setUvMinDistance: (v: number) => void;
-  showConfidenceUV: boolean;
-  setShowConfidenceUV: (v: boolean) => void;
+  snapUvLabels: boolean;
+  setSnapUvLabels: (v: boolean) => void;
+  uvLabelOrientation: UVLabelOrientation;
+  setUvLabelOrientation: (v: UVLabelOrientation) => void;
+  uvLabelStairXStep: number;
+  setUvLabelStairXStep: (v: number) => void;
+  uvLabelStairYStep: number;
+  setUvLabelStairYStep: (v: number) => void;
   onLabelSelectedRT: () => void;
   onAutoLabelUV: () => void;
+  onCustomUvLabel: () => void;
+  onAutoArrangeLabels: () => void;
+  canAddCustomUvLabel: boolean;
+  uvLabelCount: number;
   // annotate – overlay
   showOverlayLabels: boolean;
   setShowOverlayLabels: (v: boolean) => void;
   multiDragOverlay: boolean;
   setMultiDragOverlay: (v: boolean) => void;
   // polymer
+  polymerSettings: PolymerUiSettings;
+  setPolymerSettings: (v: PolymerUiSettings) => void;
   onPolymerDialog: () => void;
 }
 
@@ -1101,7 +2104,12 @@ function ToolsPanel(p: ToolsPanelProps) {
             {p.activeTab === "view" && <ViewTab {...p} />}
             {p.activeTab === "annotate" && <AnnotateTab {...p} />}
             {p.activeTab === "polymer" && (
-              <PolymerTab onOpen={p.onPolymerDialog} />
+              <PolymerTab
+                polarity={p.polarity}
+                settings={p.polymerSettings}
+                onChange={p.setPolymerSettings}
+                onOpen={p.onPolymerDialog}
+              />
             )}
           </WorkflowTools>
         </>
@@ -1497,14 +2505,58 @@ function AnnotateTab(p: ToolsPanelProps) {
           />
         </Row>
         <Check
-          label="Show confidence % in UV labels"
-          checked={p.showConfidenceUV}
-          onChange={p.setShowConfidenceUV}
+          label="Snap labels to nearest UV peak"
+          checked={p.snapUvLabels}
+          onChange={p.setSnapUvLabels}
         />
+        <Row label="Label orientation">
+          <select
+            className="input w-32"
+            value={p.uvLabelOrientation}
+            onChange={(e) => p.setUvLabelOrientation(e.target.value as UVLabelOrientation)}
+          >
+            <option value="vertical">vertical</option>
+            <option value="horizontal">horizontal</option>
+          </select>
+        </Row>
+        <div className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2 text-xs text-ink-600">
+          Auto arrange splits labels into local RT clusters and places each
+          cluster in a descending series stair near its own UV peak group.
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <div className="mb-1 text-xs font-medium text-ink-600">Stair x spacing</div>
+            <input
+              type="number"
+              step="0.05"
+              min={0}
+              className="input w-full"
+              value={p.uvLabelStairXStep}
+              onChange={(e) =>
+                p.setUvLabelStairXStep(Math.max(0, parseFloat(e.target.value || "0") || 0))
+              }
+            />
+            <div className="mt-0.5 text-[11px] text-ink-500">minutes</div>
+          </label>
+          <label className="block">
+            <div className="mb-1 text-xs font-medium text-ink-600">Stair y spacing</div>
+            <input
+              type="number"
+              step="1"
+              min={0}
+              className="input w-full"
+              value={p.uvLabelStairYStep}
+              onChange={(e) =>
+                p.setUvLabelStairYStep(Math.max(0, parseFloat(e.target.value || "0") || 0))
+              }
+            />
+            <div className="mt-0.5 text-[11px] text-ink-500">pixels</div>
+          </label>
+        </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <button
             className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!p.transferMsToUv}
+            disabled={!p.activeLoaded}
             onClick={p.onLabelSelectedRT}
           >
             Label selected RT
@@ -1512,6 +2564,7 @@ function AnnotateTab(p: ToolsPanelProps) {
           <button
             className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
             onClick={p.onAutoLabelUV}
+            disabled={!p.activeLoaded}
           >
             Auto Label UV Peaks
           </button>
@@ -1528,16 +2581,20 @@ function AnnotateTab(p: ToolsPanelProps) {
         </button>
         <button
           className="rounded-md border border-ink-200 bg-white px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
-          onClick={() => {
-            /* visual-only helper for now */
-          }}
+          onClick={p.onAutoArrangeLabels}
+          disabled={p.uvLabelCount === 0}
         >
           Auto Arrange Labels
         </button>
         <button
           className="rounded-md border border-ink-200 bg-white px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled
-          title="Coming soon"
+          disabled={!p.canAddCustomUvLabel}
+          title={
+            p.canAddCustomUvLabel
+              ? "Add a custom UV label at the selected RT"
+              : "Select an RT on the UV chromatogram first"
+          }
+          onClick={p.onCustomUvLabel}
         >
           Custom Labels…
         </button>
@@ -1559,18 +2616,47 @@ function AnnotateTab(p: ToolsPanelProps) {
   );
 }
 
-function PolymerTab({ onOpen }: { onOpen: () => void }) {
+function PolymerTab({
+  polarity,
+  settings,
+  onChange,
+  onOpen,
+}: {
+  polarity: Polarity;
+  settings: PolymerUiSettings;
+  onChange: (settings: PolymerUiSettings) => void;
+  onOpen: () => void;
+}) {
+  const disabled = polarity === "all";
+  const status =
+    polarity === "positive"
+      ? "Positive mode: +H, optional +Na/+K."
+      : polarity === "negative"
+        ? "Negative mode: -H, optional +Cl/+HCOO/+Ac."
+        : "Choose Positive or Negative polarity to enable polymer matching.";
   return (
     <div className="flex flex-col gap-3">
       <GroupBox title="Polymer matching">
-        <Check
-          label="Enable polymer/reaction matching"
-          checked={false}
-          onChange={() => onOpen()}
-        />
-        <p className="mt-1 text-xs text-ink-500">
-          Use <span className="font-medium">Polymer Match…</span> for full settings
-        </p>
+        <label
+          className={clsx(
+            "flex items-center gap-2 text-sm text-ink-800",
+            disabled && "opacity-60",
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={settings.shared.enabled && !disabled}
+            disabled={disabled}
+            onChange={(e) =>
+              onChange({
+                ...settings,
+                shared: { ...settings.shared, enabled: e.target.checked },
+              })
+            }
+          />
+          <span>Enable polymer/reaction matching</span>
+        </label>
+        <p className="mt-1 text-xs text-ink-500">{status}</p>
         <NavyButton className="mt-2 w-full" onClick={onOpen}>
           Polymer Match…
         </NavyButton>
@@ -1660,7 +2746,10 @@ function TICChart(props: {
   selectedRt: number | null;
   rtUnit: RtUnit;
   regionSelect: boolean;
+  settings: ChartSettings;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const plotSize = useContainerSize(containerRef, props.settings.height);
   const scale = props.rtUnit === "seconds" ? 60 : 1;
   const unit = props.rtUnit === "seconds" ? "s" : "min";
   const xs = useMemo(
@@ -1683,13 +2772,20 @@ function TICChart(props: {
         ]
       : [];
   return (
-    <div className="card p-3">
+    <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       <div className="flex items-baseline justify-between px-1 pb-1">
         <h3 className="text-sm font-semibold">Total Ion Chromatogram</h3>
-        <div className="text-xs text-ink-500">
-          {props.regionSelect
-            ? "Drag on the plot to select an RT region"
-            : "Click a point to load the spectrum at that RT"}
+        <div className="flex items-center gap-2 text-xs text-ink-500">
+          {props.selectedRt != null && (
+            <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
+              Selected RT {formatRt(props.selectedRt, props.rtUnit)}
+            </span>
+          )}
+          <span>
+            {props.regionSelect
+              ? "Drag on the plot to select an RT region"
+              : "Click a point to load the spectrum at that RT"}
+          </span>
         </div>
       </div>
       {!props.tic ? (
@@ -1697,35 +2793,61 @@ function TICChart(props: {
           Loading TIC…
         </div>
       ) : (
-        <Plot
-          data={[
-            {
-              type: "scattergl",
-              mode: "lines",
-              x: xs,
-              y: props.tic.tic,
-              line: { color: "#1e2636", width: 1.5 },
-              hovertemplate: `RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`,
-              name: "TIC",
-            },
-          ]}
-          layout={{
-            height: 320,
-            margin: { l: 60, r: 20, t: 10, b: 40 },
-            xaxis: { title: { text: `RT (${unit})` }, zeroline: false },
-            yaxis: { title: { text: "TIC" }, zeroline: false, exponentformat: "e" },
-            hovermode: "x",
-            plot_bgcolor: "#ffffff",
-            paper_bgcolor: "#ffffff",
-            showlegend: false,
-            shapes,
-            dragmode: props.regionSelect ? "select" : "zoom",
-          }}
-          config={{ responsive: true, displaylogo: false }}
-          style={{ width: "100%" }}
-          useResizeHandler
-          onClick={props.onClick}
-        />
+        <div
+          ref={containerRef}
+          className="min-w-0 overflow-hidden"
+          style={{ height: props.settings.height }}
+        >
+          <Plot
+            data={[
+              {
+                type: "scattergl",
+                mode: "lines",
+                x: xs,
+                y: props.tic.tic,
+                line: { color: props.settings.color, width: props.settings.lineWidth },
+                hovertemplate: `RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`,
+                name: "TIC",
+              },
+            ]}
+            layout={{
+              height: plotSize.height,
+              width: plotSize.width,
+              margin: { l: 60, r: 20, t: 10, b: 40 },
+              title: props.settings.title
+                ? { text: props.settings.title, font: { size: props.settings.titleSize } }
+                : undefined,
+              font: { size: props.settings.tickSize },
+              xaxis: {
+                title: axisTitle(`${props.settings.xTitle} (${unit})`, props.settings.axisTitleSize),
+                zeroline: false,
+                showgrid: props.settings.showGrid,
+                range: axisRange(props.settings.axis.xMin, props.settings.axis.xMax),
+                tickfont: { size: props.settings.tickSize },
+                ...axisFrame(props.settings),
+              },
+              yaxis: {
+                title: axisTitle(props.settings.yTitle, props.settings.axisTitleSize),
+                zeroline: false,
+                exponentformat: "e",
+                showgrid: props.settings.showGrid,
+                range: axisRange(props.settings.axis.yMin, props.settings.axis.yMax),
+                tickfont: { size: props.settings.tickSize },
+                ...axisFrame(props.settings),
+              },
+              hovermode: "x",
+              plot_bgcolor: "#ffffff",
+              paper_bgcolor: "#ffffff",
+              showlegend: false,
+              shapes,
+              dragmode: props.regionSelect ? "select" : "zoom",
+            }}
+            config={{ responsive: true, displaylogo: false }}
+            style={{ width: "100%", height: "100%", minWidth: 0 }}
+            useResizeHandler
+            onClick={props.onClick}
+          />
+        </div>
       )}
     </div>
   );
@@ -1735,36 +2857,164 @@ function UVChromatogramChart(props: {
   uv: UVChromatogramResponse | null;
   busy: boolean;
   xOffset: number;
+  selectedUvRt: number | null;
+  labels: UVTextLabel[];
   rtUnit: RtUnit;
   onPickFile: () => void;
   onRemove: () => void;
+  onClick: (e: Readonly<PlotMouseEvent>) => void;
+  onClearLabels: () => void;
+  onDeleteLabel: (id: string) => void;
+  onEditLabel: (label: UVTextLabel) => void;
+  onMoveLabel: (id: string, patch: Partial<UVTextLabel>) => void;
+  labelOrientation: UVLabelOrientation;
+  settings: ChartSettings;
 }) {
-  const { uv, busy, xOffset, rtUnit, onPickFile, onRemove } = props;
+  const {
+    uv,
+    busy,
+    xOffset,
+    selectedUvRt,
+    labels,
+    rtUnit,
+    onPickFile,
+    onRemove,
+    onClick,
+    onClearLabels,
+    onDeleteLabel,
+    onEditLabel,
+    onMoveLabel,
+    labelOrientation,
+    settings,
+  } = props;
   const available = uv?.available === true;
   const meta = available ? uv.meta : null;
   const scale = rtUnit === "seconds" ? 60 : 1;
   const unit = rtUnit === "seconds" ? "s" : "min";
+  const uvContainerRef = useRef<HTMLDivElement>(null);
+  const uvPlotRef = useRef<PlotlyHTMLElement | null>(null);
+  const uvPlotSize = useContainerSize(uvContainerRef, settings.height);
 
   const xs = available ? uv.rt_min.map((v) => (v + xOffset) * scale) : [];
+  useEffect(() => {
+    schedulePlotResize();
+    const frame = window.requestAnimationFrame(() => {
+      if (!uvPlotRef.current) return;
+      void import("plotly.js-dist-min").then((plotlyModule) => {
+        if (uvPlotRef.current) void plotlyModule.default.Plots.resize(uvPlotRef.current);
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    labelOrientation,
+    labels.length,
+    settings.axis.xMax,
+    settings.axis.xMin,
+    settings.axis.yMax,
+    settings.axis.yMin,
+    settings.color,
+    settings.height,
+    settings.labels.color,
+    settings.labels.fontSize,
+    settings.lineWidth,
+    settings.showGrid,
+    settings.tickSize,
+    settings.title,
+    settings.xTitle,
+    settings.yTitle,
+  ]);
+
+  const saveSvg = async () => {
+    if (!uvPlotRef.current) return;
+    const plotlyModule = await import("plotly.js-dist-min");
+    const plotly = plotlyModule.default;
+    const baseName = (meta?.filename ?? "uv_chromatogram")
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^A-Za-z0-9_-]+/g, "_");
+    await plotly.downloadImage(uvPlotRef.current, {
+      format: "svg",
+      filename: `${baseName}_uv_chromatogram`,
+      width: uvPlotSize.width,
+      height: uvPlotSize.height,
+      scale: 1,
+    });
+  };
+  const handleRelayout = (event: Readonly<Record<string, unknown>>) => {
+    labels.forEach((label, index) => {
+      const patch: Partial<UVTextLabel> = {};
+      const ax = event[`annotations[${index}].ax`];
+      const ay = event[`annotations[${index}].ay`];
+      if (typeof ax === "number" && Number.isFinite(ax)) patch.ax = ax;
+      if (typeof ay === "number" && Number.isFinite(ay)) patch.ay = ay;
+      if (Object.keys(patch).length > 0) onMoveLabel(label.id, patch);
+    });
+  };
+  const shapes =
+    selectedUvRt != null
+      ? [
+          {
+            type: "line" as const,
+            xref: "x" as const,
+            yref: "paper" as const,
+            x0: (selectedUvRt + xOffset) * scale,
+            x1: (selectedUvRt + xOffset) * scale,
+            y0: 0,
+            y1: 1,
+            line: { color: "#5573b9", width: 1, dash: "dot" as const },
+          },
+        ]
+      : [];
 
   return (
-    <div className="card p-3">
+    <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
         <div className="flex items-baseline gap-2">
           <h3 className="text-sm font-semibold">UV Chromatogram</h3>
           {available && meta?.filename && (
             <span className="truncate text-xs text-ink-500" title={meta.filename}>
               {meta.filename}
-              {meta.y_col ? ` · ${meta.y_col}` : ""}
+              {(meta.y_label || meta.y_col) ? ` · ${meta.y_label || meta.y_col}` : ""}
               {xOffset !== 0 ? ` · offset ${xOffset.toFixed(3)} min` : ""}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2 text-xs">
+          {selectedUvRt != null && (
+            <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
+              UV RT {formatRt(selectedUvRt, rtUnit)}
+            </span>
+          )}
+          {available && (
+            <span className="text-ink-500">Click a point to load the MS spectrum</span>
+          )}
           {available && uv.peaks.length > 0 && (
             <span className="text-ink-500">
               {uv.peaks.length} peak{uv.peaks.length === 1 ? "" : "s"} annotated
             </span>
+          )}
+          {labels.length > 0 && (
+            <>
+              <span className="text-ink-500">
+                {labels.length} transferred label{labels.length === 1 ? "" : "s"}
+              </span>
+              <button
+                className="rounded-md border border-red-200 bg-white px-2 py-1 text-red-600 transition-colors hover:bg-red-50"
+                onClick={onClearLabels}
+                title="Delete all transferred UV labels"
+              >
+                Clear labels
+              </button>
+            </>
+          )}
+          {available && (
+            <button
+              className="rounded-md border border-ink-200 bg-white px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
+              onClick={saveSvg}
+              disabled={busy}
+              title="Save the UV chromatogram as an SVG file"
+            >
+              Save SVG
+            </button>
           )}
           <button
             className="rounded-md border border-ink-200 bg-white px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1807,48 +3057,124 @@ function UVChromatogramChart(props: {
         </div>
       ) : (
         <>
-          <Plot
-            data={[
-              {
-                type: "scattergl",
-                mode: "lines",
-                x: xs,
-                y: uv.signal,
-                line: { color: "#5573b9", width: 1.5 },
-                hovertemplate: `RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`,
-                name: "UV",
-              },
-            ]}
-            layout={{
-              height: 280,
-              margin: { l: 60, r: 20, t: 10, b: 40 },
-              xaxis: { title: { text: `RT (${unit})` }, zeroline: false },
-              yaxis: {
-                title: { text: meta?.y_col || "Signal (AU)" },
-                zeroline: false,
-                exponentformat: "e",
-              },
-              annotations: uv.peaks.map((pk) => ({
-                x: (pk.rt_min + xOffset) * scale,
-                y: pk.signal,
-                text: `${pk.rt_min.toFixed(2)}`,
-                showarrow: true,
-                arrowhead: 0,
-                arrowcolor: "#5573b9",
-                arrowwidth: 0.8,
-                ax: 0,
-                ay: -18,
-                font: { size: 10, color: "#46536a" },
-              })),
-              hovermode: "x",
-              plot_bgcolor: "#ffffff",
-              paper_bgcolor: "#ffffff",
-              showlegend: false,
-            }}
-            config={{ responsive: true, displaylogo: false }}
-            style={{ width: "100%" }}
-            useResizeHandler
-          />
+          <div
+            ref={uvContainerRef}
+            className="min-w-0 overflow-hidden"
+            style={{ height: settings.height }}
+          >
+            <Plot
+              data={[
+                {
+                  type: "scattergl",
+                  mode: "lines",
+                  x: xs,
+                  y: uv.signal,
+                  line: { color: settings.color, width: settings.lineWidth },
+                  hovertemplate: `RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`,
+                  name: "UV",
+                },
+              ]}
+              layout={{
+                height: uvPlotSize.height,
+                width: uvPlotSize.width,
+                margin: { l: 60, r: 20, t: 10, b: 40 },
+                title: settings.title
+                  ? { text: settings.title, font: { size: settings.titleSize } }
+                  : undefined,
+                font: { size: settings.tickSize },
+                xaxis: {
+                  title: axisTitle(`${settings.xTitle} (${unit})`, settings.axisTitleSize),
+                  zeroline: false,
+                  showgrid: settings.showGrid,
+                  range: axisRange(settings.axis.xMin, settings.axis.xMax),
+                  tickfont: { size: settings.tickSize },
+                  ...axisFrame(settings),
+                },
+                yaxis: {
+                  title: axisTitle(
+                    settings.yTitle || meta?.y_label || meta?.y_col || "Signal (AU)",
+                    settings.axisTitleSize,
+                  ),
+                  zeroline: false,
+                  exponentformat: "e",
+                  showgrid: settings.showGrid,
+                  range: axisRange(settings.axis.yMin, settings.axis.yMax),
+                  tickfont: { size: settings.tickSize },
+                  ...axisFrame(settings),
+                },
+                hovermode: "x",
+                annotations: labels.map((label, index) => ({
+                  x: (label.uv_rt_min + xOffset) * scale,
+                  y: label.signal,
+                  text: cleanLabelText(label.text),
+                  textangle: labelOrientation === "vertical" ? "-90" : "0",
+                  showarrow: true,
+                  arrowhead: 0,
+                  ax: label.ax ?? 0,
+                  axref: label.axRef === "x" ? "x" : "pixel",
+                  ayref: label.ayRef === "y" ? "y" : "pixel",
+                  ay:
+                    label.ay ??
+                    (labelOrientation === "vertical" ? -78 - index * 26 : -42 - index * 22),
+                  font: {
+                    size: settings.labels.fontSize,
+                    color: settings.labels.color,
+                  },
+                })),
+                plot_bgcolor: "#ffffff",
+                paper_bgcolor: "#ffffff",
+                showlegend: false,
+                shapes,
+              }}
+              config={{
+                responsive: true,
+                displaylogo: false,
+                editable: true,
+                edits: {
+                  annotationPosition: true,
+                  annotationText: false,
+                  axisTitleText: false,
+                  titleText: false,
+                },
+              }}
+              style={{ width: "100%", height: "100%", minWidth: 0 }}
+              useResizeHandler
+              onClick={onClick}
+              onInitialized={(_figure, graphDiv) => {
+                uvPlotRef.current = graphDiv as PlotlyHTMLElement;
+              }}
+              onUpdate={(_figure, graphDiv) => {
+                uvPlotRef.current = graphDiv as PlotlyHTMLElement;
+              }}
+              onRelayout={handleRelayout}
+            />
+          </div>
+          {labels.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2 px-1 text-xs">
+              {labels.map((label) => (
+                <span
+                  key={label.id}
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-ink-200 bg-white px-2 py-1 text-ink-700"
+                  title={`UV RT ${label.uv_rt_min.toFixed(4)} min`}
+                >
+                  <button
+                    className="truncate text-left hover:text-brand-700"
+                    onClick={() => onEditLabel(label)}
+                    title="Edit this UV label"
+                  >
+                    {cleanLabelText(label.text)}
+                  </button>
+                  <button
+                    className="rounded-full px-1 font-semibold text-ink-400 hover:bg-red-50 hover:text-red-600"
+                    onClick={() => onDeleteLabel(label.id)}
+                    title="Delete this UV label"
+                  >
+                    x
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           {meta?.warnings && meta.warnings.length > 0 && (
             <div className="mt-1 px-1 text-[11px] text-amber-700">
               {meta.warnings.map((w, i) => (
@@ -1866,17 +3192,42 @@ function SpectrumChart(props: {
   spectrum: SpectrumData | null;
   annotate: boolean;
   showDragHint: boolean;
+  selectedRt: number | null;
+  rtUnit: RtUnit;
+  settings: ChartSettings;
+  polymerEnabled: boolean;
 }) {
   const s = props.spectrum;
+  const specContainerRef = useRef<HTMLDivElement>(null);
+  const specPlotSize = useContainerSize(specContainerRef, props.settings.height);
+  const polymerLabelCount = s
+    ? (s.polymer_labels ?? s.labels.filter((label) => label.source === "polymer")).length
+    : 0;
+  const visibleLabels = s
+    ? s.labels.filter((label) => props.settings.labels.enabled || label.source === "polymer")
+    : [];
   return (
-    <div className="card p-3">
+    <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       <div className="flex items-baseline justify-between px-1 pb-1">
         <h3 className="text-sm font-semibold">MS1 Spectrum</h3>
-        {s && (
-          <div className="text-xs text-ink-500">
-            RT {s.meta.rt_min.toFixed(3)} min · {s.meta.polarity ?? "unk"} ·{" "}
-            {s.meta.n_peaks.toLocaleString()} peaks
-            {props.showDragHint && s.labels.length > 0 ? " · drag labels to reposition" : ""}
+        {(s || props.selectedRt != null) && (
+          <div className="flex items-center gap-2 text-xs text-ink-500">
+            {props.selectedRt != null && (
+              <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
+                Selected RT {formatRt(props.selectedRt, props.rtUnit)}
+              </span>
+            )}
+            {s && (
+              <span>
+                {s.meta.polarity ?? "unk"} · {s.meta.n_peaks.toLocaleString()} peaks
+                {props.polymerEnabled || polymerLabelCount > 0
+                  ? ` · ${polymerLabelCount} polymer label${polymerLabelCount === 1 ? "" : "s"}`
+                  : ""}
+                {props.showDragHint && s.labels.length > 0
+                  ? " · drag labels to reposition"
+                  : ""}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -1885,43 +3236,96 @@ function SpectrumChart(props: {
           Click a point on the TIC to view the MS1 spectrum at that retention time.
         </div>
       ) : (
-        <Plot
-          data={[
-            {
-              type: "bar",
-              x: s.mz,
-              y: s.intensity,
-              width: 0.5,
-              marker: { color: "#323c50" },
-              hovertemplate: "m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>",
-              name: "MS1",
-            },
-          ]}
-          layout={{
-            height: 340,
-            margin: { l: 60, r: 20, t: 20, b: 40 },
-            xaxis: { title: { text: "m/z" }, zeroline: false },
-            yaxis: { title: { text: "intensity" }, zeroline: false, exponentformat: "e" },
-            annotations: props.annotate
-              ? s.labels.map((lbl) => ({
-                  x: lbl.mz,
-                  y: lbl.intensity,
-                  text: lbl.mz.toFixed(4),
-                  showarrow: false,
-                  yshift: 10,
-                  font: { size: 10, color: "#46536a" },
-                }))
-              : [],
-            plot_bgcolor: "#ffffff",
-            paper_bgcolor: "#ffffff",
-            showlegend: false,
-            bargap: 0,
-            dragmode: props.showDragHint ? "pan" : "zoom",
-          }}
-          config={{ responsive: true, displaylogo: false, editable: props.showDragHint }}
-          style={{ width: "100%" }}
-          useResizeHandler
-        />
+        <div
+          ref={specContainerRef}
+          className="min-w-0 overflow-hidden"
+          style={{ height: props.settings.height }}
+        >
+          <Plot
+            data={[
+              {
+                type: "bar",
+                x: s.mz,
+                y: s.intensity,
+                width: props.settings.barWidth,
+                marker: { color: props.settings.color },
+                hovertemplate: "m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>",
+                name: "MS1",
+              },
+            ]}
+            layout={{
+              height: specPlotSize.height,
+              width: specPlotSize.width,
+              margin: { l: 60, r: 20, t: 20, b: 40 },
+              title: props.settings.title
+                ? {
+                    text: props.settings.title,
+                    font: { size: props.settings.titleSize },
+                  }
+                : undefined,
+              font: { size: props.settings.tickSize },
+              xaxis: {
+                title: axisTitle(props.settings.xTitle, props.settings.axisTitleSize),
+                zeroline: false,
+                showgrid: props.settings.showGrid,
+                range: axisRange(props.settings.axis.xMin, props.settings.axis.xMax),
+                tickfont: { size: props.settings.tickSize },
+                ...axisFrame(props.settings),
+              },
+              yaxis: {
+                title: axisTitle(props.settings.yTitle, props.settings.axisTitleSize),
+                zeroline: false,
+                exponentformat: "e",
+                showgrid: props.settings.showGrid,
+                range: axisRange(props.settings.axis.yMin, props.settings.axis.yMax),
+                tickfont: { size: props.settings.tickSize },
+                ...axisFrame(props.settings),
+              },
+              annotations: props.annotate
+                ? visibleLabels.map((lbl) => ({
+                    x: lbl.mz,
+                    y: lbl.intensity,
+                    text: lbl.text ? cleanLabelText(lbl.text) : lbl.mz.toFixed(4),
+                    showarrow: lbl.source === "polymer",
+                    arrowhead: 2,
+                    arrowsize: 0.8,
+                    arrowwidth: 1,
+                    arrowcolor: "#7c3aed",
+                    ax: 0,
+                    ay: lbl.source === "polymer" ? -34 : 0,
+                    yshift: lbl.source === "polymer" ? 0 : 10,
+                    bgcolor:
+                      lbl.source === "polymer" ? "rgba(124, 58, 237, 0.10)" : undefined,
+                    bordercolor: lbl.source === "polymer" ? "#7c3aed" : undefined,
+                    borderpad: lbl.source === "polymer" ? 3 : undefined,
+                    font: {
+                      size: props.settings.labels.fontSize,
+                      color:
+                        lbl.source === "polymer" ? "#7c3aed" : props.settings.labels.color,
+                    },
+                  }))
+                : [],
+              plot_bgcolor: "#ffffff",
+              paper_bgcolor: "#ffffff",
+              showlegend: false,
+              bargap: 0,
+              dragmode: props.showDragHint ? "pan" : "zoom",
+            }}
+            config={{
+              responsive: true,
+              displaylogo: false,
+              editable: props.showDragHint,
+              edits: {
+                annotationPosition: props.showDragHint,
+                annotationText: false,
+                axisTitleText: false,
+                titleText: false,
+              },
+            }}
+            style={{ width: "100%", height: "100%", minWidth: 0 }}
+            useResizeHandler
+          />
+        </div>
       )}
     </div>
   );
@@ -2091,6 +3495,68 @@ function FindMzDialog({
   );
 }
 
+function CustomUvLabelDialog({
+  draft,
+  onChange,
+  onClose,
+  onSave,
+}: {
+  draft: CustomUvLabelDraft;
+  onChange: (draft: CustomUvLabelDraft) => void;
+  onClose: () => void;
+  onSave: (draft: CustomUvLabelDraft) => void;
+}) {
+  const patch = (next: Partial<CustomUvLabelDraft>) => onChange({ ...draft, ...next });
+  return (
+    <Modal
+      title={draft.id ? "Edit UV Label" : "Custom UV Label"}
+      onClose={onClose}
+      footer={
+        <>
+          <button
+            className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button className="btn-primary" onClick={() => onSave(draft)}>
+            Save
+          </button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <label className="block">
+          <div className="label">Label text</div>
+          <input
+            className="input mt-1 w-full"
+            value={draft.text}
+            autoFocus
+            onChange={(e) => patch({ text: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onSave(draft);
+            }}
+          />
+        </label>
+        <NumberSetting
+          label="UV RT (min)"
+          value={Number.isFinite(parseFloat(draft.rtText)) ? parseFloat(draft.rtText) : null}
+          step={0.0001}
+          onChange={(value) => patch({ rtText: value == null ? "" : String(value) })}
+        />
+        <Check
+          label="Snap to nearest UV peak"
+          checked={draft.snap}
+          onChange={(snap) => patch({ snap })}
+        />
+        <p className="text-xs text-ink-500">
+          Clicking an existing label chip opens this dialog so you can rename it.
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
 function EICDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal
@@ -2117,30 +3583,544 @@ function EICDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function GraphSettingsDialog({ onClose }: { onClose: () => void }) {
+function GraphSettingsDialog({
+  settings,
+  onChange,
+  onSetDefault,
+  onReset,
+  onClose,
+}: {
+  settings: GraphSettings;
+  onChange: (updater: (prev: GraphSettings) => GraphSettings) => void;
+  onSetDefault: () => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  const updateChart = (id: GraphId, patch: Partial<ChartSettings>) => {
+    onChange((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+  };
+  const updateAxis = (id: GraphId, patch: Partial<AxisLimits>) => {
+    onChange((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], axis: { ...prev[id].axis, ...patch } },
+    }));
+  };
+  const updateLabels = (id: GraphId, patch: Partial<LabelSettings>) => {
+    onChange((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], labels: { ...prev[id].labels, ...patch } },
+    }));
+  };
+
+  const section = (id: GraphId, label: string) => {
+    const s = settings[id];
+    const labelsAvailable = id === "spectrum" || id === "uv";
+    const labelControlsTitle = id === "uv" ? "UV labels" : "Peak labels";
+    return (
+      <section className="rounded-lg border border-ink-200 bg-white p-4" key={id}>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{label}</h3>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-xs text-ink-600">
+              <input
+                type="checkbox"
+                checked={s.showGrid}
+                onChange={(e) => updateChart(id, { showGrid: e.target.checked })}
+              />
+              Grid
+            </label>
+            <label className="flex items-center gap-2 text-xs text-ink-600">
+              <input
+                type="checkbox"
+                checked={s.showScaleBars}
+                onChange={(e) =>
+                  updateChart(id, { showScaleBars: e.target.checked })
+                }
+              />
+              Axis scale bars
+            </label>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <TextSetting
+            label="Graph title"
+            value={s.title}
+            placeholder="No title"
+            onChange={(value) => updateChart(id, { title: value })}
+          />
+          <NumberSetting
+            label="Height (px)"
+            value={s.height}
+            min={180}
+            max={900}
+            step={10}
+            onChange={(value) => updateChart(id, { height: value ?? s.height })}
+          />
+          <TextSetting
+            label="X-axis title"
+            value={s.xTitle}
+            onChange={(value) => updateChart(id, { xTitle: value })}
+          />
+          <TextSetting
+            label="Y-axis title"
+            value={s.yTitle}
+            onChange={(value) => updateChart(id, { yTitle: value })}
+          />
+          <ColorSetting
+            label={id === "spectrum" ? "Bar color" : "Line color"}
+            value={s.color}
+            onChange={(value) => updateChart(id, { color: value })}
+          />
+          {id === "spectrum" ? (
+            <NumberSetting
+              label="Bar width"
+              value={s.barWidth}
+              min={0.05}
+              max={5}
+              step={0.05}
+              onChange={(value) => updateChart(id, { barWidth: value ?? s.barWidth })}
+            />
+          ) : (
+            <NumberSetting
+              label="Line width"
+              value={s.lineWidth}
+              min={0.5}
+              max={6}
+              step={0.25}
+              onChange={(value) => updateChart(id, { lineWidth: value ?? s.lineWidth })}
+            />
+          )}
+          <NumberSetting
+            label="Title size"
+            value={s.titleSize}
+            min={8}
+            max={30}
+            step={1}
+            onChange={(value) => updateChart(id, { titleSize: value ?? s.titleSize })}
+          />
+          <NumberSetting
+            label="Axis label size"
+            value={s.axisTitleSize}
+            min={8}
+            max={28}
+            step={1}
+            onChange={(value) =>
+              updateChart(id, { axisTitleSize: value ?? s.axisTitleSize })
+            }
+          />
+          <NumberSetting
+            label="Tick size"
+            value={s.tickSize}
+            min={8}
+            max={24}
+            step={1}
+            onChange={(value) => updateChart(id, { tickSize: value ?? s.tickSize })}
+          />
+          <SelectSetting
+            label="Frame"
+            value={s.frameMode}
+            options={[
+              { value: "none", label: "No frame" },
+              { value: "half", label: "Half frame" },
+              { value: "full", label: "Full frame" },
+            ]}
+            onChange={(value) => updateChart(id, { frameMode: value as FrameMode })}
+          />
+        </div>
+
+        <div className="mt-4">
+          <div className="label">Axis limits</div>
+          <div className="mt-2 grid grid-cols-4 gap-2">
+            <NumberSetting
+              label="X min"
+              value={s.axis.xMin}
+              nullable
+              onChange={(value) => updateAxis(id, { xMin: value })}
+            />
+            <NumberSetting
+              label="X max"
+              value={s.axis.xMax}
+              nullable
+              onChange={(value) => updateAxis(id, { xMax: value })}
+            />
+            <NumberSetting
+              label="Y min"
+              value={s.axis.yMin}
+              nullable
+              onChange={(value) => updateAxis(id, { yMin: value })}
+            />
+            <NumberSetting
+              label="Y max"
+              value={s.axis.yMax}
+              nullable
+              onChange={(value) => updateAxis(id, { yMax: value })}
+            />
+          </div>
+          <p className="mt-1 text-[11px] text-ink-500">
+            Leave min/max blank to keep Plotly auto-scaling that axis.
+          </p>
+        </div>
+
+        <div className="mt-4 rounded-md border border-ink-200 bg-ink-50/40 p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="label">{labelControlsTitle}</div>
+            {id !== "uv" && (
+              <label className="flex items-center gap-2 text-xs text-ink-600">
+                <input
+                  type="checkbox"
+                  checked={s.labels.enabled}
+                  disabled={!labelsAvailable}
+                  onChange={(e) => updateLabels(id, { enabled: e.target.checked })}
+                />
+                Enabled
+              </label>
+            )}
+          </div>
+          {labelsAvailable ? (
+            <div className="grid grid-cols-2 gap-3">
+              <NumberSetting
+                label="Label size"
+                value={s.labels.fontSize}
+                min={6}
+                max={24}
+                step={1}
+                onChange={(value) =>
+                  updateLabels(id, { fontSize: value ?? s.labels.fontSize })
+                }
+              />
+              <ColorSetting
+                label="Label color"
+                value={s.labels.color}
+                onChange={(value) => updateLabels(id, { color: value })}
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-ink-500">
+              Reserved for future {label} label controls.
+            </p>
+          )}
+        </div>
+      </section>
+    );
+  };
+
   return (
     <Modal
       title="Graph Settings"
       onClose={onClose}
       footer={
-        <button
-          className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
-          onClick={onClose}
-        >
-          Close
-        </button>
+        <>
+          <button
+            className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+            onClick={onReset}
+          >
+            Reset defaults
+          </button>
+          <button
+            className="rounded-md border border-brand-200 bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-100"
+            onClick={onSetDefault}
+          >
+            Set current as default
+          </button>
+          <button className="btn-primary" onClick={onClose}>
+            Done
+          </button>
+        </>
       }
     >
-      <p className="text-ink-600">
-        Fine-grained graph customisation (font sizes, grid colours, tick
-        density, custom titles) will land here in a future iteration. Use
-        Plotly's built-in controls in the top-right of each chart for now.
-      </p>
+      <div className="mb-4 text-sm text-ink-600">
+        Configure LCMS plot appearance. Axis limits apply only when both min and
+        max are filled for that axis.
+      </div>
+      <div className="flex flex-col gap-4">
+        {section("tic", "TIC")}
+        {section("uv", "UV chromatogram")}
+        {section("spectrum", "MS1 spectrum")}
+      </div>
     </Modal>
   );
 }
 
-function PolymerDialog({ onClose }: { onClose: () => void }) {
+function TextSetting({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <div className="label">{label}</div>
+      <input
+        type="text"
+        className="input mt-1 w-full"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+
+function NumberSetting({
+  label,
+  value,
+  nullable,
+  min,
+  max,
+  step = 0.1,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  nullable?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <label className="block">
+      <div className="label">{label}</div>
+      <input
+        type="number"
+        className="input mt-1 w-full"
+        value={value ?? ""}
+        min={min}
+        max={max}
+        step={step}
+        placeholder={nullable ? "auto" : undefined}
+        onChange={(e) => {
+          if (e.target.value === "") {
+            onChange(nullable ? null : value);
+            return;
+          }
+          const n = Number(e.target.value);
+          if (Number.isFinite(n)) onChange(n);
+        }}
+      />
+    </label>
+  );
+}
+
+function SelectSetting({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <div className="label">{label}</div>
+      <select
+        className="input mt-1 w-full"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function ColorSetting({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <div className="label">{label}</div>
+      <div className="mt-1 flex items-center gap-2">
+        <input
+          type="color"
+          className="h-9 w-12 rounded border border-ink-200 bg-white p-1"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <input
+          type="text"
+          className="input w-full font-mono"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </div>
+    </label>
+  );
+}
+
+function MonomerPresetBox({
+  title,
+  category,
+  monomers,
+  onChange,
+}: {
+  title: string;
+  category: PolymerMonomerCategory;
+  monomers: PolymerMonomerPreset[];
+  onChange: (monomers: PolymerMonomerPreset[]) => void;
+}) {
+  const [name, setName] = useState("");
+  const [abbr, setAbbr] = useState("");
+  const [massText, setMassText] = useState("");
+  const rows = monomers.filter((monomer) => monomer.category === category);
+  const patchMonomer = (id: string, patch: Partial<PolymerMonomerPreset>) => {
+    onChange(
+      monomers.map((monomer) =>
+        monomer.id === id ? { ...monomer, ...patch } : monomer,
+      ),
+    );
+  };
+  const addCustom = () => {
+    const mass = parseFloat(massText);
+    const cleanName = name.trim();
+    const cleanAbbr = abbr.trim() || cleanName;
+    if (!cleanName || !Number.isFinite(mass)) return;
+    const slug = cleanName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    onChange([
+      ...monomers,
+      {
+        id: `${category}:custom:${slug || "monomer"}:${Date.now()}`,
+        category,
+        name: cleanName,
+        abbr: cleanAbbr,
+        mass,
+        selected: true,
+        custom: true,
+      },
+    ]);
+    setName("");
+    setAbbr("");
+    setMassText("");
+  };
+  return (
+    <div className="rounded-md border border-ink-200 bg-white p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+          {title}
+        </div>
+        <div className="text-xs text-ink-500">
+          {rows.filter((monomer) => monomer.selected).length} selected
+        </div>
+      </div>
+      <div className="max-h-56 overflow-auto rounded border border-ink-100">
+        {rows.map((monomer) => (
+          <div
+            key={monomer.id}
+            className="grid grid-cols-[minmax(0,1fr)_5rem_6rem_auto] items-center gap-2 border-b border-ink-100 px-2 py-1.5 last:border-b-0"
+          >
+            <label className="flex min-w-0 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={monomer.selected}
+                onChange={(e) => patchMonomer(monomer.id, { selected: e.target.checked })}
+              />
+              <span className="min-w-0 truncate" title={monomer.name}>
+                {monomer.name}
+              </span>
+            </label>
+            <input
+              className="input h-8 px-2 text-xs"
+              value={monomer.abbr}
+              title="Abbreviation used in labels"
+              onChange={(e) => patchMonomer(monomer.id, { abbr: e.target.value })}
+            />
+            <span className="font-mono text-xs text-ink-500">
+              {monomer.mass.toFixed(4)}
+            </span>
+            {monomer.custom ? (
+              <button
+                className="rounded px-1.5 py-0.5 text-xs text-ink-400 hover:bg-red-50 hover:text-red-600"
+                onClick={() => onChange(monomers.filter((item) => item.id !== monomer.id))}
+                title="Delete custom monomer"
+              >
+                x
+              </button>
+            ) : (
+              <span className="w-4" />
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_5rem_6rem_auto] gap-2">
+        <input
+          className="input h-8 px-2 text-xs"
+          placeholder="Custom name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <input
+          className="input h-8 px-2 text-xs"
+          placeholder="Abbr"
+          value={abbr}
+          onChange={(e) => setAbbr(e.target.value)}
+        />
+        <input
+          className="input h-8 px-2 text-xs"
+          placeholder="Mass"
+          type="number"
+          step="0.000001"
+          value={massText}
+          onChange={(e) => setMassText(e.target.value)}
+        />
+        <button
+          className="rounded-md border border-ink-200 bg-white px-2 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={addCustom}
+          disabled={!name.trim() || !Number.isFinite(parseFloat(massText))}
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PolymerDialog({
+  polarity,
+  settings,
+  onChange,
+  onClose,
+}: {
+  polarity: Polarity;
+  settings: PolymerUiSettings;
+  onChange: (settings: PolymerUiSettings) => void;
+  onClose: () => void;
+}) {
+  const activeMode = polarity === "negative" ? "negative" : "positive";
+  const disabled = polarity === "all";
+  const shared = settings.shared;
+  const profile = settings[activeMode];
+  const patchShared = (next: Partial<PolymerSharedSettings>) =>
+    onChange({ ...settings, shared: { ...settings.shared, ...next } });
+  const patchProfile = (next: Partial<PolymerModeSettings>) =>
+    onChange({ ...settings, [activeMode]: { ...profile, ...next } });
+  const patchMonomers = (monomers: PolymerMonomerPreset[]) => onChange({ ...settings, monomers });
+  const selectedSummary = polymerMonomerText(settings)
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(0, 6)
+    .join(", ");
   return (
     <Modal
       title="Polymer / Reaction Match"
@@ -2149,23 +4129,197 @@ function PolymerDialog({ onClose }: { onClose: () => void }) {
         <>
           <button
             className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
-            onClick={onClose}
+            onClick={() => onChange(loadPolymerUiSettings())}
           >
-            Close
+            Reset
           </button>
-          <button className="btn-primary" disabled>
+          <button className="btn-primary" onClick={onClose} disabled={disabled}>
             Apply
           </button>
         </>
       }
     >
-      <p className="text-ink-600">
-        Configure polymer rules, adduct handling, and tolerances for the
-        current spectrum or selected TIC region.
-      </p>
-      <div className="mt-3 rounded-md border border-dashed border-ink-200 bg-ink-50/50 p-6 text-center text-sm text-ink-500">
-        Polymer matching UI is available; wiring the backend engine to the web
-        edition is planned for a follow-up release.
+      <div className="flex flex-col gap-4 text-sm">
+        {disabled && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+            Choose Positive or Negative polarity before enabling polymer matching.
+          </div>
+        )}
+        <label
+          className={clsx(
+            "flex items-center gap-2 text-sm text-ink-800",
+            disabled && "opacity-60",
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={shared.enabled && !disabled}
+            disabled={disabled}
+            onChange={(e) => patchShared({ enabled: e.target.checked })}
+          />
+          <span>Enable polymer/reaction matching on spectrum</span>
+        </label>
+        {!disabled && (
+          <div className="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-700">
+            {polarity === "positive"
+              ? "Positive mode: +H adduct mass with optional +Na/+K."
+              : "Negative mode: -H adduct mass with optional +Cl/+HCOO/+Ac."}
+          </div>
+        )}
+        <GroupBox title="Monomers">
+          <div className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2 text-xs text-ink-600">
+            Using: {selectedSummary || "no monomers selected"}
+          </div>
+          <MonomerPresetBox
+            title="Known hydroxy acids"
+            category="hydroxy"
+            monomers={settings.monomers}
+            onChange={patchMonomers}
+          />
+          <MonomerPresetBox
+            title="Amino acids"
+            category="amino"
+            monomers={settings.monomers}
+            onChange={patchMonomers}
+          />
+          <label className="block">
+            <div className="label">Other</div>
+            <textarea
+              className="input mt-1 h-24 w-full font-mono"
+              value={shared.monomers_text}
+              placeholder={"PEG 44.0262\nCustom,123.4567"}
+              onChange={(e) => patchShared({ monomers_text: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-ink-500">
+              Freeform monomers still work: one per line as name mass, name,mass, or mass.
+            </p>
+          </label>
+        </GroupBox>
+
+        <div className="grid grid-cols-2 gap-3">
+          <NumberSetting
+            label="Per-bond delta"
+            value={shared.bond_delta}
+            step={0.000001}
+            onChange={(value) => patchShared({ bond_delta: value ?? shared.bond_delta })}
+          />
+          <NumberSetting
+            label="Extra delta"
+            value={shared.extra_delta}
+            step={0.000001}
+            onChange={(value) => patchShared({ extra_delta: value ?? shared.extra_delta })}
+          />
+          <NumberSetting
+            label={polarity === "negative" ? "-H adduct mass" : "+H adduct mass"}
+            value={profile.adduct_mass}
+            step={0.000001}
+            onChange={(value) => patchProfile({ adduct_mass: value ?? profile.adduct_mass })}
+          />
+          <NumberSetting
+            label="Cluster H adduct"
+            value={profile.cluster_adduct_mass}
+            step={0.000001}
+            onChange={(value) =>
+              patchProfile({ cluster_adduct_mass: value ?? profile.cluster_adduct_mass })
+            }
+          />
+          <TextSetting
+            label="Charges"
+            value={shared.charges}
+            onChange={(charges) => patchShared({ charges })}
+          />
+          <NumberSetting
+            label="Max DP"
+            value={shared.max_dp}
+            min={1}
+            max={200}
+            step={1}
+            onChange={(value) => patchShared({ max_dp: Math.max(1, value ?? shared.max_dp) })}
+          />
+          <NumberSetting
+            label="Tolerance"
+            value={shared.tol_value}
+            min={0}
+            step={0.001}
+            onChange={(value) => patchShared({ tol_value: Math.max(0, value ?? shared.tol_value) })}
+          />
+          <SelectSetting
+            label="Tolerance unit"
+            value={shared.tol_unit}
+            options={[
+              { value: "Da", label: "Da" },
+              { value: "ppm", label: "ppm" },
+            ]}
+            onChange={(tol_unit) => patchShared({ tol_unit: tol_unit as "Da" | "ppm" })}
+          />
+          <NumberSetting
+            label="Min rel intensity"
+            value={shared.min_rel_int}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(value) =>
+              patchShared({ min_rel_int: Math.max(0, Math.min(1, value ?? shared.min_rel_int)) })
+            }
+          />
+        </div>
+
+        {!disabled && (
+          <GroupBox title={polarity === "negative" ? "Negative adducts" : "Positive adducts"}>
+            <div className="grid grid-cols-2 gap-2">
+              {polarity === "negative" ? (
+                <>
+                  <Check
+                    label="+Cl"
+                    checked={profile.adduct_cl}
+                    onChange={(adduct_cl) => patchProfile({ adduct_cl })}
+                  />
+                  <Check
+                    label="+HCOO"
+                    checked={profile.adduct_formate}
+                    onChange={(adduct_formate) => patchProfile({ adduct_formate })}
+                  />
+                  <Check
+                    label="+Ac"
+                    checked={profile.adduct_acetate}
+                    onChange={(adduct_acetate) => patchProfile({ adduct_acetate })}
+                  />
+                </>
+              ) : (
+                <>
+                  <Check
+                    label="+Na"
+                    checked={profile.adduct_na}
+                    onChange={(adduct_na) => patchProfile({ adduct_na })}
+                  />
+                  <Check
+                    label="+K"
+                    checked={profile.adduct_k}
+                    onChange={(adduct_k) => patchProfile({ adduct_k })}
+                  />
+                </>
+              )}
+            </div>
+          </GroupBox>
+        )}
+
+        <GroupBox title="Variants">
+          <Check
+            label="Decarboxylation (-CO2)"
+            checked={shared.decarb}
+            onChange={(decarb) => patchShared({ decarb })}
+          />
+          <Check
+            label="Oxidation (+O)"
+            checked={shared.oxid}
+            onChange={(oxid) => patchShared({ oxid })}
+          />
+          <Check
+            label="Noncovalent dimers (2M-H)"
+            checked={shared.cluster}
+            onChange={(cluster) => patchShared({ cluster })}
+          />
+        </GroupBox>
       </div>
     </Modal>
   );

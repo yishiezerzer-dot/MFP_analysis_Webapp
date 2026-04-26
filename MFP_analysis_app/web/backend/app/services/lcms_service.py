@@ -22,6 +22,16 @@ from lab_gui.lcms_io import (
     infer_uv_columns,
     parse_uv_arrays,
 )
+import lab_gui.lcms_polymer_match as poly_match
+
+
+def _friendly_label(col_name: str, role: str) -> str:
+    """Return a human-readable axis label when the column name is a raw number."""
+    try:
+        float(col_name)
+        return "RT (min)" if role == "x" else "Signal"
+    except (ValueError, TypeError):
+        return col_name
 
 
 @dataclass
@@ -39,6 +49,8 @@ class UVSessionState:
     signal: np.ndarray
     x_col: str
     y_col: str
+    x_label: str
+    y_label: str
     unit_guess: str
     rt_range: Tuple[float, float]
     warnings: List[str] = field(default_factory=list)
@@ -197,13 +209,17 @@ def attach_uv_from_csv(state: LCMSSessionState, csv_path: Path, *, filename: str
         reason = info.get("reason") or "Column detection was ambiguous."
         warnings = [f"{reason} (using x={info['xcol']}, y={info['ycol']})", *warnings]
 
+    xcol = str(info["xcol"])
+    ycol = str(info["ycol"])
     uv = UVSessionState(
         filename=filename,
         path=csv_path,
         rt_min=np.asarray(rt_min, dtype=float),
         signal=np.asarray(signal, dtype=float),
-        x_col=str(info["xcol"]),
-        y_col=str(info["ycol"]),
+        x_col=xcol,
+        y_col=ycol,
+        x_label=_friendly_label(xcol, "x"),
+        y_label=_friendly_label(ycol, "y"),
         unit_guess=str(info["unit_guess"]),
         rt_range=(float(rt_range[0]), float(rt_range[1])),
         warnings=list(warnings),
@@ -298,3 +314,115 @@ def top_n_peaks(
         {"mz": float(sel_mz[i]), "intensity": float(sel_int[i])}
         for i in order
     ]
+
+
+def _parse_polymer_monomers(text: str) -> List[Tuple[str, float]]:
+    monomers: List[Tuple[str, float]] = []
+    auto_i = 1
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if "," in line:
+            name_s, mass_s = [part.strip() for part in line.rsplit(",", 1)]
+            name = name_s or f"M{auto_i}"
+        else:
+            parts = [p.strip() for p in line.split() if p.strip()]
+            if len(parts) > 1:
+                name = " ".join(parts[:-1])
+                mass_s = parts[-1]
+            else:
+                name = f"M{auto_i}"
+                mass_s = parts[0]
+        if name.startswith("M") and name[1:].isdigit():
+            auto_i += 1
+        try:
+            monomers.append((name, float(mass_s)))
+        except (IndexError, ValueError):
+            continue
+    return monomers
+
+
+def _parse_polymer_charges(text: str) -> List[int]:
+    charges: List[int] = []
+    for part in str(text or "1").replace(";", ",").split(","):
+        try:
+            charge = int(part.strip())
+        except ValueError:
+            continue
+        if charge > 0:
+            charges.append(charge)
+    return charges or [1]
+
+
+def polymer_match_labels(
+    mz: np.ndarray,
+    intensity: np.ndarray,
+    *,
+    polarity: Optional[str],
+    settings: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Return polymer match labels using the same pure engine as the Tk app."""
+    if not bool(settings.get("enabled")):
+        return []
+    monomers = _parse_polymer_monomers(str(settings.get("monomers_text") or ""))
+    if not monomers or mz.size == 0 or intensity.size == 0:
+        return []
+
+    order = np.argsort(mz)
+    mz_s = np.asarray(mz, dtype=float)[order]
+    int_s = np.asarray(intensity, dtype=float)[order]
+    adduct_mass = float(settings.get("adduct_mass", 1.007276) or 1.007276)
+    cluster_adduct_mass = float(settings.get("cluster_adduct_mass", -1.007276) or -1.007276)
+    if polarity in ("positive", "negative"):
+        h = 1.007276
+        sign = 1.0 if polarity == "positive" else -1.0
+        if abs(abs(adduct_mass) - h) <= 0.01:
+            adduct_mass = sign * abs(adduct_mass)
+        if abs(abs(cluster_adduct_mass) - h) <= 0.01:
+            cluster_adduct_mass = sign * abs(cluster_adduct_mass)
+
+    best_by_peak = poly_match.compute_polymer_best_by_peak_sorted(
+        mz_s,
+        int_s,
+        monomer_names=[name for name, _mass in monomers],
+        monomer_masses=[mass for _name, mass in monomers],
+        charges=_parse_polymer_charges(str(settings.get("charges") or "1")),
+        max_dp=max(1, min(200, int(settings.get("max_dp", 12) or 12))),
+        bond_delta=float(settings.get("bond_delta", -18.010565) or -18.010565),
+        extra_delta=float(settings.get("extra_delta", 0.0) or 0.0),
+        polarity=polarity,
+        base_adduct_mass=adduct_mass,
+        enable_decarb=bool(settings.get("decarb")),
+        enable_oxid=bool(settings.get("oxid")),
+        enable_cluster=bool(settings.get("cluster")),
+        cluster_adduct_mass=cluster_adduct_mass,
+        enable_na=bool(settings.get("adduct_na")),
+        enable_k=bool(settings.get("adduct_k")),
+        enable_cl=bool(settings.get("adduct_cl")),
+        enable_formate=bool(settings.get("adduct_formate")),
+        enable_acetate=bool(settings.get("adduct_acetate")),
+        tol_value=float(settings.get("tol_value", 0.02) or 0.02),
+        tol_unit=str(settings.get("tol_unit") or "Da"),
+        min_rel_int=float(settings.get("min_rel_int", 0.01) or 0.01),
+        allow_variant_combo=True,
+    )
+    labels: List[Dict[str, Any]] = []
+    kind_order = ["poly", "ox", "decarb", "oxdecarb", "2m"]
+    for peak_i, kinds in best_by_peak.items():
+        ordered = [(kind, kinds[kind]) for kind in kind_order if kind in kinds]
+        if not ordered:
+            ordered = list(kinds.items())
+        for kind, (abs_err, text, mz_act, inten_act) in ordered:
+            labels.append(
+                {
+                    "mz": float(mz_act),
+                    "intensity": float(inten_act),
+                    "text": str(text),
+                    "kind": str(kind),
+                    "abs_err": float(abs_err),
+                    "source": "polymer",
+                    "peak_index": int(peak_i),
+                }
+            )
+    return labels

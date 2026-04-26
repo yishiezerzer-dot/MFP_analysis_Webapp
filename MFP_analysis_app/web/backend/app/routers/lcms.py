@@ -13,6 +13,7 @@ Endpoints:
 """
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -25,10 +26,12 @@ from ..services.lcms_service import (
     clear_uv,
     detect_uv_peaks,
     fetch_spectrum_at_rt,
+    polymer_match_labels,
     registry,
     top_n_peaks,
 )
 from lab_gui.lcms_io import LCMSLoadError, UVLoadError
+from lab_gui.lcms_polymer_match import PolymerSearchTooLarge
 
 router = APIRouter()
 
@@ -45,6 +48,8 @@ def _uv_summary(state: LCMSSessionState) -> Dict[str, Any]:
         "rt_max": float(uv.rt_range[1]),
         "x_col": uv.x_col,
         "y_col": uv.y_col,
+        "x_label": uv.x_label,
+        "y_label": uv.y_label,
         "unit_guess": uv.unit_guess,
         "warnings": list(uv.warnings),
     }
@@ -123,6 +128,7 @@ def get_spectrum(
     polarity: Optional[str] = None,
     top_n: int = 10,
     min_rel: float = 0.01,
+    polymer_settings: Optional[str] = None,
 ) -> Dict[str, Any]:
     state = registry.get(sid)
     if state is None:
@@ -133,12 +139,33 @@ def get_spectrum(
         )
     except LCMSLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    labels = top_n_peaks(mz, intensity, n=int(top_n), min_rel=float(min_rel))
+    labels = [
+        {**label, "source": "auto"}
+        for label in top_n_peaks(mz, intensity, n=int(top_n), min_rel=float(min_rel))
+    ]
+    polymer_labels: List[Dict[str, Any]] = []
+    if polymer_settings:
+        try:
+            settings = json.loads(polymer_settings)
+            if isinstance(settings, dict):
+                polymer_labels = polymer_match_labels(
+                    mz,
+                    intensity,
+                    polarity=meta.get("polarity"),
+                    settings=settings,
+                )
+        except PolymerSearchTooLarge as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid polymer settings JSON.")
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Polymer matching failed: {exc}")
     return {
         "meta": meta,
         "mz": [float(v) for v in mz.tolist()],
         "intensity": [float(v) for v in intensity.tolist()],
-        "labels": labels,
+        "labels": labels + polymer_labels,
+        "polymer_labels": polymer_labels,
     }
 
 

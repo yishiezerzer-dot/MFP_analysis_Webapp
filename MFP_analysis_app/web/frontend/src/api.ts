@@ -10,6 +10,8 @@ export interface LCMSUVMeta {
   rt_max?: number;
   x_col?: string;
   y_col?: string;
+  x_label?: string;
+  y_label?: string;
   unit_guess?: string;
   warnings?: string[];
 }
@@ -53,6 +55,33 @@ export interface TICData {
 export interface SpectrumLabel {
   mz: number;
   intensity: number;
+  text?: string;
+  kind?: string;
+  abs_err?: number;
+  source?: "auto" | "polymer";
+  peak_index?: number;
+}
+
+export interface PolymerSettings {
+  enabled: boolean;
+  monomers_text: string;
+  bond_delta: number;
+  extra_delta: number;
+  adduct_mass: number;
+  cluster_adduct_mass: number;
+  adduct_na: boolean;
+  adduct_k: boolean;
+  adduct_cl: boolean;
+  adduct_formate: boolean;
+  adduct_acetate: boolean;
+  charges: string;
+  decarb: boolean;
+  oxid: boolean;
+  cluster: boolean;
+  max_dp: number;
+  tol_value: number;
+  tol_unit: "Da" | "ppm";
+  min_rel_int: number;
 }
 
 export interface SpectrumData {
@@ -66,6 +95,7 @@ export interface SpectrumData {
   mz: number[];
   intensity: number[];
   labels: SpectrumLabel[];
+  polymer_labels?: SpectrumLabel[];
 }
 
 async function handle<T>(res: Response): Promise<T> {
@@ -535,12 +565,20 @@ export const api = {
     },
     spectrum: (
       sid: string,
-      opts: { rt_min: number; polarity?: "positive" | "negative"; top_n?: number; min_rel?: number },
+      opts: {
+        rt_min: number;
+        polarity?: "positive" | "negative";
+        top_n?: number;
+        min_rel?: number;
+        polymer?: PolymerSettings;
+      },
     ) => {
       const params = new URLSearchParams({ rt_min: String(opts.rt_min) });
       if (opts.polarity) params.set("polarity", opts.polarity);
       if (opts.top_n !== undefined) params.set("top_n", String(opts.top_n));
       if (opts.min_rel !== undefined) params.set("min_rel", String(opts.min_rel));
+      if (opts.polymer?.enabled)
+        params.set("polymer_settings", JSON.stringify(opts.polymer));
       return fetch(`/api/lcms/sessions/${sid}/spectrum?${params.toString()}`).then((r) =>
         handle<SpectrumData>(r),
       );

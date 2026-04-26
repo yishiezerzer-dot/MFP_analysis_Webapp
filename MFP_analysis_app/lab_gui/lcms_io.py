@@ -160,6 +160,13 @@ def infer_uv_columns(df: pd.DataFrame) -> Dict[str, Any]:
                 score += 1
         return score
 
+    def _is_numeric_name(name: str) -> bool:
+        try:
+            float(name)
+            return True
+        except (ValueError, TypeError):
+            return False
+
     x_scores = {c: score_x(c) for c in cols}
     x_best = max(cols, key=lambda c: x_scores.get(c, 0))
     y_candidates = [c for c in cols if c != x_best]
@@ -175,12 +182,27 @@ def infer_uv_columns(df: pd.DataFrame) -> Dict[str, Any]:
     y_2nd = y_sorted[-2][0] if len(y_sorted) >= 2 else -1
     low_conf = (x_top <= 0) or (y_top <= 0) or (x_top == x_2nd and x_top > 0) or (y_top == y_2nd and y_top > 0)
 
+    # Positional fallback: if all column names are numeric (no header row) or
+    # scores are all zero, assume col[0]=time, col[1]=signal and treat as confident.
+    if low_conf and all(_is_numeric_name(c) for c in cols):
+        x_best = cols[0]
+        y_best = cols[1] if len(cols) > 1 else cols[0]
+        low_conf = False
+
     unit_guess = "minutes"
     xname = str(x_best).lower()
     if ("sec" in xname) or ("second" in xname):
         unit_guess = "seconds"
     elif ("min" in xname) or ("minute" in xname):
         unit_guess = "minutes"
+    elif _is_numeric_name(x_best):
+        # Infer from data range: if max x value > 60, likely seconds
+        try:
+            x_vals = pd.to_numeric(df[x_best], errors="coerce").dropna()
+            if len(x_vals) > 0 and float(x_vals.max()) > 60:
+                unit_guess = "seconds"
+        except Exception:
+            pass
 
     reason = ""
     if low_conf:
