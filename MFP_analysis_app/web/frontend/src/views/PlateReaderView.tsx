@@ -12,6 +12,7 @@ import {
   PlateSessionSummary,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
+import { usePlotlyTheme } from "../theme/ThemeProvider";
 
 type RowRole = "none" | "sample" | "control" | "blank";
 
@@ -1188,6 +1189,7 @@ function MICChart({
   settings: MICChartSettings;
   onReady: (plot: PlotlyHTMLElement) => void;
 }) {
+  const pt = usePlotlyTheme();
   const { config, result, sample_nan_ratio } = mic;
   const xs = result.concentrations;
   const labels = result.x_tick_labels;
@@ -1326,8 +1328,8 @@ function MICChart({
             rangemode: "tozero",
             showgrid: settings.showGrid,
           },
-          plot_bgcolor: "#ffffff",
-          paper_bgcolor: "#ffffff",
+          plot_bgcolor: pt.plot_bgcolor,
+          paper_bgcolor: pt.paper_bgcolor,
           showlegend: settings.showLegend,
           legend: { orientation: "h", y: -0.2 },
         }}

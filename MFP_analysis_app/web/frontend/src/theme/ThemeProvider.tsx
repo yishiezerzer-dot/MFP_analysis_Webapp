@@ -105,3 +105,44 @@ export function useTheme(): ThemeContextValue {
   }
   return ctx;
 }
+
+export interface PlotlyThemeColors {
+  plot_bgcolor: string;
+  paper_bgcolor: string;
+  fontColor: string;
+  gridColor: string;
+  legendBg: string;
+  zerolineColor: string;
+}
+
+const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
+  day: {
+    plot_bgcolor: "#ffffff",
+    paper_bgcolor: "#ffffff",
+    fontColor: "#0d1322",
+    gridColor: "#d6dcea",
+    legendBg: "rgba(255,255,255,0.88)",
+    zerolineColor: "#b6c4da",
+  },
+  night: {
+    plot_bgcolor: "#001a37",
+    paper_bgcolor: "#001a37",
+    fontColor: "#d9e6ff",
+    gridColor: "#002042",
+    legendBg: "rgba(0,26,55,0.88)",
+    zerolineColor: "#284974",
+  },
+  "night-vision": {
+    plot_bgcolor: "#100505",
+    paper_bgcolor: "#100505",
+    fontColor: "#ffaaa5",
+    gridColor: "#1a0808",
+    legendBg: "rgba(16,5,5,0.88)",
+    zerolineColor: "#3c1616",
+  },
+};
+
+export function usePlotlyTheme(): PlotlyThemeColors {
+  const { theme } = useTheme();
+  return PLOTLY_THEME_COLORS[theme];
+}

@@ -23,6 +23,7 @@ import {
   UVChromatogramResponse,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
+import { usePlotlyTheme } from "../theme/ThemeProvider";
 
 let pendingPlotResizeFrame: number | null = null;
 
@@ -3479,6 +3480,7 @@ function TICChart(props: {
     props.overlayTraces.length,
     props.rtUnit,
   ], plotRef);
+  const pt = usePlotlyTheme();
   const scale = props.rtUnit === "seconds" ? 60 : 1;
   const unit = props.rtUnit === "seconds" ? "s" : "min";
   const xs = useMemo(
@@ -3580,8 +3582,8 @@ function TICChart(props: {
                 ...axisFrame(props.settings),
               },
               hovermode: "x",
-              plot_bgcolor: "#ffffff",
-              paper_bgcolor: "#ffffff",
+              plot_bgcolor: pt.plot_bgcolor,
+              paper_bgcolor: pt.paper_bgcolor,
               showlegend: overlayData.length > 0,
               shapes,
               dragmode: props.regionSelect ? "select" : "zoom",
@@ -3616,6 +3618,7 @@ function EICChart(props: {
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<PlotlyHTMLElement | null>(null);
   const plotSize = useContainerSize(containerRef, Math.max(240, props.settings.height * 0.75));
+  const pt = usePlotlyTheme();
   const scale = props.rtUnit === "seconds" ? 60 : 1;
   const unit = props.rtUnit === "seconds" ? "s" : "min";
   const xs = props.eic.rt_min.map((v) => v * scale);
@@ -3697,8 +3700,8 @@ function EICChart(props: {
               ...axisFrame(props.settings),
             },
             hovermode: "x",
-            plot_bgcolor: "#ffffff",
-            paper_bgcolor: "#ffffff",
+            plot_bgcolor: pt.plot_bgcolor,
+            paper_bgcolor: pt.paper_bgcolor,
             showlegend: false,
             shapes,
           }}
@@ -3755,6 +3758,7 @@ function UVChromatogramChart(props: {
     labelOrientation,
     settings,
   } = props;
+  const pt = usePlotlyTheme();
   const available = uv?.available === true;
   const canPlot = available || overlayTraces.length > 0;
   const meta = available ? uv.meta : null;
@@ -4080,8 +4084,8 @@ function UVChromatogramChart(props: {
                   })),
                   ...overlayAnnotations,
                 ],
-                plot_bgcolor: "#ffffff",
-                paper_bgcolor: "#ffffff",
+                plot_bgcolor: pt.plot_bgcolor,
+                paper_bgcolor: pt.paper_bgcolor,
                 showlegend: overlayData.length > 0,
                 shapes,
               }}
@@ -4163,6 +4167,7 @@ function SpectrumChart(props: {
   const specContainerRef = useRef<HTMLDivElement>(null);
   const specPlotRef = useRef<PlotlyHTMLElement | null>(null);
   const specPlotSize = useContainerSize(specContainerRef, props.settings.height);
+  const pt = usePlotlyTheme();
   usePlotResizePulses([
     props.annotate,
     props.polymerEnabled,
@@ -4338,8 +4343,8 @@ function SpectrumChart(props: {
                     ...overlayAnnotations,
                   ]
                 : [],
-              plot_bgcolor: "#ffffff",
-              paper_bgcolor: "#ffffff",
+              plot_bgcolor: pt.plot_bgcolor,
+              paper_bgcolor: pt.paper_bgcolor,
               showlegend: overlayData.length > 0,
               barmode: "overlay",
               bargap: 0,

@@ -13,6 +13,7 @@ import {
   DSTransformStep,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
+import { usePlotlyTheme } from "../theme/ThemeProvider";
 
 type PlotKind = "Line" | "Scatter" | "Line+markers" | "Bar" | "Bar stacked" | "Area" | "Step" | "Histogram";
 
@@ -1024,6 +1025,7 @@ function PlotCard(props: {
   logY: boolean;
 }) {
   const { plotKind, plotData, histData } = props;
+  const pt = usePlotlyTheme();
 
   const data: Data[] = useMemo(() => {
     if (plotKind === "Histogram") {
@@ -1083,6 +1085,8 @@ function PlotCard(props: {
       yaxis: { zeroline: false },
       showlegend: true,
       legend: { orientation: "h", y: -0.15 },
+      plot_bgcolor: pt.plot_bgcolor,
+      paper_bgcolor: pt.paper_bgcolor,
     };
     if (props.logX) l.xaxis = { ...l.xaxis, type: "log" };
     if (props.logY) l.yaxis = { ...l.yaxis, type: "log" };
@@ -1100,7 +1104,7 @@ function PlotCard(props: {
       (l as Layout).yaxis = { ...(l.yaxis ?? {}), title: { text: "value" } };
     }
     return l;
-  }, [plotKind, props.logX, props.logY, props.xCol]);
+  }, [plotKind, props.logX, props.logY, props.xCol, pt.plot_bgcolor, pt.paper_bgcolor]);
 
   const empty =
     plotKind === "Histogram"

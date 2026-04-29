@@ -16,6 +16,7 @@ import {
   FTIRYMode,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
+import { usePlotlyTheme } from "../theme/ThemeProvider";
 
 // --- types local to this view ---
 
@@ -1003,6 +1004,7 @@ function SpectrumChart(props: {
   setGraphSettings: (value: GraphSettings) => void;
 }) {
   const { spectrum, mode } = props;
+  const pt = usePlotlyTheme();
   const [region, setRegion] = useState<FTIRRegion>("full");
   const [customMin, setCustomMin] = useState(400);
   const [customMax, setCustomMax] = useState(4000);
@@ -1128,7 +1130,7 @@ function SpectrumChart(props: {
           arrowcolor: props.graphSettings.peakLabelColor,
           ax: edit?.ax ?? 0,
           ay: edit?.ay ?? -30,
-          bgcolor: "rgba(255,255,255,0.85)",
+          bgcolor: pt.legendBg,
           bordercolor: props.graphSettings.peakLabelColor,
           borderpad: 2,
           font: { size: 10, color: props.graphSettings.peakLabelColor },
@@ -1156,7 +1158,7 @@ function SpectrumChart(props: {
             arrowcolor: color,
             ax: edit?.ax ?? 0,
             ay: edit?.ay ?? -24,
-            bgcolor: "rgba(255,255,255,0.78)",
+            bgcolor: pt.legendBg,
             bordercolor: color,
             borderpad: 2,
             font: { size: 9, color },
@@ -1225,6 +1227,8 @@ function SpectrumChart(props: {
       },
       showlegend: props.overlays.length > 1,
       annotations: annotationSpecs.map((item) => item.annotation),
+      plot_bgcolor: pt.plot_bgcolor,
+      paper_bgcolor: pt.paper_bgcolor,
     }),
     [
       annotationSpecs,
@@ -1233,6 +1237,8 @@ function SpectrumChart(props: {
       props.graphSettings.showGrid,
       props.graphSettings.showTicks,
       props.overlays.length,
+      pt.plot_bgcolor,
+      pt.paper_bgcolor,
       xRange,
     ],
   );
