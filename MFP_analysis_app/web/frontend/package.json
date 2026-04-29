@@ -10,11 +10,13 @@
     "lint": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@reduxjs/toolkit": "^2.11.2",
     "clsx": "^2.1.1",
     "plotly.js-dist-min": "^2.35.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-plotly.js": "^2.6.0",
+    "react-redux": "^9.2.0",
     "react-router-dom": "^6.27.0"
   },
   "devDependencies": {

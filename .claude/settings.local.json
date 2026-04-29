@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(echo \"GITHUB_TOKEN: $env:GITHUB_TOKEN\"; echo \"STITCH_API_KEY: $env:STITCH_API_KEY\")",
+      "PowerShell(npx.cmd -y @modelcontextprotocol/server-github --version 2>&1)",
+      "PowerShell(node --version)",
+      "PowerShell(npx --version)",
+      "PowerShell(Get-Content \"C:\\\\Users\\\\owner\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-owner-OneDrive---huji-ac-il--------------yishi---moran-s-lab--github-copilot-folder-Yishi-s-app\\\\2879ed8f-c95d-49ef-ace4-4b29b5f542bd\\\\tasks\\\\bz87jqi91.output\" -Wait -Tail 20 -ErrorAction SilentlyContinue)",
+      "PowerShell(echo $env:GITHUB_TOKEN)",
+      "PowerShell(echo $env:STITCH_API_KEY)",
+      "mcp__github__search_repositories",
+      "mcp__github__search_users",
+      "mcp__github__get_file_contents",
+      "WebFetch(domain:github.com)",
+      "Read(//c/Users/owner/.claude/**)",
+      "WebSearch",
+      "mcp__github__search_code",
+      "WebFetch(domain:www.humanlayer.dev)",
+      "WebFetch(domain:www.builder.io)",
+      "WebFetch(domain:ranthebuilder.cloud)",
+      "WebFetch(domain:marmelab.com)",
+      "WebFetch(domain:thepromptshelf.dev)",
+      "WebFetch(domain:htdocs.dev)",
+      "Read(//c/Users/owner/OneDrive - huji.ac.il/שולחן העבודה/yishi - moran's lab'/Frenkel-Pinter-Lab-Vault/**)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Read(//c/Users/owner/OneDrive - huji.ac.il/שולחן העبודה/yishi - moran's lab'/github copilot folder/Yishi's app/MFP_analysis_app/web/frontend/**)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\owner\\.claude"
+    ]
+  }
+}

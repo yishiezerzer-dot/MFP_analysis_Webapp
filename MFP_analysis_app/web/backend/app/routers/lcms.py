@@ -18,22 +18,63 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from pydantic import BaseModel, Field
 
 from ..services.lcms_service import (
     LCMSSessionState,
     attach_uv_from_csv,
     clear_uv,
     detect_uv_peaks,
+    extracted_ion_chromatogram,
     fetch_spectrum_at_rt,
+    find_mz_across_scans,
+    iter_ms1_spectra,
     polymer_match_labels,
     registry,
+    summed_spectrum_in_rt_range,
     top_n_peaks,
 )
 from lab_gui.lcms_io import LCMSLoadError, UVLoadError
 from lab_gui.lcms_polymer_match import PolymerSearchTooLarge
 
 router = APIRouter()
+
+
+class EICRequest(BaseModel):
+    mz: float
+    tolerance: float = Field(default=0.01, gt=0)
+    polarity: Optional[str] = None
+
+
+class RegionSpectrumRequest(BaseModel):
+    rt_min: float
+    rt_max: float
+    polarity: Optional[str] = None
+    bin_width: float = Field(default=0.01, gt=0)
+    min_rel: float = Field(default=0.0, ge=0)
+    max_bins: int = Field(default=25000, ge=100, le=200000)
+
+
+class OverlayRequest(BaseModel):
+    session_ids: List[str]
+    polarity: Optional[str] = None
+
+
+def _csv_response(filename: str, rows: List[List[Any]]) -> Response:
+    def esc(value: Any) -> str:
+        text = "" if value is None else str(value)
+        if any(ch in text for ch in [",", "\"", "\n", "\r"]):
+            return "\"" + text.replace("\"", "\"\"") + "\""
+        return text
+
+    body = "\n".join(",".join(esc(value) for value in row) for row in rows) + "\n"
+    safe = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in filename)
+    return Response(
+        content=body,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{safe}"'},
+    )
 
 
 def _uv_summary(state: LCMSSessionState) -> Dict[str, Any]:
@@ -69,6 +110,19 @@ def _session_summary(state: LCMSSessionState) -> Dict[str, Any]:
         "polarities": polarities,
         "stats": {k: v for k, v in state.index.stats.items()},
         "uv": _uv_summary(state),
+    }
+
+
+def _tic_payload(state: LCMSSessionState, polarity: Optional[str] = None) -> Dict[str, Any]:
+    metas = state.index.ms1
+    if polarity in ("positive", "negative"):
+        metas = [m for m in metas if m.polarity == polarity]
+    return {
+        "session_id": state.session_id,
+        "display_name": state.display_name,
+        "rt_min": [float(m.rt_min) for m in metas],
+        "tic": [float(m.tic) for m in metas],
+        "polarity": [m.polarity for m in metas],
     }
 
 
@@ -111,13 +165,11 @@ def get_tic(sid: str, polarity: Optional[str] = None) -> Dict[str, Any]:
     state = registry.get(sid)
     if state is None:
         raise HTTPException(status_code=404, detail="session not found")
-    metas = state.index.ms1
-    if polarity in ("positive", "negative"):
-        metas = [m for m in metas if m.polarity == polarity]
+    payload = _tic_payload(state, polarity)
     return {
-        "rt_min": [float(m.rt_min) for m in metas],
-        "tic": [float(m.tic) for m in metas],
-        "polarity": [m.polarity for m in metas],
+        "rt_min": payload["rt_min"],
+        "tic": payload["tic"],
+        "polarity": payload["polarity"],
     }
 
 
@@ -167,6 +219,160 @@ def get_spectrum(
         "labels": labels + polymer_labels,
         "polymer_labels": polymer_labels,
     }
+
+
+@router.get("/sessions/{sid}/find-mz")
+def find_mz(
+    sid: str,
+    mz: float,
+    tolerance: float = 0.01,
+    polarity: Optional[str] = None,
+) -> Dict[str, Any]:
+    state = registry.get(sid)
+    if state is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    try:
+        return find_mz_across_scans(
+            state,
+            float(mz),
+            tolerance=float(tolerance),
+            polarity=polarity,
+        )
+    except LCMSLoadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/sessions/{sid}/eic")
+def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
+    state = registry.get(sid)
+    if state is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    try:
+        return extracted_ion_chromatogram(
+            state,
+            float(body.mz),
+            tolerance=float(body.tolerance),
+            polarity=body.polarity,
+        )
+    except LCMSLoadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/sessions/{sid}/region-spectrum")
+def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]:
+    state = registry.get(sid)
+    if state is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    try:
+        return summed_spectrum_in_rt_range(
+            state,
+            rt_min=float(body.rt_min),
+            rt_max=float(body.rt_max),
+            polarity=body.polarity,
+            bin_width=float(body.bin_width),
+            min_rel=float(body.min_rel),
+            max_bins=int(body.max_bins),
+        )
+    except LCMSLoadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/overlays/tic")
+def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
+    traces = []
+    missing = []
+    for sid in body.session_ids:
+        state = registry.get(sid)
+        if state is None:
+            missing.append(sid)
+            continue
+        traces.append(_tic_payload(state, body.polarity))
+    return {"traces": traces, "missing_session_ids": missing}
+
+
+@router.post("/exports/tic-overlay.csv")
+def export_tic_overlay(body: OverlayRequest) -> Response:
+    rows: List[List[Any]] = [["session_id", "display_name", "rt_min", "tic", "polarity"]]
+    for sid in body.session_ids:
+        state = registry.get(sid)
+        if state is None:
+            continue
+        payload = _tic_payload(state, body.polarity)
+        for rt, tic, pol in zip(payload["rt_min"], payload["tic"], payload["polarity"]):
+            rows.append([state.session_id, state.display_name, rt, tic, pol])
+    return _csv_response("lcms_tic_overlay.csv", rows)
+
+
+@router.get("/sessions/{sid}/exports/spectrum.csv")
+def export_spectrum_csv(
+    sid: str,
+    rt_min: float,
+    polarity: Optional[str] = None,
+) -> Response:
+    state = registry.get(sid)
+    if state is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    try:
+        meta, mz, intensity = fetch_spectrum_at_rt(
+            state,
+            float(rt_min),
+            polarity=polarity,
+        )
+    except LCMSLoadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    rows: List[List[Any]] = [["spectrum_id", "rt_min", "polarity", "mz", "intensity"]]
+    for mz_val, int_val in zip(mz.tolist(), intensity.tolist()):
+        rows.append([meta["spectrum_id"], meta["rt_min"], meta["polarity"], mz_val, int_val])
+    return _csv_response(f"{state.display_name}.spectrum.csv", rows)
+
+
+@router.get("/sessions/{sid}/exports/labels.csv")
+def export_labels_csv(
+    sid: str,
+    polarity: Optional[str] = None,
+    top_n: int = 10,
+    min_rel: float = 0.01,
+) -> Response:
+    state = registry.get(sid)
+    if state is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    rows: List[List[Any]] = [
+        ["spectrum_id", "rt_min", "polarity", "label_source", "mz", "intensity", "text"]
+    ]
+    try:
+        for meta, mz, intensity in iter_ms1_spectra(state, polarity=polarity):
+            for label in top_n_peaks(
+                mz,
+                intensity,
+                n=max(1, int(top_n)),
+                min_rel=max(0.0, float(min_rel)),
+            ):
+                rows.append([
+                    meta.spectrum_id,
+                    float(meta.rt_min),
+                    meta.polarity,
+                    "auto",
+                    label["mz"],
+                    label["intensity"],
+                    "",
+                ])
+    except LCMSLoadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _csv_response(f"{state.display_name}.labels.csv", rows)
+
+
+@router.get("/sessions/{sid}/exports/uv.csv")
+def export_uv_csv(sid: str) -> Response:
+    state = registry.get(sid)
+    if state is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    uv = state.uv
+    if uv is None:
+        raise HTTPException(status_code=400, detail="No UV chromatogram attached.")
+    rows: List[List[Any]] = [["rt_min", "signal"]]
+    for rt, signal in zip(uv.rt_min.tolist(), uv.signal.tolist()):
+        rows.append([rt, signal])
+    return _csv_response(f"{state.display_name}.uv.csv", rows)
 
 
 @router.post("/sessions/{sid}/uv")

@@ -98,6 +98,48 @@ export interface SpectrumData {
   polymer_labels?: SpectrumLabel[];
 }
 
+export interface LCMSFindMzResponse {
+  target_mz: number;
+  tolerance: number;
+  n_scans: number;
+  best: {
+    rt_min: number | null;
+    intensity: number;
+    mz: number | null;
+    spectrum_id: string | null;
+    polarity: string | null;
+  };
+}
+
+export interface LCMSEICData {
+  target_mz: number;
+  tolerance: number;
+  rt_min: number[];
+  intensity: number[];
+  polarity: (string | null)[];
+  best: LCMSFindMzResponse["best"];
+  n_scans: number;
+}
+
+export interface LCMSRegionSpectrumData {
+  rt_min: number;
+  rt_max: number;
+  bin_width: number;
+  n_scans: number;
+  mz: number[];
+  intensity: number[];
+}
+
+export interface LCMSTICOverlayTrace extends TICData {
+  session_id: string;
+  display_name: string;
+}
+
+export interface LCMSTICOverlayResponse {
+  traces: LCMSTICOverlayTrace[];
+  missing_session_ids: string[];
+}
+
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
@@ -110,6 +152,20 @@ async function handle<T>(res: Response): Promise<T> {
     throw new Error(`HTTP ${res.status}: ${detail}`);
   }
   return res.json() as Promise<T>;
+}
+
+async function handleBlob(res: Response): Promise<Blob> {
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const j = await res.json();
+      detail = (j && (j.detail ?? j.message)) || detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(`HTTP ${res.status}: ${detail}`);
+  }
+  return res.blob();
 }
 
 // --- Plate Reader types ---
@@ -137,6 +193,8 @@ export interface MICRequestBody {
   use_first_row_as_header: boolean;
   sample_rows: number[];
   control_rows: number[];
+  blank_rows?: number[];
+  subtract_blank?: boolean;
   concentration_columns: string[];
   tick_text: string;
   auto_tick_labels_power2: boolean;
@@ -152,6 +210,8 @@ export interface MICResult {
     use_first_row_as_header: boolean;
     sample_rows: number[];
     control_rows: number[];
+    blank_rows?: number[];
+    subtract_blank?: boolean;
     concentration_columns: string[];
     tick_labels: string[];
     auto_tick_labels_power2: boolean;
@@ -171,6 +231,8 @@ export interface MICResult {
     sample_std: number[];
     control_mean: number[] | null;
     control_std: number[] | null;
+    blank_mean?: number[] | null;
+    blank_std?: number[] | null;
   };
   sample_nan_ratio: number;
 }
@@ -484,7 +546,7 @@ export const api = {
   },
 
   ftir: {
-    upload: (file: File, yMode: FTIRYMode = "absorbance") => {
+    upload: (file: File, yMode: FTIRYMode = "transmittance") => {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("y_mode", yMode);
@@ -583,6 +645,80 @@ export const api = {
         handle<SpectrumData>(r),
       );
     },
+    findMz: (
+      sid: string,
+      opts: { mz: number; tolerance?: number; polarity?: "positive" | "negative" },
+    ) => {
+      const params = new URLSearchParams({ mz: String(opts.mz) });
+      if (opts.tolerance !== undefined) params.set("tolerance", String(opts.tolerance));
+      if (opts.polarity) params.set("polarity", opts.polarity);
+      return fetch(`/api/lcms/sessions/${sid}/find-mz?${params.toString()}`).then((r) =>
+        handle<LCMSFindMzResponse>(r),
+      );
+    },
+    eic: (
+      sid: string,
+      body: { mz: number; tolerance?: number; polarity?: "positive" | "negative" },
+    ) =>
+      fetch(`/api/lcms/sessions/${sid}/eic`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<LCMSEICData>(r)),
+    regionSpectrum: (
+      sid: string,
+      body: {
+        rt_min: number;
+        rt_max: number;
+        polarity?: "positive" | "negative";
+        bin_width?: number;
+        min_rel?: number;
+        max_bins?: number;
+      },
+    ) =>
+      fetch(`/api/lcms/sessions/${sid}/region-spectrum`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<LCMSRegionSpectrumData>(r)),
+    ticOverlay: (body: { session_ids: string[]; polarity?: "positive" | "negative" }) =>
+      fetch("/api/lcms/overlays/tic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<LCMSTICOverlayResponse>(r)),
+    exportTICOverlay: (body: {
+      session_ids: string[];
+      polarity?: "positive" | "negative";
+    }) =>
+      fetch("/api/lcms/exports/tic-overlay.csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then(handleBlob),
+    exportSpectrum: (
+      sid: string,
+      opts: { rt_min: number; polarity?: "positive" | "negative" },
+    ) => {
+      const params = new URLSearchParams({ rt_min: String(opts.rt_min) });
+      if (opts.polarity) params.set("polarity", opts.polarity);
+      return fetch(`/api/lcms/sessions/${sid}/exports/spectrum.csv?${params.toString()}`).then(
+        handleBlob,
+      );
+    },
+    exportLabels: (
+      sid: string,
+      opts?: { top_n?: number; min_rel?: number; polarity?: "positive" | "negative" },
+    ) => {
+      const params = new URLSearchParams();
+      if (opts?.top_n !== undefined) params.set("top_n", String(opts.top_n));
+      if (opts?.min_rel !== undefined) params.set("min_rel", String(opts.min_rel));
+      if (opts?.polarity) params.set("polarity", opts.polarity);
+      const qs = params.toString() ? `?${params.toString()}` : "";
+      return fetch(`/api/lcms/sessions/${sid}/exports/labels.csv${qs}`).then(handleBlob);
+    },
+    exportUV: (sid: string) =>
+      fetch(`/api/lcms/sessions/${sid}/exports/uv.csv`).then(handleBlob),
     uploadUV: (sid: string, file: File) => {
       const fd = new FormData();
       fd.append("file", file);

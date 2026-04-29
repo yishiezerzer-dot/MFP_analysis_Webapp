@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import type { PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
 import { LCMSView } from "./views/LCMSView";
 import { PlateReaderView } from "./views/PlateReaderView";
@@ -33,6 +34,142 @@ const TABS: TabDef[] = [
 ];
 
 const PIN_STORAGE_KEY = "mfp.sidebar.pinned";
+const PLOTLY_RESIZE_SETTLE_DELAYS_MS = [48, 140, 280];
+type PlotlyResizeModule = typeof import("plotly.js-dist-min").default;
+let plotlyResizePromise: Promise<PlotlyResizeModule> | null = null;
+
+function getPlotlyForResize() {
+  if (!plotlyResizePromise) {
+    plotlyResizePromise = import("plotly.js-dist-min").then((plotlyModule) => plotlyModule.default);
+  }
+  return plotlyResizePromise;
+}
+
+function resizePlotlyElement(el: HTMLElement) {
+  if (!document.body.contains(el)) return;
+  const rect = el.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  void getPlotlyForResize().then((Plotly) => {
+    if (!document.body.contains(el)) return;
+    void Plotly.Plots.resize(el as PlotlyHTMLElement);
+  });
+}
+
+function resizeMountedPlotlyCharts() {
+  document.querySelectorAll<HTMLElement>(".js-plotly-plot").forEach(resizePlotlyElement);
+}
+
+function usePlotlyAutoResize() {
+  const location = useLocation();
+
+  useEffect(() => {
+    const timers = new Set<number>();
+    const pendingFrames = new WeakMap<HTMLElement, number>();
+    const observedPlots = new Map<HTMLElement, Element[]>();
+    const targetPlots = new Map<Element, Set<HTMLElement>>();
+
+    const scheduleResize = (plotEl: HTMLElement) => {
+      if (pendingFrames.has(plotEl)) return;
+      const frame = window.requestAnimationFrame(() => {
+        pendingFrames.delete(plotEl);
+        resizePlotlyElement(plotEl);
+      });
+      pendingFrames.set(plotEl, frame);
+    };
+
+    const scheduleResizeBurst = (plotEl: HTMLElement) => {
+      scheduleResize(plotEl);
+      PLOTLY_RESIZE_SETTLE_DELAYS_MS.forEach((delay) => {
+        const timer = window.setTimeout(() => {
+          timers.delete(timer);
+          scheduleResize(plotEl);
+        }, delay);
+        timers.add(timer);
+      });
+    };
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      const plots = new Set<HTMLElement>();
+      entries.forEach((entry) => {
+        targetPlots.get(entry.target)?.forEach((plotEl) => plots.add(plotEl));
+      });
+      plots.forEach(scheduleResizeBurst);
+    });
+
+    const observePlot = (plotEl: HTMLElement) => {
+      if (observedPlots.has(plotEl)) return;
+      const targets = new Set<Element>([plotEl]);
+      if (plotEl.parentElement) targets.add(plotEl.parentElement);
+      const card = plotEl.closest(".card");
+      if (card) targets.add(card);
+
+      targets.forEach((target) => {
+        let plots = targetPlots.get(target);
+        if (!plots) {
+          plots = new Set<HTMLElement>();
+          targetPlots.set(target, plots);
+          resizeObserver.observe(target);
+        }
+        plots.add(plotEl);
+      });
+
+      observedPlots.set(plotEl, [...targets]);
+      scheduleResizeBurst(plotEl);
+    };
+
+    const sweepPlots = () => {
+      document.querySelectorAll<HTMLElement>(".js-plotly-plot").forEach(observePlot);
+      observedPlots.forEach((targets, plotEl) => {
+        if (document.body.contains(plotEl)) return;
+        targets.forEach((target) => {
+          const plots = targetPlots.get(target);
+          plots?.delete(plotEl);
+          if (plots && plots.size === 0) {
+            resizeObserver.unobserve(target);
+            targetPlots.delete(target);
+          }
+        });
+        observedPlots.delete(plotEl);
+      });
+    };
+
+    let pendingSweep: number | null = null;
+    const scheduleSweep = () => {
+      if (pendingSweep !== null) return;
+      pendingSweep = window.requestAnimationFrame(() => {
+        pendingSweep = null;
+        sweepPlots();
+      });
+    };
+
+    const mutationObserver = new MutationObserver(scheduleSweep);
+    mutationObserver.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", resizeMountedPlotlyCharts);
+    window.addEventListener("orientationchange", resizeMountedPlotlyCharts);
+    sweepPlots();
+
+    return () => {
+      mutationObserver.disconnect();
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", resizeMountedPlotlyCharts);
+      window.removeEventListener("orientationchange", resizeMountedPlotlyCharts);
+      if (pendingSweep !== null) window.cancelAnimationFrame(pendingSweep);
+      observedPlots.forEach((_targets, plotEl) => {
+        const frame = pendingFrames.get(plotEl);
+        if (frame !== undefined) window.cancelAnimationFrame(frame);
+      });
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, []);
+
+  useEffect(() => {
+    resizeMountedPlotlyCharts();
+    const timers = PLOTLY_RESIZE_SETTLE_DELAYS_MS.map((delay) =>
+      window.setTimeout(resizeMountedPlotlyCharts, delay),
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [location.pathname]);
+}
 
 function Sidebar() {
   const [pinned, setPinned] = useState<boolean>(() => {
@@ -168,6 +305,7 @@ function Sidebar() {
  * reads the outlet context we provide below.
  */
 function Layout() {
+  usePlotlyAutoResize();
   const [headerNode, setHeaderNode] = useState<ReactNode>(null);
   const ctx = useMemo<PageHeaderContextValue>(
     () => ({ setHeader: setHeaderNode }),

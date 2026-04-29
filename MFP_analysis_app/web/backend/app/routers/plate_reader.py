@@ -97,6 +97,8 @@ class MICRequest(BaseModel):
     use_first_row_as_header: bool = True
     sample_rows: List[int]
     control_rows: List[int] = Field(default_factory=list)
+    blank_rows: List[int] = Field(default_factory=list)
+    subtract_blank: bool = False
     concentration_columns: List[str]
     tick_text: str = ""
     auto_tick_labels_power2: bool = True
@@ -125,6 +127,8 @@ def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
             use_first_row_as_header=req.use_first_row_as_header,
             sample_rows=req.sample_rows,
             control_rows=req.control_rows,
+            blank_rows=req.blank_rows,
+            subtract_blank=req.subtract_blank,
             concentration_columns=req.concentration_columns,
             tick_text=req.tick_text,
             auto_tick_labels_power2=req.auto_tick_labels_power2,

@@ -9,7 +9,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -122,6 +122,30 @@ class LCMSRegistry:
 registry = LCMSRegistry()
 
 
+def _ms1_candidates(
+    state: LCMSSessionState,
+    *,
+    polarity: Optional[str] = None,
+) -> List[Any]:
+    metas = state.index.ms1
+    if polarity in ("positive", "negative"):
+        filtered = [m for m in metas if m.polarity == polarity]
+        return filtered or metas
+    return metas
+
+
+def _spectrum_arrays_from_reader(reader: mzml.MzML, spectrum_id: str) -> Tuple[np.ndarray, np.ndarray]:
+    try:
+        spectrum = reader.get_by_id(str(spectrum_id))
+    except Exception:
+        spectrum = reader[str(spectrum_id)]
+    mz_array = spectrum.get("m/z array")
+    int_array = spectrum.get("intensity array")
+    if mz_array is None or int_array is None:
+        raise LCMSLoadError("Spectrum has no m/z or intensity arrays.")
+    return np.asarray(mz_array, dtype=float), np.asarray(int_array, dtype=float)
+
+
 def fetch_spectrum_at_rt(
     state: LCMSSessionState,
     target_rt_min: float,
@@ -135,12 +159,7 @@ def fetch_spectrum_at_rt(
     if not metas:
         raise LCMSLoadError("No MS1 spectra indexed.")
 
-    if polarity in ("positive", "negative"):
-        candidates = [m for m in metas if m.polarity == polarity]
-        if not candidates:
-            candidates = metas
-    else:
-        candidates = metas
+    candidates = _ms1_candidates(state, polarity=polarity)
 
     rts = np.asarray([float(m.rt_min) for m in candidates], dtype=float)
     i = int(np.argmin(np.abs(rts - float(target_rt_min))))
@@ -149,16 +168,11 @@ def fetch_spectrum_at_rt(
     with state._reader_lock:
         rdr = mzml.MzML(str(state.path))
         try:
-            spectrum = rdr.get_by_id(str(chosen.spectrum_id))
-        except Exception:
-            spectrum = rdr[str(chosen.spectrum_id)]
-
-    mz_array = spectrum.get("m/z array")
-    int_array = spectrum.get("intensity array")
-    if mz_array is None or int_array is None:
-        raise LCMSLoadError("Spectrum has no m/z or intensity arrays.")
-    mz_vals = np.asarray(mz_array, dtype=float)
-    int_vals = np.asarray(int_array, dtype=float)
+            mz_vals, int_vals = _spectrum_arrays_from_reader(rdr, str(chosen.spectrum_id))
+        finally:
+            close = getattr(rdr, "close", None)
+            if callable(close):
+                close()
 
     meta = {
         "spectrum_id": chosen.spectrum_id,
@@ -168,6 +182,157 @@ def fetch_spectrum_at_rt(
         "n_peaks": int(mz_vals.size),
     }
     return meta, mz_vals, int_vals
+
+
+def iter_ms1_spectra(
+    state: LCMSSessionState,
+    *,
+    polarity: Optional[str] = None,
+    rt_min: Optional[float] = None,
+    rt_max: Optional[float] = None,
+) -> Iterable[Tuple[Any, np.ndarray, np.ndarray]]:
+    """Yield MS1 spectra using one locked mzML reader for scan-heavy actions."""
+    metas = _ms1_candidates(state, polarity=polarity)
+    if rt_min is not None:
+        metas = [m for m in metas if float(m.rt_min) >= float(rt_min)]
+    if rt_max is not None:
+        metas = [m for m in metas if float(m.rt_min) <= float(rt_max)]
+    if not metas:
+        return
+    with state._reader_lock:
+        rdr = mzml.MzML(str(state.path))
+        try:
+            for meta in metas:
+                mz_vals, int_vals = _spectrum_arrays_from_reader(rdr, str(meta.spectrum_id))
+                yield meta, mz_vals, int_vals
+        finally:
+            close = getattr(rdr, "close", None)
+            if callable(close):
+                close()
+
+
+def extracted_ion_chromatogram(
+    state: LCMSSessionState,
+    target_mz: float,
+    *,
+    tolerance: float = 0.01,
+    polarity: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Sum intensity in a target m/z window for every MS1 scan."""
+    tol = max(0.0, float(tolerance))
+    target = float(target_mz)
+    rows: List[Tuple[float, float, Optional[str]]] = []
+    best: Dict[str, Any] = {
+        "rt_min": None,
+        "intensity": 0.0,
+        "mz": None,
+        "spectrum_id": None,
+        "polarity": None,
+    }
+    for meta, mz_vals, int_vals in iter_ms1_spectra(state, polarity=polarity):
+        mask = np.abs(mz_vals - target) <= tol
+        intensity = float(np.nansum(int_vals[mask])) if np.any(mask) else 0.0
+        if intensity > float(best["intensity"]):
+            local_mz = None
+            if np.any(mask):
+                local_idx = int(np.argmax(int_vals[mask]))
+                local_mz = float(mz_vals[mask][local_idx])
+            best = {
+                "rt_min": float(meta.rt_min),
+                "intensity": intensity,
+                "mz": local_mz,
+                "spectrum_id": meta.spectrum_id,
+                "polarity": meta.polarity,
+            }
+        rows.append((float(meta.rt_min), intensity, meta.polarity))
+    return {
+        "target_mz": target,
+        "tolerance": tol,
+        "rt_min": [rt for rt, _intensity, _pol in rows],
+        "intensity": [intensity for _rt, intensity, _pol in rows],
+        "polarity": [pol for _rt, _intensity, pol in rows],
+        "best": best,
+        "n_scans": len(rows),
+    }
+
+
+def find_mz_across_scans(
+    state: LCMSSessionState,
+    target_mz: float,
+    *,
+    tolerance: float = 0.01,
+    polarity: Optional[str] = None,
+) -> Dict[str, Any]:
+    eic = extracted_ion_chromatogram(
+        state,
+        target_mz,
+        tolerance=tolerance,
+        polarity=polarity,
+    )
+    return {
+        "target_mz": eic["target_mz"],
+        "tolerance": eic["tolerance"],
+        "best": eic["best"],
+        "n_scans": eic["n_scans"],
+    }
+
+
+def summed_spectrum_in_rt_range(
+    state: LCMSSessionState,
+    *,
+    rt_min: float,
+    rt_max: float,
+    polarity: Optional[str] = None,
+    bin_width: float = 0.01,
+    min_rel: float = 0.0,
+    max_bins: int = 25000,
+) -> Dict[str, Any]:
+    lo = min(float(rt_min), float(rt_max))
+    hi = max(float(rt_min), float(rt_max))
+    width = max(1e-6, float(bin_width))
+    totals: Dict[int, float] = {}
+    n_scans = 0
+    for _meta, mz_vals, int_vals in iter_ms1_spectra(
+        state,
+        polarity=polarity,
+        rt_min=lo,
+        rt_max=hi,
+    ):
+        n_scans += 1
+        keys = np.rint(mz_vals / width).astype(np.int64)
+        for key, intensity in zip(keys.tolist(), int_vals.tolist()):
+            if not np.isfinite(intensity):
+                continue
+            totals[int(key)] = totals.get(int(key), 0.0) + float(intensity)
+    if not totals:
+        return {
+            "rt_min": lo,
+            "rt_max": hi,
+            "bin_width": width,
+            "n_scans": n_scans,
+            "mz": [],
+            "intensity": [],
+        }
+    mz_out = np.asarray([key * width for key in totals.keys()], dtype=float)
+    int_out = np.asarray(list(totals.values()), dtype=float)
+    imax = float(np.nanmax(int_out)) if int_out.size else 0.0
+    if imax > 0 and min_rel > 0:
+        keep = int_out >= float(min_rel) * imax
+        mz_out = mz_out[keep]
+        int_out = int_out[keep]
+    if mz_out.size > max_bins:
+        order = np.argsort(int_out)[::-1][:max_bins]
+        mz_out = mz_out[order]
+        int_out = int_out[order]
+    order = np.argsort(mz_out)
+    return {
+        "rt_min": lo,
+        "rt_max": hi,
+        "bin_width": width,
+        "n_scans": n_scans,
+        "mz": [float(v) for v in mz_out[order].tolist()],
+        "intensity": [float(v) for v in int_out[order].tolist()],
+    }
 
 
 def _read_uv_csv(path: Path) -> pd.DataFrame:

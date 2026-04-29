@@ -112,8 +112,8 @@ export function AIView() {
 
   const clearSelection = () => setSelectedSids(new Set());
 
-  const send = useCallback(async () => {
-    const trimmed = input.trim();
+  const send = useCallback(async (textOverride?: string) => {
+    const trimmed = (textOverride ?? input).trim();
     if (!trimmed || busy) return;
     setError(null);
 
@@ -218,14 +218,37 @@ export function AIView() {
                     turns.filter((t) => t.role === "user").length === 1 ? "" : "s"
                   }`}
             </div>
-            <button
-              type="button"
-              className="btn-ghost text-xs"
-              onClick={resetChat}
-              disabled={turns.length === 0 || busy}
-            >
-              Clear chat
-            </button>
+            <div className="flex items-center gap-2">
+              {turns.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-ghost text-xs"
+                  title="Export conversation as text"
+                  onClick={() => {
+                    const text = turns
+                      .map((t) => `${t.role === "user" ? "You" : "Assistant"}:\n${t.content}`)
+                      .join("\n\n");
+                    const blob = new Blob([text], { type: "text/plain" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `ai-chat-${new Date().toISOString().slice(0, 10)}.txt`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  <DownloadIcon className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn-ghost text-xs"
+                onClick={resetChat}
+                disabled={turns.length === 0 || busy}
+              >
+                Clear chat
+              </button>
+            </div>
           </div>
 
           <div
@@ -236,7 +259,7 @@ export function AIView() {
               <EmptyTranscript
                 status={status}
                 provider={provider}
-                onPick={(q) => setInput(q)}
+                onPick={(q) => { void send(q); }}
               />
             ) : (
               turns.map((t) =>
@@ -483,61 +506,70 @@ function ContextCard(props: {
         Include app context in prompt
       </label>
 
-      <label className="label mb-1 block">Focus module</label>
-      <select
-        className="input mb-2 w-full"
-        value={activeModule}
-        onChange={(e) => onActiveModuleChange(e.target.value as AIModuleName | "")}
-        disabled={!includeContext}
-      >
-        {moduleOptions.map((m) => (
-          <option key={m || "auto"} value={m}>
-            {m || "Auto (any module)"}
-          </option>
-        ))}
-      </select>
-
-      <p className="mb-2 text-[11px] text-ink-500">{summary}</p>
-
-      <div className="label mb-1 flex items-center justify-between">
-        <span>Loaded sessions</span>
-        {selectedSids.size > 0 && (
-          <button
-            type="button"
-            className="text-[10px] font-medium text-ink-500 hover:text-ink-700"
-            onClick={onClearSelection}
-          >
-            Clear ({selectedSids.size})
-          </button>
-        )}
-      </div>
-      {sessions.length === 0 ? (
-        <div className="rounded border border-dashed border-ink-200 px-2 py-3 text-[11px] text-ink-500">
-          No datasets loaded yet. Open another tab to upload a file, then Refresh here.
-        </div>
-      ) : (
-        <div className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
-          {sessions.map((s) => (
-            <label
-              key={s.session_id}
-              className="flex cursor-pointer items-center gap-2 rounded border border-ink-200 px-2 py-1 text-xs hover:bg-ink-50"
-            >
-              <input
-                type="checkbox"
-                checked={selectedSids.has(s.session_id)}
-                onChange={() => onToggleSession(s.session_id)}
-                disabled={!includeContext}
-              />
-              <span className="truncate" title={s.display_name}>
-                {s.display_name}
-              </span>
-            </label>
+      <div className={clsx("transition-opacity", !includeContext && "pointer-events-none opacity-40")}>
+        <label className="label mb-1 block">Focus module</label>
+        <select
+          className="input mb-2 w-full"
+          value={activeModule}
+          onChange={(e) => onActiveModuleChange(e.target.value as AIModuleName | "")}
+          disabled={!includeContext}
+        >
+          {moduleOptions.map((m) => (
+            <option key={m || "auto"} value={m}>
+              {m || "Auto (any module)"}
+            </option>
           ))}
+        </select>
+
+        <p className="mb-2 text-[11px] text-ink-500">{summary}</p>
+
+        <div className="label mb-1 flex items-center justify-between">
+          <span>
+            Loaded sessions
+            {selectedSids.size > 0 && (
+              <span className="ml-1.5 rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                {selectedSids.size} selected
+              </span>
+            )}
+          </span>
+          {selectedSids.size > 0 && (
+            <button
+              type="button"
+              className="text-[10px] font-medium text-ink-500 hover:text-ink-700"
+              onClick={onClearSelection}
+            >
+              Clear
+            </button>
+          )}
         </div>
-      )}
-      <p className="mt-2 text-[11px] text-ink-500">
-        Selected sessions narrow the filenames sent as prompt context. If nothing is selected, all loaded filenames are included.
-      </p>
+        {sessions.length === 0 ? (
+          <div className="rounded border border-dashed border-ink-200 px-2 py-3 text-[11px] text-ink-500">
+            No datasets loaded yet. Open another tab to upload a file, then Refresh here.
+          </div>
+        ) : (
+          <div className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
+            {sessions.map((s) => (
+              <label
+                key={s.session_id}
+                className="flex cursor-pointer items-center gap-2 rounded border border-ink-200 px-2 py-1 text-xs hover:bg-ink-50"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedSids.has(s.session_id)}
+                  onChange={() => onToggleSession(s.session_id)}
+                  disabled={!includeContext}
+                />
+                <span className="truncate" title={s.display_name}>
+                  {s.display_name}
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+        <p className="mt-2 text-[11px] text-ink-500">
+          Selected sessions narrow the filenames sent as prompt context. If nothing is selected, all loaded filenames are included.
+        </p>
+      </div>
     </div>
   );
 }
@@ -578,9 +610,10 @@ function EmptyTranscript({
             key={p}
             type="button"
             onClick={() => onPick(p)}
-            className="rounded-md border border-ink-200 bg-white px-3 py-2 text-left text-xs text-ink-700 hover:border-ink-400 hover:bg-ink-50"
+            className="flex items-center justify-between gap-2 rounded-md border border-ink-200 bg-white px-3 py-2 text-left text-xs text-ink-700 hover:border-ink-400 hover:bg-ink-50"
           >
-            {p}
+            <span>{p}</span>
+            <ArrowRightIcon className="h-3 w-3 shrink-0 text-ink-400" />
           </button>
         ))}
       </div>
@@ -599,10 +632,27 @@ function UserBubble({ text }: { text: string }) {
 }
 
 function AssistantBubble({ turn }: { turn: ChatTurn }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyContent = () => {
+    void navigator.clipboard.writeText(turn.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1000);
+    });
+  };
+
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-ink-200 bg-white px-3.5 py-2 text-sm text-ink-800 shadow-sm">
-        <div className="whitespace-pre-wrap">{turn.content}</div>
+    <div className="group flex justify-start">
+      <div className="relative max-w-[85%] rounded-2xl rounded-bl-sm border border-ink-200 bg-white px-3.5 py-2 text-sm text-ink-800 shadow-sm">
+        <button
+          type="button"
+          onClick={copyContent}
+          title="Copy message"
+          className="absolute right-2 top-2 hidden rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 group-hover:flex"
+        >
+          {copied ? <CheckIcon className="h-3.5 w-3.5 text-emerald-600" /> : <CopyIcon className="h-3.5 w-3.5" />}
+        </button>
+        <div className="whitespace-pre-wrap pr-6">{turn.content}</div>
         {(turn.is_mock || turn.error || turn.mode_hint || turn.used_context) && (
           <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-ink-100 pt-2 text-[10px] text-ink-500">
             {turn.mode_hint && <span>{turn.mode_hint}</span>}
@@ -731,6 +781,42 @@ function SpinnerIcon({ className }: { className?: string }) {
       aria-hidden="true"
     >
       <path d="M21 12a9 9 0 1 1-6.2-8.55" />
+    </svg>
+  );
+}
+
+function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function CopyIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function ArrowRightIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="5" y1="12" x2="19" y2="12" />
+      <polyline points="12 5 19 12 12 19" />
     </svg>
   );
 }

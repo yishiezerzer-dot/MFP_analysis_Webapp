@@ -129,6 +129,8 @@ class PlateReaderMICWizardConfig:
     use_first_row_as_header: bool = True
     sample_rows: List[int] = field(default_factory=list)  # 0-based indices
     control_rows: List[int] = field(default_factory=list)  # 0-based indices
+    blank_rows: List[int] = field(default_factory=list)  # 0-based indices
+    subtract_blank: bool = False
     concentration_columns: List[str] = field(default_factory=list)  # df column names in order
 
     # Tick labels shown on the X-axis for the selected columns (same length as concentration_columns).
@@ -180,6 +182,8 @@ class PlateReaderMICWizardResult:
     sample_std: List[float] = field(default_factory=list)
     control_mean: Optional[List[float]] = None
     control_std: Optional[List[float]] = None
+    blank_mean: Optional[List[float]] = None
+    blank_std: Optional[List[float]] = None
 
     def render(self, ax, *, config: Optional[PlateReaderMICWizardConfig]) -> None:
         """Render data into UI elements.
@@ -409,6 +413,8 @@ def build_mic_wizard_config_and_result(
     y_label: str,
     plot_type: str,
     control_style: str,
+    blank_rows: Optional[List[int]] = None,
+    subtract_blank: bool = False,
     prev_cfg: Optional[PlateReaderMICWizardConfig] = None,
 ) -> Tuple[PlateReaderMICWizardConfig, PlateReaderMICWizardResult, float]:
     """Build and return composed application state.
@@ -437,9 +443,20 @@ def build_mic_wizard_config_and_result(
             n = int(len(concentration_columns))
             tick_labels = [str(int(2 ** (n - 2 - i))) for i in range(n - 1)] + ["0"]
 
+    blank_rows = list(blank_rows or [])
+    blank_mean = None
+    blank_std = None
+    if blank_rows:
+        blank_mat, _blank_nan = coerce_numeric_matrix(df, row_indices=blank_rows, columns=concentration_columns)
+        if blank_mat.size:
+            blank_mean = np.nanmean(blank_mat, axis=0)
+            blank_std = np.nanstd(blank_mat, axis=0, ddof=1) if blank_mat.shape[0] > 1 else np.zeros(blank_mat.shape[1])
+
     sample_mat, sample_nan = coerce_numeric_matrix(df, row_indices=sample_rows, columns=concentration_columns)
     if sample_mat.size == 0:
         raise ValueError("Selected sample cells are empty.")
+    if bool(subtract_blank) and blank_mean is not None:
+        sample_mat = sample_mat - blank_mean
     sample_mean = np.nanmean(sample_mat, axis=0)
     sample_std = np.nanstd(sample_mat, axis=0, ddof=1) if sample_mat.shape[0] > 1 else np.zeros(sample_mat.shape[1])
 
@@ -448,6 +465,8 @@ def build_mic_wizard_config_and_result(
     if control_rows:
         ctrl_mat, _ctrl_nan = coerce_numeric_matrix(df, row_indices=control_rows, columns=concentration_columns)
         if ctrl_mat.size:
+            if bool(subtract_blank) and blank_mean is not None:
+                ctrl_mat = ctrl_mat - blank_mean
             control_mean = np.nanmean(ctrl_mat, axis=0)
             control_std = np.nanstd(ctrl_mat, axis=0, ddof=1) if ctrl_mat.shape[0] > 1 else np.zeros(ctrl_mat.shape[1])
 
@@ -455,6 +474,8 @@ def build_mic_wizard_config_and_result(
         use_first_row_as_header=bool(use_first_row_as_header),
         sample_rows=list(sample_rows),
         control_rows=list(control_rows),
+        blank_rows=list(blank_rows),
+        subtract_blank=bool(subtract_blank),
         concentration_columns=list(concentration_columns),
         tick_labels=list(tick_labels),
         auto_tick_labels_power2=bool(auto_power2),
@@ -504,6 +525,12 @@ def build_mic_wizard_config_and_result(
         control_std=([
             float(x) if np.isfinite(x) else float("nan") for x in control_std.tolist()
         ] if control_std is not None else None),
+        blank_mean=([
+            float(x) if np.isfinite(x) else float("nan") for x in blank_mean.tolist()
+        ] if blank_mean is not None else None),
+        blank_std=([
+            float(x) if np.isfinite(x) else float("nan") for x in blank_std.tolist()
+        ] if blank_std is not None else None),
     )
 
     return cfg, result, float(sample_nan)

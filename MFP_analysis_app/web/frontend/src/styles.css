@@ -174,8 +174,25 @@ body {
  * Design-system shortcuts
  * ------------------------------------------------------------------------- */
 
+/* Typography scale — use these instead of ad-hoc text-sm/xs classes */
+.text-heading {
+  @apply text-[11px] font-semibold tracking-wider uppercase text-ink-500;
+}
+.text-body {
+  @apply text-sm text-ink-800;
+}
+.text-caption {
+  @apply text-xs text-ink-500;
+}
+.text-mono-val {
+  @apply text-xs font-mono text-ink-600;
+}
+
 .card {
-  @apply rounded-xl border border-ink-200 bg-white shadow-card;
+  @apply rounded-xl border border-ink-200 bg-white shadow-card transition-shadow duration-150;
+}
+.card:focus-within {
+  @apply shadow-md ring-1 ring-brand-500/30;
 }
 
 .btn {
@@ -189,6 +206,30 @@ body {
 .btn-ghost {
   @apply btn text-ink-700 hover:bg-ink-100;
 }
+
+.btn-danger {
+  @apply btn border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20;
+}
+
+/* Drop-zone — shared by FTIR / PlateReader / DataStudio upload areas */
+.drop-zone {
+  @apply cursor-pointer rounded-lg border-2 border-dashed border-ink-300 p-6 text-center transition-colors hover:border-brand-500 hover:bg-brand-50/40;
+}
+.drop-zone.drag-over {
+  @apply border-brand-500 bg-brand-50/60;
+}
+
+/* Toast animations */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0)   scale(1); }
+  to   { opacity: 0; transform: translateY(8px) scale(0.97); }
+}
+.toast-enter { animation: toast-in  180ms ease forwards; }
+.toast-leave { animation: toast-out 180ms ease forwards; }
 
 .nav-item {
   @apply flex items-center gap-2 rounded-md px-3 py-2 text-sm text-ink-600 hover:bg-ink-100;

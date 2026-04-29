@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Plot from "react-plotly.js";
-import type { Data } from "plotly.js";
+import Plotly from "plotly.js-dist-min";
+import type { Data, PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
 import {
   api,
@@ -12,10 +13,104 @@ import {
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 
-type RowRole = "none" | "sample" | "control";
+type RowRole = "none" | "sample" | "control" | "blank";
+
+interface MICChartSettings {
+  sampleColor: string;
+  controlColor: string;
+  blankColor: string;
+  lineWidth: number;
+  markerSize: number;
+  barWidth: number;
+  height: number;
+  showGrid: boolean;
+  showLegend: boolean;
+}
+
+const DEFAULT_MIC_CHART_SETTINGS: MICChartSettings = {
+  sampleColor: "#5573b9",
+  controlColor: "#1e2636",
+  blankColor: "#a16207",
+  lineWidth: 1.8,
+  markerSize: 7,
+  barWidth: 0.26,
+  height: 380,
+  showGrid: true,
+  showLegend: true,
+};
+
+interface PlateWorkspaceEnvelope {
+  version: 1;
+  module: "Plate Reader";
+  createdAt: string;
+  sessions: PlateSessionSummary[];
+  sessionNames: Record<string, string>;
+  activeSessionId: string | null;
+  viewState: {
+    sheet: string | null;
+    useHeader: boolean;
+    rowRoles: Record<number, RowRole>;
+    concCols: string[];
+    tickText: string;
+    autoPow2: boolean;
+    subtractBlank: boolean;
+    title: string;
+    xLabel: string;
+    yLabel: string;
+    plotType: MICPlotType;
+    controlStyle: MICControlStyle;
+    chartSettings: MICChartSettings;
+  };
+  analysisState: {
+    mic: MICResult | null;
+  };
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadJson(value: unknown, filename: string) {
+  downloadBlob(
+    new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }),
+    filename,
+  );
+}
+
+function readJsonFile<T>(file: File): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        resolve(JSON.parse(String(reader.result)) as T);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file."));
+    reader.readAsText(file);
+  });
+}
+
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadCsv(rows: unknown[][], filename: string) {
+  const text = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  downloadBlob(new Blob([text], { type: "text/csv;charset=utf-8" }), filename);
+}
 
 export function PlateReaderView() {
   const [sessions, setSessions] = useState<PlateSessionSummary[]>([]);
+  const [sessionNames, setSessionNames] = useState<Record<string, string>>({});
   const [activeSid, setActiveSid] = useState<string | null>(null);
   const [sheet, setSheet] = useState<string | null>(null);
   const [useHeader, setUseHeader] = useState(true);
@@ -28,18 +123,26 @@ export function PlateReaderView() {
   const [concCols, setConcCols] = useState<string[]>([]);
   const [tickText, setTickText] = useState("");
   const [autoPow2, setAutoPow2] = useState(true);
+  const [subtractBlank, setSubtractBlank] = useState(false);
   const [title, setTitle] = useState("MIC");
-  const [xLabel, setXLabel] = useState("Concentration");
-  const [yLabel, setYLabel] = useState("OD 600nm");
+  const [xLabel, setXLabel] = useState("Concentration (µg/mL)");
+  const [yLabel, setYLabel] = useState("OD₆₀₀");
   const [plotType, setPlotType] = useState<MICPlotType>("bar");
   const [controlStyle, setControlStyle] = useState<MICControlStyle>("bars");
   const [mic, setMic] = useState<MICResult | null>(null);
+  const [chartSettings, setChartSettings] = useState<MICChartSettings>(DEFAULT_MIC_CHART_SETTINGS);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const workspaceFileRef = useRef<HTMLInputElement>(null);
+  const plotRef = useRef<PlotlyHTMLElement | null>(null);
 
   const active = useMemo(
     () => sessions.find((s) => s.session_id === activeSid) ?? null,
     [sessions, activeSid],
+  );
+  const displayNameFor = useCallback(
+    (session: PlateSessionSummary) => sessionNames[session.session_id] || session.display_name,
+    [sessionNames],
   );
 
   useEffect(() => {
@@ -47,6 +150,10 @@ export function PlateReaderView() {
       .list()
       .then((list) => {
         setSessions(list);
+        setSessionNames((prev) => ({
+          ...Object.fromEntries(list.map((session) => [session.session_id, session.display_name])),
+          ...prev,
+        }));
         if (list.length && !activeSid) setActiveSid(list[0].session_id);
       })
       .catch((err) => setError(String(err)));
@@ -82,23 +189,14 @@ export function PlateReaderView() {
     if (activeSid) void loadPreview();
   }, [activeSid, sheet, useHeader]); // eslint-disable-line
 
-  const onUpload = async (file: File) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const s = await api.plateReader.upload(file);
-      setSessions((prev) => [...prev, s]);
-      setActiveSid(s.session_id);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const onRemove = async (sid: string) => {
     await api.plateReader.remove(sid).catch((e) => setError(String(e)));
     setSessions((prev) => prev.filter((s) => s.session_id !== sid));
+    setSessionNames((prev) => {
+      const next = { ...prev };
+      delete next[sid];
+      return next;
+    });
     if (activeSid === sid) {
       setActiveSid(null);
       setPreview(null);
@@ -106,19 +204,46 @@ export function PlateReaderView() {
     }
   };
 
-  const cycleRole = (idx: number) => {
+  const setRole = (idx: number, role: RowRole) => {
     setRowRoles((prev) => {
-      const cur = prev[idx] ?? "none";
-      const next: RowRole = cur === "none" ? "sample" : cur === "sample" ? "control" : "none";
       const copy = { ...prev };
-      if (next === "none") delete copy[idx];
-      else copy[idx] = next;
+      if (role === "none") delete copy[idx];
+      else copy[idx] = role;
       return copy;
     });
   };
 
   const toggleConcCol = (col: string) => {
     setConcCols((prev) => (prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]));
+  };
+
+  const moveConcCol = (col: string, dir: -1 | 1) => {
+    setConcCols((prev) => {
+      const idx = prev.indexOf(col);
+      if (idx < 0) return prev;
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+      return next;
+    });
+  };
+
+  const onUpload = async (file: File) => {
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+    setTitle(baseName || "MIC");
+    setBusy(true);
+    setError(null);
+    try {
+      const s = await api.plateReader.upload(file);
+      setSessions((prev) => [...prev, s]);
+      setSessionNames((prev) => ({ ...prev, [s.session_id]: s.display_name }));
+      setActiveSid(s.session_id);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const sampleRows = useMemo(
@@ -137,8 +262,36 @@ export function PlateReaderView() {
         .sort((a, b) => a - b),
     [rowRoles],
   );
+  const blankRows = useMemo(
+    () =>
+      Object.entries(rowRoles)
+        .filter(([, r]) => r === "blank")
+        .map(([i]) => Number(i))
+        .sort((a, b) => a - b),
+    [rowRoles],
+  );
 
   const canRun = activeSid && sampleRows.length > 0 && concCols.length > 0;
+
+  const autoPickNumericColumns = () => {
+    if (!preview) return;
+    const roleRows = [...sampleRows, ...controlRows, ...blankRows];
+    const rowsToScan = roleRows.length > 0 ? roleRows : preview.rows.map((_, idx) => idx);
+    const numericColumns = preview.columns.filter((_, colIdx) =>
+      rowsToScan.some((rowIdx) => {
+        const raw = preview.rows[rowIdx]?.[colIdx];
+        if (raw === undefined || raw === null || String(raw).trim() === "") return false;
+        return Number.isFinite(Number(String(raw).replace(",", ".")));
+      }),
+    );
+    setConcCols(numericColumns);
+  };
+
+  const clearSelections = () => {
+    setRowRoles({});
+    setConcCols([]);
+    setMic(null);
+  };
 
   const runMIC = async () => {
     if (!activeSid) return;
@@ -150,6 +303,8 @@ export function PlateReaderView() {
         use_first_row_as_header: useHeader,
         sample_rows: sampleRows,
         control_rows: controlRows,
+        blank_rows: blankRows,
+        subtract_blank: subtractBlank,
         concentration_columns: concCols,
         tick_text: tickText,
         auto_tick_labels_power2: autoPow2,
@@ -165,6 +320,156 @@ export function PlateReaderView() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const renameSession = (session: PlateSessionSummary) => {
+    const nextName = window.prompt("Session name", displayNameFor(session));
+    if (!nextName?.trim()) return;
+    setSessionNames((prev) => ({ ...prev, [session.session_id]: nextName.trim() }));
+  };
+
+  const clearSessions = async () => {
+    if (sessions.length === 0) return;
+    if (!window.confirm("Clear all Plate Reader sessions?")) return;
+    await Promise.all(sessions.map((session) => api.plateReader.remove(session.session_id).catch(() => null)));
+    setSessions([]);
+    setSessionNames({});
+    setActiveSid(null);
+    setPreview(null);
+    setMic(null);
+    setRowRoles({});
+    setConcCols([]);
+    setSubtractBlank(false);
+  };
+
+  const saveWorkspace = () => {
+    const workspace: PlateWorkspaceEnvelope = {
+      version: 1,
+      module: "Plate Reader",
+      createdAt: new Date().toISOString(),
+      sessions,
+      sessionNames,
+      activeSessionId: activeSid,
+      viewState: {
+        sheet,
+        useHeader,
+        rowRoles,
+        concCols,
+        tickText,
+        autoPow2,
+        subtractBlank,
+        title,
+        xLabel,
+        yLabel,
+        plotType,
+        controlStyle,
+        chartSettings,
+      },
+      analysisState: {
+        mic,
+      },
+    };
+    downloadJson(workspace, "plate-reader.workspace.json");
+  };
+
+  const loadWorkspaceFile = async (file: File) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const workspace = await readJsonFile<PlateWorkspaceEnvelope>(file);
+      if (workspace.module !== "Plate Reader") {
+        throw new Error("This is not a Plate Reader workspace file.");
+      }
+      const availableIds = new Set(sessions.map((session) => session.session_id));
+      const missing = workspace.sessions.filter((session) => !availableIds.has(session.session_id));
+      setSessionNames((prev) => ({ ...prev, ...(workspace.sessionNames ?? {}) }));
+      setSheet(workspace.viewState.sheet ?? null);
+      setUseHeader(workspace.viewState.useHeader ?? true);
+      setRowRoles(workspace.viewState.rowRoles ?? {});
+      setConcCols(workspace.viewState.concCols ?? []);
+      setTickText(workspace.viewState.tickText ?? "");
+      setAutoPow2(workspace.viewState.autoPow2 ?? true);
+      setSubtractBlank(workspace.viewState.subtractBlank ?? false);
+      setTitle(workspace.viewState.title ?? "MIC");
+      setXLabel(workspace.viewState.xLabel ?? "Concentration");
+      setYLabel(workspace.viewState.yLabel ?? "OD 600nm");
+      setPlotType(workspace.viewState.plotType ?? "bar");
+      setControlStyle(workspace.viewState.controlStyle ?? "bars");
+      setChartSettings({
+        ...DEFAULT_MIC_CHART_SETTINGS,
+        ...(workspace.viewState.chartSettings ?? {}),
+      });
+      setMic(workspace.analysisState.mic ?? null);
+      const restoredActive =
+        workspace.activeSessionId && availableIds.has(workspace.activeSessionId)
+          ? workspace.activeSessionId
+          : workspace.sessions.find((session) => availableIds.has(session.session_id))?.session_id;
+      if (restoredActive) {
+        setActiveSid(restoredActive);
+      }
+      if (missing.length > 0) {
+        setError(
+          `Loaded workspace settings, but ${missing.length} source session(s) are not loaded in the current server.`,
+        );
+      }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportMICCsv = () => {
+    if (!mic) return;
+    const rows: unknown[][] = [
+      [
+        "concentration",
+        "tick_label",
+        "sample_mean",
+        "sample_std",
+        "control_mean",
+        "control_std",
+        "blank_mean",
+        "blank_std",
+      ],
+    ];
+    mic.result.concentrations.forEach((conc, idx) => {
+      rows.push([
+        conc,
+        mic.result.x_tick_labels[idx] ?? "",
+        mic.result.sample_mean[idx],
+        mic.result.sample_std[idx],
+        mic.result.control_mean?.[idx] ?? "",
+        mic.result.control_std?.[idx] ?? "",
+        mic.result.blank_mean?.[idx] ?? "",
+        mic.result.blank_std?.[idx] ?? "",
+      ]);
+    });
+    downloadCsv(rows, "plate-reader-mic.csv");
+  };
+
+  const exportMICJson = () => {
+    if (!mic) return;
+    downloadJson(
+      {
+        exportedAt: new Date().toISOString(),
+        activeSession: active,
+        displayName: active ? displayNameFor(active) : null,
+        chartSettings,
+        mic,
+      },
+      "plate-reader-mic.json",
+    );
+  };
+
+  const exportPlotImage = (format: "png" | "svg") => {
+    if (!plotRef.current) return;
+    void Plotly.downloadImage(plotRef.current, {
+      format,
+      filename: `plate-reader-mic.${format}`,
+      width: 1100,
+      height: chartSettings.height,
+    });
   };
 
   usePageHeader(
@@ -184,6 +489,26 @@ export function PlateReaderView() {
               e.target.value = "";
             }}
           />
+          <input
+            ref={workspaceFileRef}
+            type="file"
+            accept=".json,.plate_reader.workspace.json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void loadWorkspaceFile(f);
+              e.target.value = "";
+            }}
+          />
+          <button className="btn-ghost" disabled={busy} onClick={() => workspaceFileRef.current?.click()}>
+            Load workspace
+          </button>
+          <button className="btn-ghost" disabled={busy || sessions.length === 0} onClick={saveWorkspace}>
+            Save workspace
+          </button>
+          <button className="btn-ghost" disabled={busy || sessions.length === 0} onClick={clearSessions}>
+            Clear
+          </button>
           <button className="btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}>
             {busy ? "Working…" : "Open plate…"}
           </button>
@@ -221,13 +546,23 @@ export function PlateReaderView() {
                 onClick={() => setActiveSid(s.session_id)}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{s.display_name}</div>
+                  <div className="truncate font-medium">{displayNameFor(s)}</div>
                   <div className="text-[11px] text-ink-500">
                     {s.sheets.length
                       ? `${s.sheets.length} sheet${s.sheets.length === 1 ? "" : "s"}`
                       : "CSV"}
                   </div>
                 </div>
+                <button
+                  className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 group-hover:visible"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    renameSession(s);
+                  }}
+                  title="Rename"
+                >
+                  Rename
+                </button>
                 <button
                   className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 group-hover:visible"
                   onClick={(e) => {
@@ -250,6 +585,7 @@ export function PlateReaderView() {
             <>
               <LoadControls
                 active={active}
+                displayName={displayNameFor(active)}
                 sheet={sheet}
                 setSheet={setSheet}
                 useHeader={useHeader}
@@ -261,8 +597,9 @@ export function PlateReaderView() {
                   preview={preview}
                   rowRoles={rowRoles}
                   concCols={concCols}
-                  onCycleRole={cycleRole}
+                  onSetRole={setRole}
                   onToggleCol={toggleConcCol}
+                  onMoveConcCol={moveConcCol}
                 />
               )}
 
@@ -270,11 +607,14 @@ export function PlateReaderView() {
                 <WizardForm
                   sampleRows={sampleRows}
                   controlRows={controlRows}
+                  blankRows={blankRows}
                   concCols={concCols}
                   tickText={tickText}
                   setTickText={setTickText}
                   autoPow2={autoPow2}
                   setAutoPow2={setAutoPow2}
+                  subtractBlank={subtractBlank}
+                  setSubtractBlank={setSubtractBlank}
                   title={title}
                   setTitle={setTitle}
                   xLabel={xLabel}
@@ -288,10 +628,70 @@ export function PlateReaderView() {
                   canRun={!!canRun}
                   busy={busy}
                   onRun={runMIC}
+                  onAutoPickNumericCols={autoPickNumericColumns}
+                  onReverseConcCols={() => setConcCols((prev) => [...prev].reverse())}
+                  onClearSelections={clearSelections}
                 />
               )}
 
-              {mic && <MICChart mic={mic} />}
+              {mic && (
+                <div className="card shrink-0 border-brand-200 bg-brand-50/50 px-4 py-3">
+                  <div className="text-heading mb-2">MIC Analysis Complete</div>
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    <span>
+                      <span className="font-medium text-ink-600">Sample rows:</span>{" "}
+                      <span className="font-mono text-brand-700">{sampleRows.length}</span>
+                    </span>
+                    <span>
+                      <span className="font-medium text-ink-600">Control rows:</span>{" "}
+                      <span className="font-mono text-brand-700">{controlRows.length}</span>
+                    </span>
+                    <span>
+                      <span className="font-medium text-ink-600">Blank rows:</span>{" "}
+                      <span className="font-mono text-brand-700">{blankRows.length}</span>
+                    </span>
+                    <span>
+                      <span className="font-medium text-ink-600">Concentrations:</span>{" "}
+                      <span className="font-mono text-brand-700">{concCols.length}</span>
+                    </span>
+                    {blankRows.length > 0 && subtractBlank && (
+                      <span className="text-amber-700">Blank-subtracted</span>
+                    )}
+                    {mic.result.concentrations.length > 0 && (
+                      <span>
+                        <span className="font-medium text-ink-600">Range:</span>{" "}
+                        <span className="font-mono text-brand-700">
+                          {mic.result.concentrations[0]} – {mic.result.concentrations[mic.result.concentrations.length - 1]}
+                        </span>
+                      </span>
+                    )}
+                    {mic.sample_nan_ratio > 0 && (
+                      <span className="text-amber-700">
+                        ⚠ {(mic.sample_nan_ratio * 100).toFixed(1)}% non-numeric cells ignored
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {mic && (
+                <>
+                  <ChartControls
+                    settings={chartSettings}
+                    setSettings={setChartSettings}
+                    onExportCsv={exportMICCsv}
+                    onExportJson={exportMICJson}
+                    onExportPng={() => exportPlotImage("png")}
+                    onExportSvg={() => exportPlotImage("svg")}
+                  />
+                  <MICChart
+                    mic={mic}
+                    settings={chartSettings}
+                    onReady={(plot) => {
+                      plotRef.current = plot;
+                    }}
+                  />
+                </>
+              )}
             </>
           )}
         </div>
@@ -304,6 +704,7 @@ export function PlateReaderView() {
 
 function LoadControls(props: {
   active: PlateSessionSummary;
+  displayName: string;
   sheet: string | null;
   setSheet: (s: string | null) => void;
   useHeader: boolean;
@@ -314,7 +715,7 @@ function LoadControls(props: {
     <div className="card flex shrink-0 flex-wrap items-end gap-4 px-4 py-3">
       <div>
         <div className="label">File</div>
-        <div className="text-sm font-medium">{props.active.display_name}</div>
+        <div className="text-sm font-medium">{props.displayName}</div>
       </div>
       {hasSheets && (
         <div>
@@ -344,12 +745,27 @@ function LoadControls(props: {
   );
 }
 
+function roleLabel(role: RowRole) {
+  if (role === "sample") return "S";
+  if (role === "control") return "C";
+  if (role === "blank") return "B";
+  return "-";
+}
+
+function activeRoleClass(role: RowRole) {
+  if (role === "sample") return "bg-brand-500 text-white";
+  if (role === "control") return "bg-ink-800 text-white";
+  if (role === "blank") return "bg-amber-500 text-white";
+  return "bg-ink-200 text-ink-600";
+}
+
 function PreviewTable(props: {
   preview: PlatePreview;
   rowRoles: Record<number, RowRole>;
   concCols: string[];
-  onCycleRole: (idx: number) => void;
+  onSetRole: (idx: number, role: RowRole) => void;
   onToggleCol: (col: string) => void;
+  onMoveConcCol: (col: string, dir: -1 | 1) => void;
 }) {
   const { preview, rowRoles, concCols } = props;
   return (
@@ -359,9 +775,7 @@ function PreviewTable(props: {
         <div className="text-xs text-ink-500">
           {preview.n_rows_preview.toLocaleString()} of{" "}
           {preview.n_rows_total.toLocaleString()} rows · {preview.n_cols_total} cols
-          <span className="ml-3 rounded bg-ink-50 px-1.5 py-0.5 font-medium text-ink-600">
-            click row # to cycle: none → sample → control
-          </span>
+          <span className="ml-3 text-ink-400">Click column headers to mark concentration. Use row buttons to assign roles.</span>
         </div>
       </div>
 
@@ -371,16 +785,27 @@ function PreviewTable(props: {
           {concCols.map((c, i) => (
             <span
               key={c}
-              className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 font-medium ring-1 ring-ink-200"
+              className="inline-flex items-center gap-0.5 rounded-full bg-white px-2 py-0.5 font-medium ring-1 ring-ink-200"
             >
-              <span className="text-[10px] text-ink-500">{i + 1}</span>
+              <span className="text-[10px] text-ink-400 mr-0.5">{i + 1}</span>
               <span>{c}</span>
               <button
-                className="text-ink-400 hover:text-ink-900"
+                className="px-0.5 text-ink-400 hover:text-ink-900 disabled:opacity-30"
+                onClick={() => props.onMoveConcCol(c, -1)}
+                disabled={i === 0}
+                title="Move left"
+              >↑</button>
+              <button
+                className="px-0.5 text-ink-400 hover:text-ink-900 disabled:opacity-30"
+                onClick={() => props.onMoveConcCol(c, 1)}
+                disabled={i === concCols.length - 1}
+                title="Move right"
+              >↓</button>
+              <button
+                className="ml-1 text-ink-300 hover:text-red-500"
                 onClick={() => props.onToggleCol(c)}
-              >
-                ✕
-              </button>
+                title="Remove"
+              >✕</button>
             </span>
           ))}
         </div>
@@ -416,18 +841,22 @@ function PreviewTable(props: {
               const role = rowRoles[i] ?? "none";
               return (
                 <tr key={i} className="even:bg-ink-50/50">
-                  <td
-                    className={clsx(
-                      "cursor-pointer select-none border-b border-ink-100 px-2 py-1 font-medium",
-                      role === "sample" && "bg-brand-500 text-white",
-                      role === "control" && "bg-ink-800 text-white",
-                      role === "none" && "bg-white text-ink-500 hover:bg-ink-100",
-                    )}
-                    onClick={() => props.onCycleRole(i)}
-                    title={`Row ${i + 1}: click to cycle role (currently ${role})`}
-                  >
-                    {role === "sample" ? "S " : role === "control" ? "C " : ""}
-                    {i + 1}
+                  <td className="border-b border-ink-100 px-1 py-0.5 whitespace-nowrap">
+                    <div className="flex items-center gap-1">
+                      <span className="w-5 shrink-0 text-right text-[10px] text-ink-400">{i + 1}</span>
+                      {(["none", "sample", "control", "blank"] as RowRole[]).map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => props.onSetRole(i, r)}
+                          className={clsx(
+                            "rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
+                            role === r ? activeRoleClass(r) : "border border-ink-200 bg-white text-ink-400 hover:bg-ink-100",
+                          )}
+                        >
+                          {roleLabel(r)}
+                        </button>
+                      ))}
+                    </div>
                   </td>
                   {row.map((cell, j) => (
                     <td
@@ -453,11 +882,14 @@ function PreviewTable(props: {
 function WizardForm(props: {
   sampleRows: number[];
   controlRows: number[];
+  blankRows: number[];
   concCols: string[];
   tickText: string;
   setTickText: (s: string) => void;
   autoPow2: boolean;
   setAutoPow2: (b: boolean) => void;
+  subtractBlank: boolean;
+  setSubtractBlank: (b: boolean) => void;
   title: string;
   setTitle: (s: string) => void;
   xLabel: string;
@@ -471,6 +903,9 @@ function WizardForm(props: {
   canRun: boolean;
   busy: boolean;
   onRun: () => void;
+  onAutoPickNumericCols: () => void;
+  onReverseConcCols: () => void;
+  onClearSelections: () => void;
 }) {
   return (
     <div className="card shrink-0 p-4">
@@ -482,6 +917,9 @@ function WizardForm(props: {
           </span>
           <span className="mr-3">
             Control rows: <b>{props.controlRows.length}</b>
+          </span>
+          <span className="mr-3">
+            Blank rows: <b>{props.blankRows.length}</b>
           </span>
           <span>
             Conc. columns: <b>{props.concCols.length}</b>
@@ -543,6 +981,33 @@ function WizardForm(props: {
             Enabled (used when tick labels field is empty)
           </label>
         </Field>
+        <Field label="Blank subtraction">
+          <label className="mt-1.5 inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={props.subtractBlank}
+              disabled={props.blankRows.length === 0}
+              onChange={(e) => props.setSubtractBlank(e.target.checked)}
+            />
+            Subtract blank row mean
+          </label>
+        </Field>
+        <div className="flex flex-wrap items-end gap-2">
+          <button className="btn-ghost" type="button" onClick={props.onAutoPickNumericCols}>
+            Auto numeric cols
+          </button>
+          <button
+            className="btn-ghost"
+            type="button"
+            disabled={props.concCols.length < 2}
+            onClick={props.onReverseConcCols}
+          >
+            Reverse cols
+          </button>
+          <button className="btn-ghost" type="button" onClick={props.onClearSelections}>
+            Clear picks
+          </button>
+        </div>
         <div className="flex items-end">
           <button
             className="btn-primary w-full justify-center"
@@ -595,7 +1060,134 @@ function Segmented<T extends string>(props: {
   );
 }
 
-function MICChart({ mic }: { mic: MICResult }) {
+function ChartControls(props: {
+  settings: MICChartSettings;
+  setSettings: React.Dispatch<React.SetStateAction<MICChartSettings>>;
+  onExportCsv: () => void;
+  onExportJson: () => void;
+  onExportPng: () => void;
+  onExportSvg: () => void;
+}) {
+  const setNumber = (key: keyof MICChartSettings, value: string, min: number, max: number) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    props.setSettings((prev) => ({ ...prev, [key]: Math.min(max, Math.max(min, parsed)) }));
+  };
+
+  return (
+    <div className="card shrink-0 p-4">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h3 className="text-sm font-semibold">MIC plot and exports</h3>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-ghost" onClick={props.onExportCsv}>CSV</button>
+          <button className="btn-ghost" onClick={props.onExportJson}>JSON</button>
+          <button className="btn-ghost" onClick={props.onExportPng}>PNG</button>
+          <button className="btn-ghost" onClick={props.onExportSvg}>SVG</button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Field label="Sample color">
+          <input
+            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-white p-1"
+            type="color"
+            value={props.settings.sampleColor}
+            onChange={(e) => props.setSettings((prev) => ({ ...prev, sampleColor: e.target.value }))}
+          />
+        </Field>
+        <Field label="Control color">
+          <input
+            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-white p-1"
+            type="color"
+            value={props.settings.controlColor}
+            onChange={(e) => props.setSettings((prev) => ({ ...prev, controlColor: e.target.value }))}
+          />
+        </Field>
+        <Field label="Blank color">
+          <input
+            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-white p-1"
+            type="color"
+            value={props.settings.blankColor}
+            onChange={(e) => props.setSettings((prev) => ({ ...prev, blankColor: e.target.value }))}
+          />
+        </Field>
+        <Field label="Line width">
+          <input
+            className="input"
+            type="number"
+            min={0.2}
+            max={10}
+            step={0.1}
+            value={props.settings.lineWidth}
+            onChange={(e) => setNumber("lineWidth", e.target.value, 0.2, 10)}
+          />
+        </Field>
+        <Field label="Marker size">
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={30}
+            step={1}
+            value={props.settings.markerSize}
+            onChange={(e) => setNumber("markerSize", e.target.value, 1, 30)}
+          />
+        </Field>
+        <Field label="Bar width">
+          <input
+            className="input"
+            type="number"
+            min={0.05}
+            max={0.9}
+            step={0.05}
+            value={props.settings.barWidth}
+            onChange={(e) => setNumber("barWidth", e.target.value, 0.05, 0.9)}
+          />
+        </Field>
+        <Field label="Height">
+          <input
+            className="input"
+            type="number"
+            min={260}
+            max={900}
+            step={20}
+            value={props.settings.height}
+            onChange={(e) => setNumber("height", e.target.value, 260, 900)}
+          />
+        </Field>
+        <Field label="Layout">
+          <div className="mt-1.5 flex flex-wrap gap-3 text-sm">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={props.settings.showGrid}
+                onChange={(e) => props.setSettings((prev) => ({ ...prev, showGrid: e.target.checked }))}
+              />
+              Grid
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={props.settings.showLegend}
+                onChange={(e) => props.setSettings((prev) => ({ ...prev, showLegend: e.target.checked }))}
+              />
+              Legend
+            </label>
+          </div>
+        </Field>
+      </div>
+    </div>
+  );
+}
+
+function MICChart({
+  mic,
+  settings,
+  onReady,
+}: {
+  mic: MICResult;
+  settings: MICChartSettings;
+  onReady: (plot: PlotlyHTMLElement) => void;
+}) {
   const { config, result, sample_nan_ratio } = mic;
   const xs = result.concentrations;
   const labels = result.x_tick_labels;
@@ -603,12 +1195,15 @@ function MICChart({ mic }: { mic: MICResult }) {
     result.control_mean !== null &&
     Array.isArray(result.control_mean) &&
     result.control_mean.length === result.sample_mean.length;
+  const hasBlank =
+    Array.isArray(result.blank_mean) &&
+    result.blank_mean.length === result.sample_mean.length;
 
   const errBars = (arr: number[] | null | undefined) => ({
     type: "data" as const,
     array: (arr ?? []) as number[],
     visible: true,
-    thickness: 1,
+    thickness: Math.max(0.8, settings.lineWidth * 0.55),
   });
 
   const data: Data[] = [];
@@ -620,7 +1215,8 @@ function MICChart({ mic }: { mic: MICResult }) {
         x: xs,
         y: result.sample_mean,
         error_y: errBars(result.sample_std),
-        marker: { color: config.sample_color },
+        marker: { color: settings.sampleColor },
+        width: settings.barWidth,
         offsetgroup: "sample",
       } as unknown as Data);
       data.push({
@@ -629,7 +1225,8 @@ function MICChart({ mic }: { mic: MICResult }) {
         x: xs,
         y: result.control_mean!,
         error_y: errBars(result.control_std),
-        marker: { color: config.control_color },
+        marker: { color: settings.controlColor },
+        width: settings.barWidth,
         offsetgroup: "control",
       } as unknown as Data);
     } else {
@@ -639,7 +1236,8 @@ function MICChart({ mic }: { mic: MICResult }) {
         x: xs,
         y: result.sample_mean,
         error_y: errBars(result.sample_std),
-        marker: { color: config.sample_color },
+        marker: { color: settings.sampleColor },
+        width: settings.barWidth,
       });
       if (hasControl) {
         data.push({
@@ -649,8 +1247,8 @@ function MICChart({ mic }: { mic: MICResult }) {
           x: xs,
           y: result.control_mean!,
           error_y: errBars(result.control_std),
-          line: { color: config.control_color, width: 1.6 },
-          marker: { color: config.control_color, size: 7 },
+          line: { color: settings.controlColor, width: settings.lineWidth },
+          marker: { color: settings.controlColor, size: settings.markerSize },
         });
       }
     }
@@ -663,8 +1261,8 @@ function MICChart({ mic }: { mic: MICResult }) {
       x: xs,
       y: result.sample_mean,
       error_y: errBars(result.sample_std),
-      line: { color: config.sample_color, width: 1.6 },
-      marker: { color: config.sample_color, size: 7 },
+      line: { color: settings.sampleColor, width: settings.lineWidth },
+      marker: { color: settings.sampleColor, size: settings.markerSize },
     });
     if (hasControl) {
       data.push({
@@ -674,10 +1272,22 @@ function MICChart({ mic }: { mic: MICResult }) {
         x: xs,
         y: result.control_mean!,
         error_y: errBars(result.control_std),
-        line: { color: config.control_color, width: 1.6 },
-        marker: { color: config.control_color, size: 7 },
+        line: { color: settings.controlColor, width: settings.lineWidth },
+        marker: { color: settings.controlColor, size: settings.markerSize },
       });
     }
+  }
+  if (hasBlank) {
+    data.push({
+      type: "scatter",
+      mode: "lines+markers",
+      name: config.subtract_blank ? "Blank baseline" : "Blank",
+      x: xs,
+      y: result.blank_mean!,
+      error_y: errBars(result.blank_std),
+      line: { color: settings.blankColor, width: settings.lineWidth, dash: "dot" },
+      marker: { color: settings.blankColor, size: Math.max(4, settings.markerSize - 1) },
+    });
   }
 
   return (
@@ -699,7 +1309,7 @@ function MICChart({ mic }: { mic: MICResult }) {
       <Plot
         data={data}
         layout={{
-          height: 380,
+          height: settings.height,
           margin: { l: 60, r: 20, t: 20, b: 50 },
           barmode: "group",
           bargap: 0.25,
@@ -709,19 +1319,23 @@ function MICChart({ mic }: { mic: MICResult }) {
             tickvals: xs,
             ticktext: labels,
             autorange: config.invert_x ? "reversed" : true,
+            showgrid: settings.showGrid,
           },
           yaxis: {
             title: { text: config.y_label || "OD 600nm" },
             rangemode: "tozero",
+            showgrid: settings.showGrid,
           },
           plot_bgcolor: "#ffffff",
           paper_bgcolor: "#ffffff",
-          showlegend: true,
+          showlegend: settings.showLegend,
           legend: { orientation: "h", y: -0.2 },
         }}
         config={{ responsive: true, displaylogo: false }}
         style={{ width: "100%" }}
         useResizeHandler
+        onInitialized={(_, graphDiv) => onReady(graphDiv as PlotlyHTMLElement)}
+        onUpdate={(_, graphDiv) => onReady(graphDiv as PlotlyHTMLElement)}
       />
     </div>
   );

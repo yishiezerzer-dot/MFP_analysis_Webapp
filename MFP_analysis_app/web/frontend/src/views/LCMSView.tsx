@@ -1,5 +1,6 @@
 import {
   ChangeEvent,
+  DependencyList,
   ReactNode,
   useCallback,
   useEffect,
@@ -12,6 +13,8 @@ import type { PlotMouseEvent, PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
 import {
   api,
+  LCMSEICData,
+  LCMSTICOverlayTrace,
   LCMSSessionSummary,
   PolymerSettings,
   SpectrumData,
@@ -34,27 +37,113 @@ function schedulePlotResize() {
 function useContainerSize(
   ref: React.RefObject<HTMLDivElement>,
   fallbackHeight = 300,
-): { height: number; width?: number } {
-  const [size, setSize] = useState<{ height: number; width?: number }>({
+): { height: number; width?: number; revision: number } {
+  const [size, setSize] = useState<{ height: number; width?: number; revision: number }>({
     height: fallbackHeight,
+    revision: 0,
+  });
+  const sizeRef = useRef<{ height: number; width?: number; revision: number }>({
+    height: fallbackHeight,
+    revision: 0,
   });
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(([entry]) => {
-      const h = Math.floor(entry.contentRect.height);
-      const w = Math.floor(entry.contentRect.width);
-      setSize((prev) => {
-        const height = h > 0 ? h : prev.height;
-        const width = w > 0 ? w : prev.width;
-        return height === prev.height && width === prev.width ? prev : { height, width };
-      });
+    const animationFrames = new Set<number>();
+    const timers = new Set<number>();
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      const h = Math.floor(rect.height);
+      const w = Math.floor(rect.width);
+      const height = h > 0 ? h : sizeRef.current.height;
+      const width = w > 0 ? w : sizeRef.current.width;
+      if (height === sizeRef.current.height && width === sizeRef.current.width) return;
+      const next = { height, width, revision: sizeRef.current.revision + 1 };
+      sizeRef.current = next;
+      setSize(next);
       schedulePlotResize();
+    };
+    const queueMeasure = () => {
+      const frame = window.requestAnimationFrame(() => {
+        animationFrames.delete(frame);
+        measure();
+      });
+      animationFrames.add(frame);
+    };
+    const queueSeveralMeasures = () => {
+      queueMeasure();
+      [80, 240].forEach((delay) => {
+        const timer = window.setTimeout(() => {
+          timers.delete(timer);
+          queueMeasure();
+        }, delay);
+        timers.add(timer);
+      });
+    };
+    const ro = new ResizeObserver(() => {
+      queueMeasure();
     });
+    const onTrustedWindowResize = (event: Event) => {
+      if (!event.isTrusted) return;
+      queueMeasure();
+    };
+    const onVisibilityOrFocus = () => {
+      queueSeveralMeasures();
+    };
     ro.observe(el);
-    return () => ro.disconnect();
+    if (el.parentElement) ro.observe(el.parentElement);
+    const pollTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") queueMeasure();
+    }, 300);
+    window.addEventListener("resize", onTrustedWindowResize);
+    window.addEventListener("orientationchange", onTrustedWindowResize);
+    window.addEventListener("focus", onVisibilityOrFocus);
+    document.addEventListener("visibilitychange", onVisibilityOrFocus);
+    window.visualViewport?.addEventListener("resize", onVisibilityOrFocus);
+    queueSeveralMeasures();
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", onTrustedWindowResize);
+      window.removeEventListener("orientationchange", onTrustedWindowResize);
+      window.removeEventListener("focus", onVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", onVisibilityOrFocus);
+      window.visualViewport?.removeEventListener("resize", onVisibilityOrFocus);
+      animationFrames.forEach((frame) => window.cancelAnimationFrame(frame));
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.clearInterval(pollTimer);
+    };
   }, [ref, fallbackHeight]);
   return size;
+}
+
+function usePlotResizePulses(
+  deps: DependencyList,
+  plotRef?: { current: PlotlyHTMLElement | null },
+) {
+  useEffect(() => {
+    const resizeNow = () => {
+      schedulePlotResize();
+      if (!plotRef?.current) return;
+      resizePlotlyElement(plotRef.current);
+    };
+    resizeNow();
+    const timers = [0, 80, 240, 500].map((delay) => window.setTimeout(resizeNow, delay));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+function resizePlotlyElement(graphDiv: PlotlyHTMLElement | null) {
+  if (!graphDiv) return;
+  void import("plotly.js-dist-min").then((plotlyModule) => {
+    void plotlyModule.default.Plots.resize(graphDiv);
+  });
+}
+
+function queuePlotlyElementResize(graphDiv: PlotlyHTMLElement | null) {
+  resizePlotlyElement(graphDiv);
+  [0, 80, 240, 500].forEach((delay) => {
+    window.setTimeout(() => resizePlotlyElement(graphDiv), delay);
+  });
 }
 
 type Polarity = "all" | "positive" | "negative";
@@ -121,6 +210,24 @@ interface UVLabelAnchor {
   source_peak_index?: number;
 }
 
+type AvailableUVChromatogram = Extract<UVChromatogramResponse, { available: true }>;
+
+interface LCMSUVOverlayTrace {
+  session_id: string;
+  display_name: string;
+  uv: AvailableUVChromatogram;
+}
+
+interface LCMSUVOverlayChartTrace extends LCMSUVOverlayTrace {
+  labels: UVTextLabel[];
+}
+
+interface LCMSSpectrumOverlayTrace {
+  session_id: string;
+  display_name: string;
+  spectrum: SpectrumData;
+}
+
 interface CustomUvLabelDraft {
   id?: string;
   text: string;
@@ -178,6 +285,53 @@ interface PolymerUiSettings {
   positive: PolymerModeSettings;
   negative: PolymerModeSettings;
   monomers: PolymerMonomerPreset[];
+}
+
+interface LCMSWorkspaceEnvelope {
+  version: 1;
+  module: "LCMS";
+  createdAt: string;
+  sessions: Array<{
+    session_id: string;
+    display_name: string;
+    path?: string;
+    uv?: { available: boolean; filename?: string };
+  }>;
+  activeSessionId: string | null;
+  viewState: {
+    polarity: Polarity;
+    rtUnit: RtUnit;
+    activeTab: TabId;
+    showTIC: boolean;
+    showSpectrum: boolean;
+    showUV: boolean;
+    selectedRt: number | null;
+    selectedUvRt: number | null;
+    uvOffset: number;
+    uvOffsetText: string;
+    graphSettings: GraphSettings;
+    overlayTicEnabled: boolean;
+    overlayUvEnabled: boolean;
+    overlaySpectrumEnabled: boolean;
+    overlaySessionIds: string[];
+  };
+  analysisState: {
+    annotateSpectrum: boolean;
+    spectrumTopN: number;
+    spectrumMinRel: number;
+    transferMsToUv: boolean;
+    uvTransferCount: number;
+    uvProminence: number;
+    uvMinDistance: number;
+    snapUvLabels: boolean;
+    uvLabelOrientation: UVLabelOrientation;
+    uvLabelStairXStep: number;
+    uvLabelStairYStep: number;
+    uvTextLabels: UVTextLabel[];
+    uvTextLabelsBySessionId?: Record<string, UVTextLabel[]>;
+    polymerSettings: PolymerUiSettings;
+    eic: LCMSEICData | null;
+  };
 }
 
 const DEFAULT_AXIS_LIMITS: AxisLimits = {
@@ -247,6 +401,16 @@ const UV_PEAK_FETCH_LIMIT = 250;
 const UV_LABEL_STAIR_X_STEP_MIN = 0.5;
 const UV_LABEL_STAIR_Y_STEP_PX = 5;
 const UV_LABEL_STAIR_BASE_Y_PX = 24;
+const OVERLAY_PALETTE = [
+  "#5573b9",
+  "#0f766e",
+  "#b45309",
+  "#7c3aed",
+  "#be123c",
+  "#2563eb",
+  "#4d7c0f",
+  "#c2410c",
+];
 
 const BUILT_IN_POLYMER_MONOMERS: PolymerMonomerPreset[] = [
   { id: "hydroxy:glycolic-acid", category: "hydroxy", name: "Glycolic acid", abbr: "GA", mass: 76.016044, selected: false },
@@ -616,6 +780,37 @@ function toCSV(rows: string[][]): string {
   return rows.map((r) => r.map(esc).join(",")).join("\n");
 }
 
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadJson(value: unknown, filename: string) {
+  downloadBlob(
+    new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }),
+    filename,
+  );
+}
+
+function readJsonFile<T>(file: File): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        resolve(JSON.parse(String(reader.result)) as T);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file."));
+    reader.readAsText(file);
+  });
+}
+
 // --- Main view ---------------------------------------------------------------
 
 export function LCMSView() {
@@ -625,6 +820,14 @@ export function LCMSView() {
   const [tic, setTic] = useState<TICData | null>(null);
   const [spectrum, setSpectrum] = useState<SpectrumData | null>(null);
   const [uv, setUv] = useState<UVChromatogramResponse | null>(null);
+  const [eic, setEic] = useState<LCMSEICData | null>(null);
+  const [ticOverlay, setTicOverlay] = useState<LCMSTICOverlayTrace[]>([]);
+  const [uvOverlay, setUvOverlay] = useState<LCMSUVOverlayTrace[]>([]);
+  const [spectrumOverlay, setSpectrumOverlay] = useState<LCMSSpectrumOverlayTrace[]>([]);
+  const [overlayTicEnabled, setOverlayTicEnabled] = useState(false);
+  const [overlayUvEnabled, setOverlayUvEnabled] = useState(false);
+  const [overlaySpectrumEnabled, setOverlaySpectrumEnabled] = useState(false);
+  const [overlaySessionIds, setOverlaySessionIds] = useState<string[]>([]);
 
   // Filters / display
   const [polarity, setPolarity] = useState<Polarity>("all");
@@ -671,7 +874,31 @@ export function LCMSView() {
   const [multiDragOverlay, setMultiDragOverlay] = useState(false);
   const [polymerSettings, setPolymerSettings] =
     useState<PolymerUiSettings>(() => loadPolymerUiSettings());
-  const [uvTextLabels, setUvTextLabels] = useState<UVTextLabel[]>([]);
+  const [uvLabelsBySessionId, setUvLabelsBySessionId] = useState<Record<string, UVTextLabel[]>>({});
+  const uvTextLabels = useMemo(
+    () => (activeSid ? uvLabelsBySessionId[activeSid] ?? [] : []),
+    [activeSid, uvLabelsBySessionId],
+  );
+  const setUvTextLabels = useCallback(
+    (next: UVTextLabel[] | ((prev: UVTextLabel[]) => UVTextLabel[])) => {
+      if (!activeSid) return;
+      setUvLabelsBySessionId((prev) => {
+        const previousLabels = prev[activeSid] ?? [];
+        const nextLabels =
+          typeof next === "function" ? next(previousLabels) : next;
+        return { ...prev, [activeSid]: nextLabels };
+      });
+    },
+    [activeSid],
+  );
+  const clearUvLabelsForSession = useCallback((sid: string) => {
+    setUvLabelsBySessionId((prev) => {
+      if (!(sid in prev)) return prev;
+      const next = { ...prev };
+      delete next[sid];
+      return next;
+    });
+  }, []);
 
   // View – region select
   const [regionSelect, setRegionSelect] = useState(false);
@@ -700,11 +927,21 @@ export function LCMSView() {
 
   const fileRef = useRef<HTMLInputElement>(null);
   const uvFileRef = useRef<HTMLInputElement>(null);
+  const workspaceFileRef = useRef<HTMLInputElement>(null);
 
   const active = useMemo(
     () => sessions.find((s) => s.session_id === activeSid) ?? null,
     [sessions, activeSid],
   );
+
+  useEffect(() => {
+    setOverlaySessionIds((prev) => {
+      const available = new Set(sessions.map((session) => session.session_id));
+      const kept = prev.filter((sid) => available.has(sid));
+      if (kept.length > 0 || sessions.length === 0) return kept;
+      return sessions.map((session) => session.session_id);
+    });
+  }, [sessions]);
 
   const pol = polarity === "all" ? undefined : polarity;
   const activePolymerSettings = useMemo(
@@ -756,6 +993,109 @@ export function LCMSView() {
       .then(setUv)
       .catch((err) => setError(String(err)));
   }, [activeSid, uvProminence, uvMinDistance]);
+
+  useEffect(() => {
+    if (!overlayTicEnabled || overlaySessionIds.length <= 1) {
+      setTicOverlay([]);
+      return;
+    }
+    api.lcms
+      .ticOverlay({ session_ids: overlaySessionIds, polarity: pol })
+      .then((payload) => setTicOverlay(payload.traces))
+      .catch((err) => setError(String(err)));
+  }, [overlaySessionIds, overlayTicEnabled, pol]);
+
+  useEffect(() => {
+    const ids = overlaySessionIds.filter((sid) => sid !== activeSid);
+    if (!overlayUvEnabled || ids.length === 0) {
+      setUvOverlay([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      ids.map(async (sid) => {
+        const session = sessions.find((item) => item.session_id === sid);
+        try {
+          const payload = await api.lcms.uv(sid, {
+            top_n: UV_PEAK_FETCH_LIMIT,
+            min_rel: uvProminence,
+            min_distance_min: uvMinDistance,
+          });
+          if (payload.available !== true) return null;
+          return {
+            session_id: sid,
+            display_name: session?.display_name ?? sid,
+            uv: payload,
+          };
+        } catch {
+          return null;
+        }
+      }),
+    ).then((items) => {
+      if (cancelled) return;
+      setUvOverlay(items.filter((item): item is LCMSUVOverlayTrace => item !== null));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSid, overlaySessionIds, overlayUvEnabled, sessions, uvMinDistance, uvProminence]);
+
+  const uvOverlayWithLabels = useMemo<LCMSUVOverlayChartTrace[]>(
+    () =>
+      uvOverlay.map((trace) => ({
+        ...trace,
+        labels: uvLabelsBySessionId[trace.session_id] ?? [],
+      })),
+    [uvLabelsBySessionId, uvOverlay],
+  );
+
+  useEffect(() => {
+    const ids = overlaySessionIds.filter((sid) => sid !== activeSid);
+    if (!overlaySpectrumEnabled || selectedRt == null || ids.length === 0) {
+      setSpectrumOverlay([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      ids.map(async (sid) => {
+        const session = sessions.find((item) => item.session_id === sid);
+        try {
+          const payload = await api.lcms.spectrum(sid, {
+            rt_min: selectedRt,
+            polarity: pol,
+            top_n: spectrumTopN,
+            min_rel: spectrumMinRel,
+            polymer: activePolymerSettings,
+          });
+          return {
+            session_id: sid,
+            display_name: session?.display_name ?? sid,
+            spectrum: payload,
+          };
+        } catch {
+          return null;
+        }
+      }),
+    ).then((items) => {
+      if (cancelled) return;
+      setSpectrumOverlay(
+        items.filter((item): item is LCMSSpectrumOverlayTrace => item !== null),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activePolymerSettings,
+    activeSid,
+    overlaySessionIds,
+    overlaySpectrumEnabled,
+    pol,
+    selectedRt,
+    sessions,
+    spectrumMinRel,
+    spectrumTopN,
+  ]);
 
   // --- callbacks ------------------------------------------------------------
 
@@ -841,7 +1181,7 @@ export function LCMSView() {
       ...nextLabels,
     ]);
     return nextLabels.length;
-  }, [rtUnit, uv, uvLabelOrientation, uvOffset, uvTransferCount]);
+  }, [rtUnit, setUvTextLabels, uv, uvLabelOrientation, uvOffset, uvTransferCount]);
 
   const storeUvLabelsFromSpectrum = useCallback(
     (sp: SpectrumData, uvRtMin: number, options?: { snap?: boolean }) => {
@@ -930,11 +1270,11 @@ export function LCMSView() {
     setUvTextLabels((prev) =>
       prev.map((label) => (label.id === id ? { ...label, ...patch } : label)),
     );
-  }, []);
+  }, [setUvTextLabels]);
 
   const deleteUvLabel = useCallback((id: string) => {
     setUvTextLabels((prev) => prev.filter((label) => label.id !== id));
-  }, []);
+  }, [setUvTextLabels]);
 
   const openCustomUvLabel = useCallback(() => {
     const rtMin = selectedUvRt ?? (selectedRt != null ? selectedRt - uvOffset : null);
@@ -998,7 +1338,7 @@ export function LCMSView() {
       );
       setCustomUvLabelDraft(null);
     },
-    [selectedRt, uvAnchorAtRt, uvTextLabels],
+    [selectedRt, setUvTextLabels, uvAnchorAtRt, uvTextLabels],
   );
 
   const autoLabelUvPeaks = useCallback(async () => {
@@ -1116,6 +1456,7 @@ export function LCMSView() {
     graphSettings.uv.height,
     polymerSettings.monomers,
     rtUnit,
+    setUvTextLabels,
     uv,
     uvLabelStairXStep,
     uvLabelStairYStep,
@@ -1123,17 +1464,26 @@ export function LCMSView() {
     uvTextLabels,
   ]);
 
-  const onUpload = async (file: File) => {
+  const onUpload = async (files: File[]) => {
+    if (files.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      const s = await api.lcms.upload(file);
-      setSessions((prev) => [...prev, s]);
-      setActiveSid(s.session_id);
       setSpectrum(null);
       setSelectedRt(null);
       setSelectedUvRt(null);
-      setUvTextLabels([]);
+      const uploaded: LCMSSessionSummary[] = [];
+      for (const file of files) {
+        const s = await api.lcms.upload(file);
+        uploaded.push(s);
+      }
+      if (uploaded.length > 0) {
+        setSessions((prev) => [...prev, ...uploaded]);
+        setActiveSid(uploaded[uploaded.length - 1].session_id);
+      }
+      if (uploaded.length > 1) {
+        setInfo(`Loaded ${uploaded.length} mzML files.`);
+      }
     } catch (err) {
       setError(String(err));
     } finally {
@@ -1144,13 +1494,13 @@ export function LCMSView() {
   const onRemove = async (sid: string) => {
     await api.lcms.remove(sid).catch((err) => setError(String(err)));
     setSessions((prev) => prev.filter((s) => s.session_id !== sid));
+    clearUvLabelsForSession(sid);
     if (activeSid === sid) {
       setActiveSid(null);
       setSpectrum(null);
       setTic(null);
       setSelectedRt(null);
       setSelectedUvRt(null);
-      setUvTextLabels([]);
     }
   };
 
@@ -1185,7 +1535,7 @@ export function LCMSView() {
         available: false,
         reason: "No UV chromatogram attached to this dataset.",
       });
-      setUvTextLabels([]);
+      clearUvLabelsForSession(activeSid);
       setSessions((prev) =>
         prev.map((s) =>
           s.session_id === activeSid ? { ...s, uv: { available: false } } : s,
@@ -1230,6 +1580,8 @@ export function LCMSView() {
   // Find m/z: scan every MS1 at current filter for the most intense near m/z
   const [findMzInput, setFindMzInput] = useState("");
   const [findMzTol, setFindMzTol] = useState(0.01);
+  const [eicInput, setEicInput] = useState("");
+  const [eicTol, setEicTol] = useState(0.01);
   const findMz = async () => {
     if (!activeSid) return;
     const target = parseFloat(findMzInput);
@@ -1240,30 +1592,15 @@ export function LCMSView() {
       // Crude but works: sweep every MS1 and ask backend for spectrum; pick the one
       // with highest intensity in [target-tol, target+tol]. For large files this is
       // slow, so we first downsample the RT grid to at most 200 probes.
-      const probes: number[] = [];
-      const n = rtList.length;
-      if (n === 0) return;
-      const stride = Math.max(1, Math.floor(n / 200));
-      for (let i = 0; i < n; i += stride) probes.push(rtList[i]);
-
-      let bestRt = probes[0];
-      let bestIntensity = -1;
-      for (const rt of probes) {
-        const sp = await api.lcms.spectrum(activeSid, {
-          rt_min: rt,
-          polarity: pol,
-          top_n: 5,
-          min_rel: 0.0,
-        });
-        for (let i = 0; i < sp.mz.length; i += 1) {
-          if (Math.abs(sp.mz[i] - target) <= findMzTol) {
-            if (sp.intensity[i] > bestIntensity) {
-              bestIntensity = sp.intensity[i];
-              bestRt = rt;
-            }
-            break;
-          }
-        }
+      const result = await api.lcms.findMz(activeSid, {
+        mz: target,
+        tolerance: findMzTol,
+        polarity: pol,
+      });
+      const bestRt = result.best.rt_min;
+      if (bestRt == null) {
+        setInfo(`No match found for m/z ${target.toFixed(4)} within ${findMzTol.toFixed(3)} Da.`);
+        return;
       }
       setFindMzOpen(false);
       loadSpectrum(bestRt);
@@ -1278,6 +1615,34 @@ export function LCMSView() {
   };
 
   // Auto-align UV↔MS: peak-correlation between UV signal and TIC
+  const runEIC = async () => {
+    if (!activeSid) return;
+    const target = parseFloat(eicInput);
+    if (!Number.isFinite(target)) {
+      setInfo("Enter a valid m/z before generating an EIC.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.lcms.eic(activeSid, {
+        mz: target,
+        tolerance: Math.max(0.000001, eicTol),
+        polarity: pol,
+      });
+      setEic(result);
+      setEicOpen(false);
+      if (result.best.rt_min != null) loadSpectrum(result.best.rt_min);
+      setInfo(
+        `Generated EIC for m/z ${target.toFixed(4)} +/- ${eicTol.toFixed(3)} across ${result.n_scans} scans.`,
+      );
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const autoAlignNow = () => {
     if (!tic || !uv || !uv.available) {
       setInfo(
@@ -1337,32 +1702,235 @@ export function LCMSView() {
     setBusy(true);
     setError(null);
     try {
-      const rows: string[][] = [["rt_min", "mz", "intensity"]];
-      const stride = Math.max(1, Math.floor(rtList.length / 300));
-      for (let i = 0; i < rtList.length; i += stride) {
-        const rt = rtList[i];
-        const sp = await api.lcms.spectrum(activeSid, {
-          rt_min: rt,
-          polarity: pol,
-          top_n: Math.max(1, spectrumTopN),
-          min_rel: spectrumMinRel,
-        });
-        for (const lbl of sp.labels) {
-          rows.push([
-            rt.toFixed(4),
-            lbl.mz.toFixed(4),
-            lbl.intensity.toExponential(3),
-          ]);
-        }
+      const blob = await api.lcms.exportLabels(activeSid, {
+        polarity: pol,
+        top_n: Math.max(1, spectrumTopN),
+        min_rel: Math.max(0, spectrumMinRel),
+      });
+      downloadBlob(blob, `${active?.display_name ?? "lcms"}.labels.csv`);
+      setInfo("Exported labels across all indexed MS1 scans.");
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportSpectrum = async () => {
+    if (!activeSid || selectedRt == null) {
+      setInfo("Select an RT before exporting a spectrum CSV.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const blob = await api.lcms.exportSpectrum(activeSid, {
+        rt_min: selectedRt,
+        polarity: pol,
+      });
+      downloadBlob(blob, `${active?.display_name ?? "lcms"}.spectrum.csv`);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportUV = async () => {
+    if (!activeSid) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const blob = await api.lcms.exportUV(activeSid);
+      downloadBlob(blob, `${active?.display_name ?? "lcms"}.uv.csv`);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportTICOverlay = async () => {
+    const ids = overlaySessionIds.length > 0 ? overlaySessionIds : sessions.map((s) => s.session_id);
+    if (ids.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const blob = await api.lcms.exportTICOverlay({ session_ids: ids, polarity: pol });
+      downloadBlob(blob, "lcms_tic_overlay.csv");
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadSummedRegionSpectrum = async () => {
+    if (!activeSid || selectedRt == null) {
+      setInfo("Select an RT before summing a region spectrum.");
+      return;
+    }
+    const halfWindow = 0.05;
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await api.lcms.regionSpectrum(activeSid, {
+        rt_min: selectedRt - halfWindow,
+        rt_max: selectedRt + halfWindow,
+        polarity: pol,
+        bin_width: 0.01,
+        min_rel: 0.0,
+      });
+      const maxIntensity = Math.max(...data.intensity, 0);
+      const labels = data.mz
+        .map((mz, index) => ({ mz, intensity: data.intensity[index] }))
+        .filter((point) => maxIntensity > 0 && point.intensity >= spectrumMinRel * maxIntensity)
+        .sort((a, b) => b.intensity - a.intensity)
+        .slice(0, Math.max(1, spectrumTopN));
+      setSpectrum({
+        meta: {
+          spectrum_id: `summed:${data.rt_min.toFixed(4)}-${data.rt_max.toFixed(4)}`,
+          rt_min: selectedRt,
+          tic: data.intensity.reduce((sum, value) => sum + value, 0),
+          polarity: pol ?? null,
+          n_peaks: data.mz.length,
+        },
+        mz: data.mz,
+        intensity: data.intensity,
+        labels,
+        polymer_labels: [],
+      });
+      setInfo(
+        `Loaded summed spectrum from ${data.n_scans} scans (${data.rt_min.toFixed(3)}-${data.rt_max.toFixed(3)} min).`,
+      );
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveWorkspace = () => {
+    const uvTextLabelsBySessionId = Object.fromEntries(
+      sessions.map((session) => [
+        session.session_id,
+        uvLabelsBySessionId[session.session_id] ?? [],
+      ]),
+    );
+    const workspace: LCMSWorkspaceEnvelope = {
+      version: 1,
+      module: "LCMS",
+      createdAt: new Date().toISOString(),
+      sessions: sessions.map((session) => ({
+        session_id: session.session_id,
+        display_name: session.display_name,
+        path: session.path,
+        uv: session.uv
+          ? { available: Boolean(session.uv.available), filename: session.uv.filename }
+          : { available: false },
+      })),
+      activeSessionId: activeSid,
+      viewState: {
+        polarity,
+        rtUnit,
+        activeTab,
+        showTIC,
+        showSpectrum,
+        showUV,
+        selectedRt,
+        selectedUvRt,
+        uvOffset,
+        uvOffsetText,
+        graphSettings,
+        overlayTicEnabled,
+        overlayUvEnabled,
+        overlaySpectrumEnabled,
+        overlaySessionIds,
+      },
+      analysisState: {
+        annotateSpectrum,
+        spectrumTopN,
+        spectrumMinRel,
+        transferMsToUv,
+        uvTransferCount,
+        uvProminence,
+        uvMinDistance,
+        snapUvLabels,
+        uvLabelOrientation,
+        uvLabelStairXStep,
+        uvLabelStairYStep,
+        uvTextLabels,
+        uvTextLabelsBySessionId,
+        polymerSettings,
+        eic,
+      },
+    };
+    downloadJson(workspace, "lcms.workspace.json");
+  };
+
+  const loadWorkspaceFile = async (file: File) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const workspace = await readJsonFile<LCMSWorkspaceEnvelope>(file);
+      if (workspace.module !== "LCMS") {
+        throw new Error("This is not an LCMS workspace file.");
       }
-      const blob = new Blob([toCSV(rows)], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${active?.display_name ?? "lcms"}.labels.csv`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setInfo(`Exported ${rows.length - 1} labels across ${rtList.length} scans.`);
+      const availableIds = new Set(sessions.map((session) => session.session_id));
+      const missing = workspace.sessions.filter((session) => !availableIds.has(session.session_id));
+      const view = workspace.viewState;
+      const analysis = workspace.analysisState;
+      const nextUvLabelsBySessionId: Record<string, UVTextLabel[]> = {};
+      if (analysis.uvTextLabelsBySessionId) {
+        for (const [sid, labels] of Object.entries(analysis.uvTextLabelsBySessionId)) {
+          if (availableIds.has(sid) && Array.isArray(labels)) {
+            nextUvLabelsBySessionId[sid] = labels;
+          }
+        }
+      } else if (
+        workspace.activeSessionId &&
+        availableIds.has(workspace.activeSessionId) &&
+        Array.isArray(analysis.uvTextLabels)
+      ) {
+        nextUvLabelsBySessionId[workspace.activeSessionId] = analysis.uvTextLabels;
+      }
+      setPolarity(view.polarity ?? "all");
+      setRtUnit(view.rtUnit ?? "minutes");
+      setActiveTab(view.activeTab ?? "navigate");
+      setShowTIC(Boolean(view.showTIC));
+      setShowSpectrum(Boolean(view.showSpectrum));
+      setShowUV(Boolean(view.showUV));
+      setSelectedRt(view.selectedRt ?? null);
+      setSelectedUvRt(view.selectedUvRt ?? null);
+      setUvOffset(Number.isFinite(view.uvOffset) ? view.uvOffset : 0);
+      setUvOffsetText(view.uvOffsetText ?? "0.000");
+      setGraphSettings(view.graphSettings ?? loadGraphSettingsDefault());
+      setOverlayTicEnabled(Boolean(view.overlayTicEnabled));
+      setOverlayUvEnabled(Boolean(view.overlayUvEnabled));
+      setOverlaySpectrumEnabled(Boolean(view.overlaySpectrumEnabled));
+      setOverlaySessionIds((view.overlaySessionIds ?? []).filter((sid) => availableIds.has(sid)));
+      setAnnotateSpectrum(Boolean(analysis.annotateSpectrum));
+      setSpectrumTopN(analysis.spectrumTopN ?? 10);
+      setSpectrumMinRel(analysis.spectrumMinRel ?? 0.05);
+      setTransferMsToUv(Boolean(analysis.transferMsToUv));
+      setUvTransferCount(analysis.uvTransferCount ?? 3);
+      setUvProminence(analysis.uvProminence ?? 0.05);
+      setUvMinDistance(analysis.uvMinDistance ?? 0.2);
+      setSnapUvLabels(Boolean(analysis.snapUvLabels));
+      setUvLabelOrientation(analysis.uvLabelOrientation ?? "vertical");
+      setUvLabelStairXStep(analysis.uvLabelStairXStep ?? UV_LABEL_STAIR_X_STEP_MIN);
+      setUvLabelStairYStep(analysis.uvLabelStairYStep ?? UV_LABEL_STAIR_Y_STEP_PX);
+      setUvLabelsBySessionId(nextUvLabelsBySessionId);
+      if (analysis.polymerSettings) setPolymerSettings(analysis.polymerSettings);
+      setEic(analysis.eic ?? null);
+      if (workspace.activeSessionId && availableIds.has(workspace.activeSessionId)) {
+        setActiveSid(workspace.activeSessionId);
+      }
+      setInfo(
+        missing.length > 0
+          ? `Loaded workspace settings. ${missing.length} source session(s) are not loaded in the current server.`
+          : "Loaded LCMS workspace settings.",
+      );
     } catch (err) {
       setError(String(err));
     } finally {
@@ -1401,13 +1969,39 @@ export function LCMSView() {
             ref={fileRef}
             type="file"
             accept=".mzML,.mzml"
+            multiple
             className="hidden"
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onUpload(f);
+              const files = e.target.files ? Array.from(e.target.files) : [];
+              if (files.length > 0) onUpload(files);
               e.target.value = "";
             }}
           />
+          <input
+            ref={workspaceFileRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void loadWorkspaceFile(file);
+              e.target.value = "";
+            }}
+          />
+          <button
+            className="rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100"
+            disabled={busy}
+            onClick={() => workspaceFileRef.current?.click()}
+          >
+            Load workspace
+          </button>
+          <button
+            className="rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+            disabled={busy || sessions.length === 0}
+            onClick={saveWorkspace}
+          >
+            Save workspace
+          </button>
           <button
             className="btn-primary"
             disabled={busy}
@@ -1421,15 +2015,15 @@ export function LCMSView() {
   );
 
   const statusText = useMemo(() => {
-    return {
-      mzml: active?.display_name ?? "(no mzML)",
-      uv:
-        active?.uv?.available && active.uv.filename
-          ? active.uv.filename
-          : "(no UV linked)",
-      polarity,
-      offset: uvOffset,
-    };
+    const name = active?.display_name ?? "";
+    const truncName = name.length > 32 ? name.slice(0, 30) + "…" : name;
+    const ms1Count = active?.ms1_count ?? 0;
+    const rtMin = active?.rt_min != null ? active.rt_min.toFixed(2) : null;
+    const rtMax = active?.rt_max != null ? active.rt_max.toFixed(2) : null;
+    const rtRange = rtMin != null && rtMax != null ? `${rtMin}–${rtMax} min` : null;
+    const polLabel = polarity === "all" ? "all polarities" : polarity;
+    const uvAttached = !!(active?.uv?.available && active.uv.filename);
+    return { truncName, ms1Count, rtRange, polLabel, uvAttached, offset: uvOffset };
   }, [active, polarity, uvOffset]);
 
   // --- render ---------------------------------------------------------------
@@ -1471,6 +2065,7 @@ export function LCMSView() {
               {showTIC && (
                 <TICChart
                   tic={tic}
+                  overlayTraces={ticOverlay}
                   onClick={onTICClick}
                   selectedRt={selectedRt}
                   rtUnit={rtUnit}
@@ -1478,9 +2073,20 @@ export function LCMSView() {
                   settings={graphSettings.tic}
                 />
               )}
+              {eic && (
+                <EICChart
+                  eic={eic}
+                  selectedRt={selectedRt}
+                  rtUnit={rtUnit}
+                  onClick={onTICClick}
+                  onClear={() => setEic(null)}
+                  settings={graphSettings.tic}
+                />
+              )}
               {showUV && (
                 <UVChromatogramChart
                   uv={uv}
+                  overlayTraces={uvOverlayWithLabels}
                   busy={uvBusy}
                   xOffset={uvOffset}
                   selectedUvRt={
@@ -1502,7 +2108,9 @@ export function LCMSView() {
               {showSpectrum && (
                 <SpectrumChart
                   spectrum={spectrum}
+                  overlayTraces={spectrumOverlay}
                   annotate={annotateSpectrum}
+                  showOverlayLabels={showOverlayLabels}
                   showDragHint={enableDragLabels}
                   selectedRt={selectedRt}
                   rtUnit={rtUnit}
@@ -1531,6 +2139,10 @@ export function LCMSView() {
           onEIC={() => setEicOpen(true)}
           onJumpMz={() => setFindMzOpen(true)}
           onExportLabels={exportLabels}
+          onExportSpectrum={exportSpectrum}
+          onExportUV={exportUV}
+          onExportTICOverlay={exportTICOverlay}
+          onSumRegionSpectrum={loadSummedRegionSpectrum}
           busy={busy}
           activeLoaded={!!active}
           // Workflow chrome
@@ -1578,6 +2190,15 @@ export function LCMSView() {
           setShowUV={setShowUV}
           regionSelect={regionSelect}
           setRegionSelect={setRegionSelect}
+          overlayTicEnabled={overlayTicEnabled}
+          setOverlayTicEnabled={setOverlayTicEnabled}
+          overlayUvEnabled={overlayUvEnabled}
+          setOverlayUvEnabled={setOverlayUvEnabled}
+          overlaySpectrumEnabled={overlaySpectrumEnabled}
+          setOverlaySpectrumEnabled={setOverlaySpectrumEnabled}
+          overlaySessionIds={overlaySessionIds}
+          setOverlaySessionIds={setOverlaySessionIds}
+          sessions={sessions}
           // Annotate – spectrum
           annotateSpectrum={annotateSpectrum}
           setAnnotateSpectrum={setAnnotateSpectrum}
@@ -1635,7 +2256,17 @@ export function LCMSView() {
           onRun={findMz}
         />
       )}
-      {eicOpen && <EICDialog onClose={() => setEicOpen(false)} />}
+      {eicOpen && (
+        <EICDialog
+          input={eicInput}
+          setInput={setEicInput}
+          tol={eicTol}
+          setTol={setEicTol}
+          busy={busy}
+          onClose={() => setEicOpen(false)}
+          onRun={runEIC}
+        />
+      )}
       {graphSettingsOpen && (
         <GraphSettingsDialog
           settings={graphSettings}
@@ -1966,6 +2597,10 @@ interface ToolsPanelProps {
   onEIC: () => void;
   onJumpMz: () => void;
   onExportLabels: () => void;
+  onExportSpectrum: () => void;
+  onExportUV: () => void;
+  onExportTICOverlay: () => void;
+  onSumRegionSpectrum: () => void;
   busy: boolean;
   activeLoaded: boolean;
   // chrome
@@ -2010,6 +2645,15 @@ interface ToolsPanelProps {
   setShowUV: (v: boolean) => void;
   regionSelect: boolean;
   setRegionSelect: (v: boolean) => void;
+  overlayTicEnabled: boolean;
+  setOverlayTicEnabled: (v: boolean) => void;
+  overlayUvEnabled: boolean;
+  setOverlayUvEnabled: (v: boolean) => void;
+  overlaySpectrumEnabled: boolean;
+  setOverlaySpectrumEnabled: (v: boolean) => void;
+  overlaySessionIds: string[];
+  setOverlaySessionIds: (ids: string[]) => void;
+  sessions: LCMSSessionSummary[];
   // annotate – spectrum
   annotateSpectrum: boolean;
   setAnnotateSpectrum: (v: boolean) => void;
@@ -2083,6 +2727,10 @@ function ToolsPanel(p: ToolsPanelProps) {
             onEIC={p.onEIC}
             onJumpMz={p.onJumpMz}
             onExportLabels={p.onExportLabels}
+            onExportSpectrum={p.onExportSpectrum}
+            onExportUV={p.onExportUV}
+            onExportTICOverlay={p.onExportTICOverlay}
+            onSumRegionSpectrum={p.onSumRegionSpectrum}
             busy={p.busy}
             activeLoaded={p.activeLoaded}
             onCollapse={() => setCollapsed(true)}
@@ -2122,6 +2770,10 @@ function PrimaryActions({
   onEIC,
   onJumpMz,
   onExportLabels,
+  onExportSpectrum,
+  onExportUV,
+  onExportTICOverlay,
+  onSumRegionSpectrum,
   busy,
   activeLoaded,
   onCollapse,
@@ -2129,6 +2781,10 @@ function PrimaryActions({
   onEIC: () => void;
   onJumpMz: () => void;
   onExportLabels: () => void;
+  onExportSpectrum: () => void;
+  onExportUV: () => void;
+  onExportTICOverlay: () => void;
+  onSumRegionSpectrum: () => void;
   busy: boolean;
   activeLoaded: boolean;
   onCollapse?: () => void;
@@ -2248,11 +2904,11 @@ function WorkflowTools({
           <div className="flex items-center gap-1 border-b border-ink-200 bg-white/70 px-3 pt-2">
             {(
               [
-                { id: "navigate", label: "Navigate" },
-                { id: "view", label: "View" },
-                { id: "annotate", label: "Annotate" },
+                { id: "navigate", label: "Browse" },
+                { id: "view", label: "Display" },
+                { id: "annotate", label: "Labels" },
                 ...(showPolymerControls
-                  ? [{ id: "polymer" as const, label: "Polymer" }]
+                  ? [{ id: "polymer" as const, label: "Polymer Match" }]
                   : []),
               ] as { id: TabId; label: string }[]
             ).map((t) => (
@@ -2393,6 +3049,57 @@ function ViewTab(p: ToolsPanelProps) {
       <NavyButton className="w-full" onClick={p.onGraphSettings}>
         Graph Settings…
       </NavyButton>
+
+      <GroupBox title="Overlays and exports">
+        <Check
+          label="Overlay loaded TICs"
+          checked={p.overlayTicEnabled}
+          onChange={p.setOverlayTicEnabled}
+        />
+        <Check
+          label="Overlay attached UV traces"
+          checked={p.overlayUvEnabled}
+          onChange={p.setOverlayUvEnabled}
+        />
+        <Check
+          label="Overlay spectra at selected RT"
+          checked={p.overlaySpectrumEnabled}
+          onChange={p.setOverlaySpectrumEnabled}
+        />
+        <div className="max-h-28 overflow-auto rounded-md border border-ink-200 bg-white p-2">
+          {p.sessions.map((session) => (
+            <label key={session.session_id} className="flex items-center gap-2 py-0.5 text-xs">
+              <input
+                type="checkbox"
+                checked={p.overlaySessionIds.includes(session.session_id)}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  p.setOverlaySessionIds(
+                    checked
+                      ? [...p.overlaySessionIds, session.session_id]
+                      : p.overlaySessionIds.filter((sid) => sid !== session.session_id),
+                  );
+                }}
+              />
+              <span className="truncate">{session.display_name}</span>
+            </label>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <NavyButton onClick={p.onExportSpectrum} disabled={!p.activeLoaded}>
+            Spectrum CSV
+          </NavyButton>
+          <NavyButton onClick={p.onExportUV} disabled={!p.activeLoaded}>
+            UV CSV
+          </NavyButton>
+          <NavyButton onClick={p.onExportTICOverlay} disabled={!p.activeLoaded}>
+            TIC overlay CSV
+          </NavyButton>
+          <NavyButton onClick={p.onSumRegionSpectrum} disabled={!p.activeLoaded}>
+            Sum RT window
+          </NavyButton>
+        </div>
+      </GroupBox>
 
       <GroupBox title="Panels">
         <Check label="Show TIC" checked={p.showTIC} onChange={p.setShowTIC} />
@@ -2742,6 +3449,7 @@ function NavyButton({
 
 function TICChart(props: {
   tic: TICData | null;
+  overlayTraces: LCMSTICOverlayTrace[];
   onClick: (e: Readonly<PlotMouseEvent>) => void;
   selectedRt: number | null;
   rtUnit: RtUnit;
@@ -2749,12 +3457,46 @@ function TICChart(props: {
   settings: ChartSettings;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const plotRef = useRef<PlotlyHTMLElement | null>(null);
   const plotSize = useContainerSize(containerRef, props.settings.height);
+  usePlotResizePulses([
+    props.regionSelect,
+    props.selectedRt,
+    props.settings.axis.xMax,
+    props.settings.axis.xMin,
+    props.settings.axis.yMax,
+    props.settings.axis.yMin,
+    props.settings.color,
+    props.settings.height,
+    props.settings.lineWidth,
+    props.settings.showGrid,
+    props.settings.tickSize,
+    props.settings.title,
+    props.settings.xTitle,
+    props.settings.yTitle,
+    props.tic?.rt_min.length,
+    props.tic?.tic.length,
+    props.overlayTraces.length,
+    props.rtUnit,
+  ], plotRef);
   const scale = props.rtUnit === "seconds" ? 60 : 1;
   const unit = props.rtUnit === "seconds" ? "s" : "min";
   const xs = useMemo(
     () => (props.tic ? props.tic.rt_min.map((v) => v * scale) : []),
     [props.tic, scale],
+  );
+  const overlayData = useMemo(
+    () =>
+      props.overlayTraces.map((trace) => ({
+        type: "scattergl" as const,
+        mode: "lines" as const,
+        x: trace.rt_min.map((v) => v * scale),
+        y: trace.tic,
+        line: { width: Math.max(1, props.settings.lineWidth * 0.9) },
+        hovertemplate: `${trace.display_name}<br>RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`,
+        name: trace.display_name,
+      })),
+    [props.overlayTraces, props.settings.lineWidth, scale, unit],
   );
   const shapes =
     props.selectedRt != null
@@ -2799,6 +3541,7 @@ function TICChart(props: {
           style={{ height: props.settings.height }}
         >
           <Plot
+            revision={plotSize.revision}
             data={[
               {
                 type: "scattergl",
@@ -2809,6 +3552,7 @@ function TICChart(props: {
                 hovertemplate: `RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`,
                 name: "TIC",
               },
+              ...overlayData,
             ]}
             layout={{
               height: plotSize.height,
@@ -2838,7 +3582,7 @@ function TICChart(props: {
               hovermode: "x",
               plot_bgcolor: "#ffffff",
               paper_bgcolor: "#ffffff",
-              showlegend: false,
+              showlegend: overlayData.length > 0,
               shapes,
               dragmode: props.regionSelect ? "select" : "zoom",
             }}
@@ -2846,6 +3590,14 @@ function TICChart(props: {
             style={{ width: "100%", height: "100%", minWidth: 0 }}
             useResizeHandler
             onClick={props.onClick}
+            onInitialized={(_figure, graphDiv) => {
+              plotRef.current = graphDiv as PlotlyHTMLElement;
+              schedulePlotResize();
+              queuePlotlyElementResize(plotRef.current);
+            }}
+            onUpdate={(_figure, graphDiv) => {
+              plotRef.current = graphDiv as PlotlyHTMLElement;
+            }}
           />
         </div>
       )}
@@ -2853,8 +3605,123 @@ function TICChart(props: {
   );
 }
 
+function EICChart(props: {
+  eic: LCMSEICData;
+  onClick: (e: Readonly<PlotMouseEvent>) => void;
+  onClear: () => void;
+  selectedRt: number | null;
+  rtUnit: RtUnit;
+  settings: ChartSettings;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const plotRef = useRef<PlotlyHTMLElement | null>(null);
+  const plotSize = useContainerSize(containerRef, Math.max(240, props.settings.height * 0.75));
+  const scale = props.rtUnit === "seconds" ? 60 : 1;
+  const unit = props.rtUnit === "seconds" ? "s" : "min";
+  const xs = props.eic.rt_min.map((v) => v * scale);
+  usePlotResizePulses([
+    props.eic.rt_min.length,
+    props.eic.intensity.length,
+    props.selectedRt,
+    props.rtUnit,
+    props.settings.showGrid,
+    props.settings.tickSize,
+  ], plotRef);
+  const shapes =
+    props.selectedRt != null
+      ? [
+          {
+            type: "line" as const,
+            xref: "x" as const,
+            yref: "paper" as const,
+            x0: props.selectedRt * scale,
+            x1: props.selectedRt * scale,
+            y0: 0,
+            y1: 1,
+            line: { color: "#5573b9", width: 1, dash: "dot" as const },
+          },
+        ]
+      : [];
+  return (
+    <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
+        <h3 className="text-sm font-semibold">
+          EIC m/z {props.eic.target_mz.toFixed(4)} +/- {props.eic.tolerance.toFixed(4)}
+        </h3>
+        <div className="flex items-center gap-2 text-xs text-ink-500">
+          <span>{props.eic.n_scans} scans</span>
+          <button
+            className="rounded-md border border-ink-200 bg-white px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
+            onClick={props.onClear}
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+      <div
+        ref={containerRef}
+        className="min-w-0 overflow-hidden"
+        style={{ height: Math.max(240, props.settings.height * 0.75) }}
+      >
+        <Plot
+          revision={plotSize.revision}
+          data={[
+            {
+              type: "scattergl",
+              mode: "lines",
+              x: xs,
+              y: props.eic.intensity,
+              line: { color: "#7c3aed", width: props.settings.lineWidth },
+              hovertemplate: `RT: %{x:.3f} ${unit}<br>Intensity: %{y:.3e}<extra></extra>`,
+              name: "EIC",
+            },
+          ]}
+          layout={{
+            height: plotSize.height,
+            width: plotSize.width,
+            margin: { l: 60, r: 20, t: 10, b: 40 },
+            font: { size: props.settings.tickSize },
+            xaxis: {
+              title: axisTitle(`RT (${unit})`, props.settings.axisTitleSize),
+              zeroline: false,
+              showgrid: props.settings.showGrid,
+              tickfont: { size: props.settings.tickSize },
+              ...axisFrame(props.settings),
+            },
+            yaxis: {
+              title: axisTitle("EIC intensity", props.settings.axisTitleSize),
+              zeroline: false,
+              exponentformat: "e",
+              showgrid: props.settings.showGrid,
+              tickfont: { size: props.settings.tickSize },
+              ...axisFrame(props.settings),
+            },
+            hovermode: "x",
+            plot_bgcolor: "#ffffff",
+            paper_bgcolor: "#ffffff",
+            showlegend: false,
+            shapes,
+          }}
+          config={{ responsive: true, displaylogo: false }}
+          style={{ width: "100%", height: "100%", minWidth: 0 }}
+          useResizeHandler
+          onClick={props.onClick}
+          onInitialized={(_figure, graphDiv) => {
+            plotRef.current = graphDiv as PlotlyHTMLElement;
+            queuePlotlyElementResize(plotRef.current);
+          }}
+          onUpdate={(_figure, graphDiv) => {
+            plotRef.current = graphDiv as PlotlyHTMLElement;
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function UVChromatogramChart(props: {
   uv: UVChromatogramResponse | null;
+  overlayTraces: LCMSUVOverlayChartTrace[];
   busy: boolean;
   xOffset: number;
   selectedUvRt: number | null;
@@ -2872,6 +3739,7 @@ function UVChromatogramChart(props: {
 }) {
   const {
     uv,
+    overlayTraces,
     busy,
     xOffset,
     selectedUvRt,
@@ -2888,6 +3756,7 @@ function UVChromatogramChart(props: {
     settings,
   } = props;
   const available = uv?.available === true;
+  const canPlot = available || overlayTraces.length > 0;
   const meta = available ? uv.meta : null;
   const scale = rtUnit === "seconds" ? 60 : 1;
   const unit = rtUnit === "seconds" ? "s" : "min";
@@ -2896,6 +3765,81 @@ function UVChromatogramChart(props: {
   const uvPlotSize = useContainerSize(uvContainerRef, settings.height);
 
   const xs = available ? uv.rt_min.map((v) => (v + xOffset) * scale) : [];
+  const overlayData = useMemo(
+    () =>
+      overlayTraces.map((trace, index) => ({
+        type: "scattergl" as const,
+        mode: "lines" as const,
+        x: trace.uv.rt_min.map((v) => (v + xOffset) * scale),
+        y: trace.uv.signal,
+        line: {
+          color: OVERLAY_PALETTE[index % OVERLAY_PALETTE.length],
+          width: Math.max(1, settings.lineWidth * 0.9),
+        },
+        hovertemplate: `${trace.display_name}<br>RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`,
+        name: trace.display_name,
+      })),
+    [overlayTraces, scale, settings.lineWidth, unit, xOffset],
+  );
+  const overlayLabelCount = useMemo(
+    () => overlayTraces.reduce((count, trace) => count + trace.labels.length, 0),
+    [overlayTraces],
+  );
+  const overlayAnnotations = useMemo(
+    () =>
+      overlayTraces.flatMap((trace, traceIndex) =>
+        trace.labels.map((label, labelIndex) => {
+          const stackShift = -14 * (traceIndex + 1);
+          const fallbackAy =
+            labelOrientation === "vertical" ? -78 - labelIndex * 26 : -42 - labelIndex * 22;
+          const ay = label.ay ?? fallbackAy;
+          return {
+            x: (label.uv_rt_min + xOffset) * scale,
+            y: label.signal,
+            text: cleanLabelText(label.text),
+            textangle: labelOrientation === "vertical" ? ("-90" as const) : ("0" as const),
+            showarrow: true,
+            arrowhead: 0,
+            ax: label.ax ?? 0,
+            axref: label.axRef === "x" ? ("x" as const) : ("pixel" as const),
+            ayref: label.ayRef === "y" ? ("y" as const) : ("pixel" as const),
+            ay: label.ayRef === "y" ? ay : ay + stackShift,
+            editable: false,
+            font: {
+              size: Math.max(8, settings.labels.fontSize - 1),
+              color: OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length],
+            },
+          };
+        }),
+      ),
+    [labelOrientation, overlayTraces, scale, settings.labels.fontSize, xOffset],
+  );
+  usePlotResizePulses([
+    available,
+    labelOrientation,
+    labels.length,
+    overlayLabelCount,
+    overlayTraces.length,
+    rtUnit,
+    selectedUvRt,
+    settings.axis.xMax,
+    settings.axis.xMin,
+    settings.axis.yMax,
+    settings.axis.yMin,
+    settings.color,
+    settings.height,
+    settings.labels.color,
+    settings.labels.fontSize,
+    settings.lineWidth,
+    settings.showGrid,
+    settings.tickSize,
+    settings.title,
+    settings.xTitle,
+    settings.yTitle,
+    uv?.available === true ? uv.rt_min.length : 0,
+    ...overlayTraces.map((trace) => trace.uv.rt_min.length),
+    xOffset,
+  ], uvPlotRef);
   useEffect(() => {
     schedulePlotResize();
     const frame = window.requestAnimationFrame(() => {
@@ -2908,6 +3852,7 @@ function UVChromatogramChart(props: {
   }, [
     labelOrientation,
     labels.length,
+    overlayLabelCount,
     settings.axis.xMax,
     settings.axis.xMin,
     settings.axis.yMax,
@@ -2992,6 +3937,11 @@ function UVChromatogramChart(props: {
               {uv.peaks.length} peak{uv.peaks.length === 1 ? "" : "s"} annotated
             </span>
           )}
+          {overlayTraces.length > 0 && (
+            <span className="text-ink-500">
+              {overlayTraces.length} UV overlay{overlayTraces.length === 1 ? "" : "s"}
+            </span>
+          )}
           {labels.length > 0 && (
             <>
               <span className="text-ink-500">
@@ -3041,7 +3991,7 @@ function UVChromatogramChart(props: {
         <div className="flex h-72 items-center justify-center text-sm text-ink-500">
           Loading UV…
         </div>
-      ) : !available ? (
+      ) : !canPlot ? (
         <div className="flex h-72 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-ink-200 bg-ink-50/40 px-6 text-center">
           <div className="text-sm font-medium text-ink-700">
             No UV chromatogram attached
@@ -3063,16 +4013,22 @@ function UVChromatogramChart(props: {
             style={{ height: settings.height }}
           >
             <Plot
+              revision={uvPlotSize.revision}
               data={[
-                {
-                  type: "scattergl",
-                  mode: "lines",
-                  x: xs,
-                  y: uv.signal,
-                  line: { color: settings.color, width: settings.lineWidth },
-                  hovertemplate: `RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`,
-                  name: "UV",
-                },
+                ...(available
+                  ? [
+                      {
+                        type: "scattergl" as const,
+                        mode: "lines" as const,
+                        x: xs,
+                        y: uv.signal,
+                        line: { color: settings.color, width: settings.lineWidth },
+                        hovertemplate: `RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`,
+                        name: "UV",
+                      },
+                    ]
+                  : []),
+                ...overlayData,
               ]}
               layout={{
                 height: uvPlotSize.height,
@@ -3103,27 +4059,30 @@ function UVChromatogramChart(props: {
                   ...axisFrame(settings),
                 },
                 hovermode: "x",
-                annotations: labels.map((label, index) => ({
-                  x: (label.uv_rt_min + xOffset) * scale,
-                  y: label.signal,
-                  text: cleanLabelText(label.text),
-                  textangle: labelOrientation === "vertical" ? "-90" : "0",
-                  showarrow: true,
-                  arrowhead: 0,
-                  ax: label.ax ?? 0,
-                  axref: label.axRef === "x" ? "x" : "pixel",
-                  ayref: label.ayRef === "y" ? "y" : "pixel",
-                  ay:
-                    label.ay ??
-                    (labelOrientation === "vertical" ? -78 - index * 26 : -42 - index * 22),
-                  font: {
-                    size: settings.labels.fontSize,
-                    color: settings.labels.color,
-                  },
-                })),
+                annotations: [
+                  ...labels.map((label, index) => ({
+                    x: (label.uv_rt_min + xOffset) * scale,
+                    y: label.signal,
+                    text: cleanLabelText(label.text),
+                    textangle: labelOrientation === "vertical" ? ("-90" as const) : ("0" as const),
+                    showarrow: true,
+                    arrowhead: 0,
+                    ax: label.ax ?? 0,
+                    axref: label.axRef === "x" ? ("x" as const) : ("pixel" as const),
+                    ayref: label.ayRef === "y" ? ("y" as const) : ("pixel" as const),
+                    ay:
+                      label.ay ??
+                      (labelOrientation === "vertical" ? -78 - index * 26 : -42 - index * 22),
+                    font: {
+                      size: settings.labels.fontSize,
+                      color: settings.labels.color,
+                    },
+                  })),
+                  ...overlayAnnotations,
+                ],
                 plot_bgcolor: "#ffffff",
                 paper_bgcolor: "#ffffff",
-                showlegend: false,
+                showlegend: overlayData.length > 0,
                 shapes,
               }}
               config={{
@@ -3142,6 +4101,7 @@ function UVChromatogramChart(props: {
               onClick={onClick}
               onInitialized={(_figure, graphDiv) => {
                 uvPlotRef.current = graphDiv as PlotlyHTMLElement;
+                queuePlotlyElementResize(uvPlotRef.current);
               }}
               onUpdate={(_figure, graphDiv) => {
                 uvPlotRef.current = graphDiv as PlotlyHTMLElement;
@@ -3190,7 +4150,9 @@ function UVChromatogramChart(props: {
 
 function SpectrumChart(props: {
   spectrum: SpectrumData | null;
+  overlayTraces: LCMSSpectrumOverlayTrace[];
   annotate: boolean;
+  showOverlayLabels: boolean;
   showDragHint: boolean;
   selectedRt: number | null;
   rtUnit: RtUnit;
@@ -3199,13 +4161,79 @@ function SpectrumChart(props: {
 }) {
   const s = props.spectrum;
   const specContainerRef = useRef<HTMLDivElement>(null);
+  const specPlotRef = useRef<PlotlyHTMLElement | null>(null);
   const specPlotSize = useContainerSize(specContainerRef, props.settings.height);
+  usePlotResizePulses([
+    props.annotate,
+    props.polymerEnabled,
+    props.rtUnit,
+    props.selectedRt,
+    props.overlayTraces.length,
+    props.showOverlayLabels,
+    props.settings.axis.xMax,
+    props.settings.axis.xMin,
+    props.settings.axis.yMax,
+    props.settings.axis.yMin,
+    props.settings.barWidth,
+    props.settings.color,
+    props.settings.height,
+    props.settings.labels.color,
+    props.settings.labels.enabled,
+    props.settings.labels.fontSize,
+    props.settings.showGrid,
+    props.settings.tickSize,
+    props.settings.title,
+    props.settings.xTitle,
+    props.settings.yTitle,
+    props.spectrum?.mz.length,
+    props.spectrum?.labels.length,
+    props.spectrum?.polymer_labels?.length,
+    ...props.overlayTraces.map((trace) => trace.spectrum.mz.length),
+  ], specPlotRef);
   const polymerLabelCount = s
     ? (s.polymer_labels ?? s.labels.filter((label) => label.source === "polymer")).length
     : 0;
   const visibleLabels = s
     ? s.labels.filter((label) => props.settings.labels.enabled || label.source === "polymer")
     : [];
+  const overlayData = useMemo(
+    () =>
+      props.overlayTraces.map((trace, index) => ({
+        type: "bar" as const,
+        x: trace.spectrum.mz,
+        y: trace.spectrum.intensity,
+        width: props.settings.barWidth,
+        marker: { color: OVERLAY_PALETTE[index % OVERLAY_PALETTE.length] },
+        opacity: 0.38,
+        hovertemplate: `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>`,
+        name: trace.display_name,
+      })),
+    [props.overlayTraces, props.settings.barWidth],
+  );
+  const overlayAnnotations = useMemo(() => {
+    if (!props.annotate || !props.showOverlayLabels) return [];
+    return props.overlayTraces.flatMap((trace, traceIndex) =>
+      trace.spectrum.labels
+        .filter((label) => props.settings.labels.enabled || label.source === "polymer")
+        .map((label, labelIndex) => ({
+          x: label.mz,
+          y: label.intensity,
+          text: label.text ? cleanLabelText(label.text) : label.mz.toFixed(4),
+          showarrow: false,
+          yshift: 18 + traceIndex * 10 + labelIndex * 2,
+          font: {
+            size: Math.max(8, props.settings.labels.fontSize - 1),
+            color: OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length],
+          },
+        })),
+    );
+  }, [
+    props.annotate,
+    props.overlayTraces,
+    props.settings.labels.enabled,
+    props.settings.labels.fontSize,
+    props.showOverlayLabels,
+  ]);
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       <div className="flex items-baseline justify-between px-1 pb-1">
@@ -3242,6 +4270,7 @@ function SpectrumChart(props: {
           style={{ height: props.settings.height }}
         >
           <Plot
+            revision={specPlotSize.revision}
             data={[
               {
                 type: "bar",
@@ -3252,6 +4281,7 @@ function SpectrumChart(props: {
                 hovertemplate: "m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>",
                 name: "MS1",
               },
+              ...overlayData,
             ]}
             layout={{
               height: specPlotSize.height,
@@ -3282,32 +4312,36 @@ function SpectrumChart(props: {
                 ...axisFrame(props.settings),
               },
               annotations: props.annotate
-                ? visibleLabels.map((lbl) => ({
-                    x: lbl.mz,
-                    y: lbl.intensity,
-                    text: lbl.text ? cleanLabelText(lbl.text) : lbl.mz.toFixed(4),
-                    showarrow: lbl.source === "polymer",
-                    arrowhead: 2,
-                    arrowsize: 0.8,
-                    arrowwidth: 1,
-                    arrowcolor: "#7c3aed",
-                    ax: 0,
-                    ay: lbl.source === "polymer" ? -34 : 0,
-                    yshift: lbl.source === "polymer" ? 0 : 10,
-                    bgcolor:
-                      lbl.source === "polymer" ? "rgba(124, 58, 237, 0.10)" : undefined,
-                    bordercolor: lbl.source === "polymer" ? "#7c3aed" : undefined,
-                    borderpad: lbl.source === "polymer" ? 3 : undefined,
-                    font: {
-                      size: props.settings.labels.fontSize,
-                      color:
-                        lbl.source === "polymer" ? "#7c3aed" : props.settings.labels.color,
-                    },
-                  }))
+                ? [
+                    ...visibleLabels.map((lbl) => ({
+                      x: lbl.mz,
+                      y: lbl.intensity,
+                      text: lbl.text ? cleanLabelText(lbl.text) : lbl.mz.toFixed(4),
+                      showarrow: lbl.source === "polymer",
+                      arrowhead: 2,
+                      arrowsize: 0.8,
+                      arrowwidth: 1,
+                      arrowcolor: "#7c3aed",
+                      ax: 0,
+                      ay: lbl.source === "polymer" ? -34 : 0,
+                      yshift: lbl.source === "polymer" ? 0 : 10,
+                      bgcolor:
+                        lbl.source === "polymer" ? "rgba(124, 58, 237, 0.10)" : undefined,
+                      bordercolor: lbl.source === "polymer" ? "#7c3aed" : undefined,
+                      borderpad: lbl.source === "polymer" ? 3 : undefined,
+                      font: {
+                        size: props.settings.labels.fontSize,
+                        color:
+                          lbl.source === "polymer" ? "#7c3aed" : props.settings.labels.color,
+                      },
+                    })),
+                    ...overlayAnnotations,
+                  ]
                 : [],
               plot_bgcolor: "#ffffff",
               paper_bgcolor: "#ffffff",
-              showlegend: false,
+              showlegend: overlayData.length > 0,
+              barmode: "overlay",
               bargap: 0,
               dragmode: props.showDragHint ? "pan" : "zoom",
             }}
@@ -3324,6 +4358,13 @@ function SpectrumChart(props: {
             }}
             style={{ width: "100%", height: "100%", minWidth: 0 }}
             useResizeHandler
+            onInitialized={(_figure, graphDiv) => {
+              specPlotRef.current = graphDiv as PlotlyHTMLElement;
+              queuePlotlyElementResize(specPlotRef.current);
+            }}
+            onUpdate={(_figure, graphDiv) => {
+              specPlotRef.current = graphDiv as PlotlyHTMLElement;
+            }}
           />
         </div>
       )}
@@ -3351,34 +4392,41 @@ function EmptyState(props: { onPick: () => void }) {
 // --- Status bar --------------------------------------------------------------
 
 function StatusBar({
-  mzml,
-  uv,
-  polarity,
+  truncName,
+  ms1Count,
+  rtRange,
+  polLabel,
+  uvAttached,
   offset,
 }: {
-  mzml: string;
-  uv: string;
-  polarity: Polarity;
+  truncName: string;
+  ms1Count: number;
+  rtRange: string | null;
+  polLabel: string;
+  uvAttached: boolean;
   offset: number;
 }) {
+  const sep = <span className="text-ink-300">·</span>;
   return (
-    <footer className="flex shrink-0 items-center gap-4 border-t border-ink-200 bg-white px-6 py-1.5 text-[11px] text-ink-600">
-      <span>
-        <span className="font-medium text-ink-500">MzML:</span> {mzml}
+    <footer className="flex shrink-0 items-center justify-between border-t border-ink-200 bg-white px-6 py-1.5 text-[11px] text-ink-500">
+      <span className="font-medium text-ink-700 truncate max-w-[220px]">
+        {truncName || "No session loaded"}
       </span>
-      <span className="text-ink-300">|</span>
-      <span>
-        <span className="font-medium text-ink-500">UV:</span> {uv}
+      <span className="flex items-center gap-2">
+        {ms1Count > 0 && <>{ms1Count} MS1 scans {sep}</>}
+        {rtRange && <>{rtRange} {sep}</>}
+        <span>{polLabel}</span>
+        {offset !== 0 && <>{sep} UV offset {offset.toFixed(3)} min</>}
       </span>
-      <span className="text-ink-300">|</span>
-      <span>
-        <span className="font-medium text-ink-500">Polarity filter:</span>{" "}
-        {polarity}
-      </span>
-      <span className="text-ink-300">|</span>
-      <span>
-        <span className="font-medium text-ink-500">UV↔MS offset:</span>{" "}
-        {offset.toFixed(3)} min
+      <span className="flex items-center gap-1.5">
+        {uvAttached ? (
+          <>
+            <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+            <span className="text-green-600">UV attached</span>
+          </>
+        ) : (
+          <span className="text-ink-300">No UV</span>
+        )}
       </span>
     </footer>
   );
@@ -3557,27 +4605,68 @@ function CustomUvLabelDialog({
   );
 }
 
-function EICDialog({ onClose }: { onClose: () => void }) {
+function EICDialog({
+  input,
+  setInput,
+  tol,
+  setTol,
+  busy,
+  onClose,
+  onRun,
+}: {
+  input: string;
+  setInput: (v: string) => void;
+  tol: number;
+  setTol: (v: number) => void;
+  busy: boolean;
+  onClose: () => void;
+  onRun: () => void;
+}) {
   return (
     <Modal
       title="Extracted Ion Chromatogram"
       onClose={onClose}
       footer={
-        <button
-          className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
-          onClick={onClose}
-        >
-          Close
-        </button>
+        <>
+          <button
+            className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button className="btn-primary" onClick={onRun} disabled={busy}>
+            {busy ? "Extracting..." : "Generate EIC"}
+          </button>
+        </>
       }
     >
       <p className="text-ink-600">
-        EIC chromatogram generation is not yet implemented in the web edition.
-        Use the desktop app for full EIC support, or export labels and plot in
-        Data Studio as an interim workflow.
+        Sum intensity across every MS1 scan inside the target m/z window.
+        The strongest EIC point will also load its nearest MS1 spectrum.
       </p>
-      <div className="mt-4 rounded-md border border-dashed border-ink-200 bg-ink-50/50 p-6 text-center text-sm text-ink-500">
-        Coming soon
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <div>
+          <div className="label">Target m/z</div>
+          <input
+            type="number"
+            step="0.0001"
+            className="input mt-1 w-full"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div>
+          <div className="label">Tolerance (Da)</div>
+          <input
+            type="number"
+            step="0.001"
+            min={0}
+            className="input mt-1 w-full"
+            value={tol}
+            onChange={(e) => setTol(Math.max(0.000001, parseFloat(e.target.value) || 0.01))}
+          />
+        </div>
       </div>
     </Modal>
   );

@@ -16,6 +16,17 @@ import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 
 type PlotKind = "Line" | "Scatter" | "Line+markers" | "Bar" | "Bar stacked" | "Area" | "Step" | "Histogram";
 
+const STEP_DESCRIPTIONS: Record<string, string> = {
+  select_columns: "Keep or remove specific columns",
+  rename:         "Rename columns with a mapping",
+  to_numeric:     "Convert text columns to numbers",
+  fillna:         "Replace missing values with a number, mean, or forward-fill",
+  normalize:      "Scale column values to 0–1 (min-max) or z-score",
+  baseline:       "Subtract a baseline (first point or rolling minimum)",
+  log:            "Apply logarithm (base 10 or natural) with an optional offset",
+  rolling_mean:   "Smooth values with a centered rolling average window",
+};
+
 const PLOT_KINDS: PlotKind[] = [
   "Line",
   "Scatter",
@@ -32,7 +43,18 @@ export function DataStudioView() {
   const [activeSid, setActiveSid] = useState<string | null>(null);
   const [schema, setSchema] = useState<DSSchema | null>(null);
   const [preview, setPreview] = useState<DSPreview | null>(null);
-  const [transforms, setTransforms] = useState<DSTransformStep[]>([]);
+  const [transforms, setTransformsRaw] = useState<DSTransformStep[]>([]);
+  const transformHistory = useRef<DSTransformStep[][]>([]);
+
+  const setTransforms = (next: DSTransformStep[]) => {
+    transformHistory.current = [...transformHistory.current.slice(-9), transforms];
+    setTransformsRaw(next);
+  };
+
+  const undoTransform = () => {
+    const prev = transformHistory.current.pop();
+    if (prev !== undefined) setTransformsRaw(prev);
+  };
   const [plotKind, setPlotKind] = useState<PlotKind>("Line");
   const [xCol, setXCol] = useState<string | null>(null);
   const [yCols, setYCols] = useState<string[]>([]);
@@ -63,6 +85,7 @@ export function DataStudioView() {
       setPreview(null);
       setXCol(null);
       setYCols([]);
+      transformHistory.current = [];
       return;
     }
     setBusy(true);
@@ -262,6 +285,8 @@ export function DataStudioView() {
                 schema={schema}
                 transforms={transforms}
                 setTransforms={setTransforms}
+                onUndo={undoTransform}
+                canUndo={transformHistory.current.length > 0}
                 warnings={preview?.warnings ?? []}
               />
 
@@ -505,9 +530,11 @@ function TransformCard(props: {
   schema: DSSchema | null;
   transforms: DSTransformStep[];
   setTransforms: (t: DSTransformStep[]) => void;
+  onUndo: () => void;
+  canUndo: boolean;
   warnings: string[];
 }) {
-  const { schema, transforms, setTransforms, warnings } = props;
+  const { schema, transforms, setTransforms, onUndo, canUndo, warnings } = props;
 
   const addStep = (t: DSTransformStep["type"]) => {
     const base: DSTransformStep = { type: t };
@@ -573,12 +600,22 @@ function TransformCard(props: {
             </button>
           ))}
           {transforms.length > 0 && (
-            <button
-              className="rounded border border-red-300 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100"
-              onClick={() => setTransforms([])}
-            >
-              Clear
-            </button>
+            <>
+              <button
+                className="rounded border border-ink-300 bg-white px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-40"
+                onClick={onUndo}
+                disabled={!canUndo}
+                title="Undo last change (Ctrl+Z)"
+              >
+                ↩ Undo
+              </button>
+              <button
+                className="rounded border border-red-300 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100"
+                onClick={() => setTransforms([])}
+              >
+                Clear all
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -632,12 +669,17 @@ function StepRow(props: {
   const numCols = schema?.numeric_columns ?? [];
 
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded border border-ink-200 bg-ink-50/50 p-2">
-      <div className="flex items-center gap-1">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded bg-brand-500 text-[11px] font-semibold text-white">
-          {idx + 1}
-        </span>
-        <span className="text-sm font-medium capitalize">{step.type.replace("_", " ")}</span>
+    <div className="flex flex-wrap items-start gap-3 rounded border border-ink-200 bg-ink-50/50 p-2">
+      <div className="flex flex-col gap-0.5 min-w-[130px]">
+        <div className="flex items-center gap-1">
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-brand-500 text-[10px] font-semibold text-white">
+            {idx + 1}
+          </span>
+          <span className="text-sm font-medium capitalize">{step.type.replace(/_/g, " ")}</span>
+        </div>
+        {STEP_DESCRIPTIONS[step.type] && (
+          <span className="text-[10px] text-ink-400 leading-tight">{STEP_DESCRIPTIONS[step.type]}</span>
+        )}
       </div>
 
       {step.type === "select_columns" && (
