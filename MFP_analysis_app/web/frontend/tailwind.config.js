@@ -38,17 +38,18 @@ export default {
       },
       fontFamily: {
         sans: [
+          "Inter",
           "-apple-system",
           "BlinkMacSystemFont",
-          "Inter",
           "SF Pro Text",
           "Segoe UI",
           "Helvetica Neue",
           "sans-serif",
         ],
         mono: [
-          "SF Mono",
+          "IBM Plex Mono",
           "JetBrains Mono",
+          "SF Mono",
           "Menlo",
           "Monaco",
           "Consolas",
@@ -56,7 +57,13 @@ export default {
         ],
       },
       boxShadow: {
-        card: "0 1px 2px rgba(15, 20, 32, 0.06), 0 1px 3px rgba(15, 20, 32, 0.08)",
+        card: "0 1px 2px rgba(1, 14, 34, 0.04), 0 2px 4px rgba(1, 14, 34, 0.06)",
+        sm: "0 1px 2px rgba(1, 14, 34, 0.06)",
+        md: "0 4px 12px rgba(1, 14, 34, 0.10), 0 1px 3px rgba(1, 14, 34, 0.06)",
+        lg: "0 8px 24px rgba(1, 14, 34, 0.14), 0 2px 6px rgba(1, 14, 34, 0.08)",
+      },
+      backgroundOpacity: {
+        8: "0.08",
       },
     },
   },

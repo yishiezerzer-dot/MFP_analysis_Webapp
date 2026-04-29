@@ -16,15 +16,15 @@ export function PageHeaderContent({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-2">
-      <div className="min-w-0">
-        <h1 className="truncate text-lg font-semibold">{title}</h1>
+    <div className="flex h-12 flex-wrap items-center justify-between gap-3 px-4">
+      <div className="min-w-0 flex items-baseline gap-2.5">
+        <h1 className="truncate text-[14px] font-semibold tracking-tight text-ink-900">{title}</h1>
         {subtitle !== undefined && (
-          <p className="text-sm text-ink-500">{subtitle}</p>
+          <span className="text-[12px] text-ink-500 truncate">{subtitle}</span>
         )}
       </div>
       {actions && (
-        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex flex-wrap items-center gap-1.5">{actions}</div>
       )}
     </div>
   );
