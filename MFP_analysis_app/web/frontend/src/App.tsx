@@ -9,6 +9,7 @@ import { FTIRView } from "./views/FTIRView";
 import { AIView } from "./views/AIView";
 import type { PageHeaderContextValue } from "./layout/PageHeader";
 import { UserMenu, type AppUser } from "./layout/UserMenu";
+import { Tooltip } from "./components/Tooltip";
 import mfpLogo from "./assets/mfp-logo.png";
 
 const CURRENT_USER: AppUser = {
@@ -194,10 +195,11 @@ function Sidebar() {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={clsx(
-        "flex h-full shrink-0 flex-col overflow-hidden border-r border-ink-200/70 bg-white",
+        "flex h-full shrink-0 flex-col overflow-hidden border-r border-ink-200/70",
         "transition-[width] duration-200 ease-out",
         expanded ? "w-64" : "w-[56px]",
       )}
+      style={{ backgroundColor: "rgb(var(--surface))" }}
       aria-expanded={expanded}
     >
       {/* Logo area */}
@@ -224,19 +226,20 @@ function Sidebar() {
           <div className="truncate text-[13px] font-semibold tracking-tight text-ink-900">MFP Analysis</div>
           <div className="truncate text-[11px] text-ink-500 leading-tight">Lab Platform</div>
         </div>
-        <button
-          type="button"
-          onClick={() => setPinned((p) => !p)}
-          title={pinned ? "Unpin sidebar" : "Pin sidebar"}
-          aria-label={pinned ? "Unpin sidebar" : "Pin sidebar"}
-          aria-pressed={pinned}
-          className={clsx(
-            "flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700",
-            !expanded && "hidden",
-          )}
-        >
-          <IconPin pinned={pinned} className="h-3.5 w-3.5" />
-        </button>
+        <Tooltip content={pinned ? "Unpin sidebar" : "Pin sidebar"} placement="bottom">
+          <button
+            type="button"
+            onClick={() => setPinned((p) => !p)}
+            aria-label={pinned ? "Unpin sidebar" : "Pin sidebar"}
+            aria-pressed={pinned}
+            className={clsx(
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700",
+              !expanded && "hidden",
+            )}
+          >
+            <IconPin pinned={pinned} className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
       </div>
 
       {/* Nav items */}
@@ -248,11 +251,10 @@ function Sidebar() {
       >
         {TABS.map((t) => {
           const Icon = t.icon;
-          return (
+          const navLink = (
             <NavLink
               key={t.to}
               to={t.to}
-              title={expanded ? undefined : `${t.label} — ${t.hint}`}
               className={({ isActive }) =>
                 clsx(
                   "nav-item",
@@ -279,6 +281,11 @@ function Sidebar() {
                 </span>
               )}
             </NavLink>
+          );
+          return expanded ? navLink : (
+            <Tooltip key={t.to} content={`${t.label} — ${t.hint}`} placement="right">
+              {navLink}
+            </Tooltip>
           );
         })}
       </nav>
@@ -311,7 +318,7 @@ function Layout() {
 
   return (
     <div className="flex h-full w-full flex-col">
-      <header className="shrink-0 border-b border-ink-200/70 bg-white shadow-sm">
+      <header className="shrink-0 border-b border-ink-200/70 shadow-sm" style={{ backgroundColor: "rgb(var(--surface))" }}>
         {headerNode ?? <div className="h-12" aria-hidden="true" />}
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">

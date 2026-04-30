@@ -1,6 +1,7 @@
-"""Built-in FTIR correlation library (v2).
+"""Built-in FTIR correlation libraries.
 
-Pure data module: no UI imports, no file I/O.
+Pure data module: no UI imports; v3 bands are loaded from the local JSON file
+next to this module so chemists can edit the library without touching code.
 Ranges are in cm^-1.
 
 Notes
@@ -10,9 +11,11 @@ Notes
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-FTIR_LIBRARY_VERSION = "2.0"
+FTIR_LIBRARY_VERSION = "3.0"
 
 # Allowed vocab per spec
 _ALLOWED_SHAPES = {"sharp", "medium", "broad"}
@@ -443,3 +446,46 @@ def get_library_v2() -> List[Dict[str, Any]]:
     """Return a shallow copy of library v2 entries."""
 
     return list(FTIR_LIBRARY_V2)
+
+
+def _load_library_v3() -> List[Dict[str, Any]]:
+    path = Path(__file__).with_name("ftir_library_v3.json")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    bands = payload.get("bands")
+    if not isinstance(bands, list):
+        raise ValueError("FTIR library v3 JSON must contain a 'bands' list")
+    return [dict(item) for item in bands]
+
+
+FTIR_LIBRARY_V3: List[Dict[str, Any]] = _load_library_v3()
+
+
+def get_library_v3() -> List[Dict[str, Any]]:
+    """Return a shallow copy of library v3 entries."""
+
+    return list(FTIR_LIBRARY_V3)
+
+
+def library_categories() -> Dict[str, Any]:
+    """Return category metadata derived from the active v3 library."""
+
+    categories: set[str] = set()
+    subcategories_by_category: Dict[str, set[str]] = {}
+    for band in FTIR_LIBRARY_V3:
+        primary = dict(band.get("primary") or {})
+        category = str(primary.get("category") or "").strip()
+        subcategory = str(primary.get("subcategory") or "").strip()
+        if not category:
+            continue
+        categories.add(category)
+        if subcategory:
+            subcategories_by_category.setdefault(category, set()).add(subcategory)
+
+    return {
+        "version": FTIR_LIBRARY_VERSION,
+        "categories": sorted(categories),
+        "subcategories_by_category": {
+            category: sorted(values)
+            for category, values in sorted(subcategories_by_category.items())
+        },
+    }

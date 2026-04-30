@@ -14,6 +14,12 @@ import {
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
+import { AlertBanner } from "../components/AlertBanner";
+import { ChartPanel } from "../components/ChartPanel";
+import { EmptyState } from "../components/EmptyState";
+import { Spinner } from "../components/Spinner";
+import { IconButton } from "../components/ui/IconButton";
+import { Tooltip } from "../components/Tooltip";
 
 type PlotKind = "Line" | "Scatter" | "Line+markers" | "Bar" | "Bar stacked" | "Area" | "Step" | "Histogram";
 
@@ -255,12 +261,12 @@ export function DataStudioView() {
   return (
     <div className="flex h-full flex-col">
       {error && (
-        <div className="border-b border-red-200 bg-red-50 px-6 py-2 text-sm text-red-700">
-          {error}{" "}
-          <button className="underline" onClick={() => setError(null)}>
-            dismiss
-          </button>
-        </div>
+        <AlertBanner
+          kind="error"
+          message={error}
+          onDismiss={() => setError(null)}
+          className="border-b"
+        />
       )}
 
       <div className="flex min-h-0 flex-1">
@@ -272,7 +278,20 @@ export function DataStudioView() {
         />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-6">
-          {!active && <EmptyState onPick={() => fileRef.current?.click()} />}
+          {!active && (
+            <div className="card flex flex-1 items-center justify-center">
+              <EmptyState
+                icon="📊"
+                title="Open a table"
+                hint="CSV/TSV/TXT or Excel. Supports delimiter sniffing, decimal-comma, sheet picking."
+                action={
+                  <button className="btn-primary" onClick={() => fileRef.current?.click()}>
+                    Choose file…
+                  </button>
+                }
+              />
+            </div>
+          )}
 
           {active && (
             <>
@@ -350,7 +369,7 @@ function SessionsSidebar(props: {
             key={s.session_id}
             className={clsx(
               "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-              isActive ? "bg-white shadow-card" : "hover:bg-ink-100",
+              isActive ? "bg-surface shadow-card" : "hover:bg-ink-100",
             )}
             onClick={() => props.onSelect(s.session_id)}
           >
@@ -375,23 +394,6 @@ function SessionsSidebar(props: {
         );
       })}
     </aside>
-  );
-}
-
-function EmptyState(props: { onPick: () => void }) {
-  return (
-    <div className="card flex shrink-0 flex-col items-center justify-center gap-3 p-12 text-center">
-      <div className="text-4xl">📊</div>
-      <div className="text-lg font-semibold">Open a table</div>
-      <div className="max-w-md text-sm text-ink-500">
-        CSV/TSV/TXT or Excel. The backend uses <code>lab_gui.data_studio_io.load_table</code>{" "}
-        so behaviour (delimiter sniffing, decimal-comma handling, sheet picking, auto-cast)
-        matches the desktop app.
-      </div>
-      <button className="btn-primary mt-2" onClick={props.onPick}>
-        Choose file…
-      </button>
-    </div>
   );
 }
 
@@ -491,7 +493,7 @@ function PreviewCard(props: { preview: DSPreview }) {
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full border-separate border-spacing-0 text-xs">
-          <thead className="bg-white">
+          <thead className="bg-surface">
             <tr>
               <th className="border-b border-ink-200 bg-ink-50 px-2 py-1.5 text-left font-medium text-ink-500">
                 #
@@ -570,7 +572,9 @@ function TransformCard(props: {
     const j = idx + dir;
     if (j < 0 || j >= transforms.length) return;
     const next = transforms.slice();
-    const [item] = next.splice(idx, 1);
+    const spliced = next.splice(idx, 1);
+    const item = spliced[0];
+    if (!item) return;
     next.splice(j, 0, item);
     setTransforms(next);
   };
@@ -594,7 +598,7 @@ function TransformCard(props: {
           ).map(([t, label]) => (
             <button
               key={t}
-              className="rounded border border-ink-300 bg-white px-2 py-1 text-xs hover:bg-ink-50"
+              className="rounded border border-ink-300 bg-surface px-2 py-1 text-xs hover:bg-ink-50"
               onClick={() => addStep(t)}
             >
               + {label}
@@ -836,19 +840,27 @@ function StepRow(props: {
       )}
 
       <div className="ml-auto flex items-center gap-1">
-        <IconBtn title="Move up" disabled={idx === 0} onClick={() => props.onMove(-1)}>
-          ↑
-        </IconBtn>
-        <IconBtn
-          title="Move down"
+        <IconButton
+          aria-label="Move up"
+          icon="↑"
+          size="sm"
+          disabled={idx === 0}
+          onClick={() => props.onMove(-1)}
+        />
+        <IconButton
+          aria-label="Move down"
+          icon="↓"
+          size="sm"
           disabled={idx === total - 1}
           onClick={() => props.onMove(1)}
-        >
-          ↓
-        </IconBtn>
-        <IconBtn title="Remove" onClick={props.onRemove}>
-          ✕
-        </IconBtn>
+        />
+        <IconButton
+          aria-label="Remove step"
+          icon="✕"
+          size="sm"
+          variant="danger"
+          onClick={props.onRemove}
+        />
       </div>
     </div>
   );
@@ -998,7 +1010,7 @@ function PlotControlsCard(props: {
                   "rounded-full px-2 py-0.5 text-xs",
                   active
                     ? "bg-brand-500 text-white"
-                    : "bg-white text-ink-700 ring-1 ring-ink-200 hover:bg-ink-100",
+                    : "bg-surface text-ink-700 ring-1 ring-ink-200 hover:bg-ink-100",
                 )}
                 onClick={() =>
                   props.setYCols(
@@ -1218,7 +1230,7 @@ function ColumnsPicker(props: {
   return (
     <div className="min-w-[180px] flex-1">
       <div className="label">{props.label}</div>
-      <div className="mt-1 flex flex-wrap gap-1 rounded border border-ink-200 bg-white p-1">
+      <div className="mt-1 flex flex-wrap gap-1 rounded border border-ink-200 bg-surface p-1">
         {props.options.length === 0 && (
           <span className="px-1 text-[11px] text-ink-400">no columns</span>
         )}
@@ -1267,7 +1279,7 @@ function RenameEditor(props: {
             value={from}
             onChange={(e) => {
               const m = { ...props.mapping };
-              const val = m[from];
+              const val = m[from] ?? "";
               delete m[from];
               m[e.target.value] = val;
               props.onChange(m);
@@ -1313,27 +1325,6 @@ function RenameEditor(props: {
           ))}
       </div>
     </div>
-  );
-}
-
-function IconBtn(props: {
-  children: React.ReactNode;
-  onClick: () => void;
-  title: string;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      className={clsx(
-        "rounded border border-ink-200 bg-white px-2 py-1 text-xs",
-        props.disabled ? "cursor-not-allowed text-ink-300" : "hover:bg-ink-50",
-      )}
-      title={props.title}
-      disabled={props.disabled}
-      onClick={props.onClick}
-    >
-      {props.children}
-    </button>
   );
 }
 

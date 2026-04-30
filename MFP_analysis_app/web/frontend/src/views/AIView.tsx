@@ -9,6 +9,8 @@ import {
   AIProvider,
   AIProviderStatus,
 } from "../api";
+import { AlertBanner } from "../components/AlertBanner";
+import { Tooltip } from "../components/Tooltip";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 
 const MODULE_NAMES: AIModuleName[] = ["LCMS", "FTIR", "Plate Reader", "Data Studio"];
@@ -209,7 +211,7 @@ export function AIView() {
           />
         </aside>
 
-        <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-ink-200 bg-white shadow-card">
+        <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-ink-200 bg-surface shadow-card">
           <div className="flex shrink-0 items-center justify-between border-b border-ink-200 px-4 py-2">
             <div className="text-xs text-ink-500">
               {turns.length === 0
@@ -220,34 +222,37 @@ export function AIView() {
             </div>
             <div className="flex items-center gap-2">
               {turns.length > 0 && (
+                <Tooltip content="Export conversation as text file">
+                  <button
+                    type="button"
+                    className="btn-ghost text-xs"
+                    onClick={() => {
+                      const text = turns
+                        .map((t) => `${t.role === "user" ? "You" : "Assistant"}:\n${t.content}`)
+                        .join("\n\n");
+                      const blob = new Blob([text], { type: "text/plain" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `ai-chat-${new Date().toISOString().slice(0, 10)}.txt`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    <DownloadIcon className="h-3.5 w-3.5" />
+                  </button>
+                </Tooltip>
+              )}
+              <Tooltip content="Clear all messages">
                 <button
                   type="button"
                   className="btn-ghost text-xs"
-                  title="Export conversation as text"
-                  onClick={() => {
-                    const text = turns
-                      .map((t) => `${t.role === "user" ? "You" : "Assistant"}:\n${t.content}`)
-                      .join("\n\n");
-                    const blob = new Blob([text], { type: "text/plain" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `ai-chat-${new Date().toISOString().slice(0, 10)}.txt`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  }}
+                  onClick={resetChat}
+                  disabled={turns.length === 0 || busy}
                 >
-                  <DownloadIcon className="h-3.5 w-3.5" />
+                  Clear chat
                 </button>
-              )}
-              <button
-                type="button"
-                className="btn-ghost text-xs"
-                onClick={resetChat}
-                disabled={turns.length === 0 || busy}
-              >
-                Clear chat
-              </button>
+              </Tooltip>
             </div>
           </div>
 
@@ -273,11 +278,14 @@ export function AIView() {
             {busy && <TypingIndicator />}
           </div>
 
-          <div className="shrink-0 border-t border-ink-200 bg-white px-4 py-3">
+          <div className="shrink-0 border-t border-ink-200 bg-surface px-4 py-3">
             {error && (
-              <div className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {error}
-              </div>
+              <AlertBanner
+                kind="error"
+                message={error}
+                onDismiss={() => setError(null)}
+                className="mb-2"
+              />
             )}
             <Composer
               value={input}
@@ -388,7 +396,7 @@ function ProviderCard(props: {
               "rounded-md border px-2 py-2 text-left text-xs transition-colors",
               provider === p.id
                 ? "border-brand-500 bg-brand-500 text-white"
-                : "border-ink-200 bg-white text-ink-700 hover:bg-ink-50",
+                : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-50",
               !p.enabled && provider !== p.id && "opacity-70",
             )}
           >
@@ -492,9 +500,11 @@ function ContextCard(props: {
     <div className="card shrink-0 p-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="label">Context</div>
-        <button type="button" className="btn-ghost text-xs" onClick={onRefresh}>
-          Refresh
-        </button>
+        <Tooltip content="Refresh session list from server">
+          <button type="button" className="btn-ghost text-xs" onClick={onRefresh}>
+            Refresh
+          </button>
+        </Tooltip>
       </div>
 
       <label className="mb-2 flex items-center gap-2 text-xs">
@@ -545,6 +555,9 @@ function ContextCard(props: {
         {sessions.length === 0 ? (
           <div className="rounded border border-dashed border-ink-200 px-2 py-3 text-[11px] text-ink-500">
             No datasets loaded yet. Open another tab to upload a file, then Refresh here.
+            <p className="mt-2 text-center text-[11px] text-ink-500">
+              Open LCMS, FTIR, Plate Reader, or Data Studio to upload files.
+            </p>
           </div>
         ) : (
           <div className="flex max-h-48 flex-col gap-1 overflow-y-auto pr-1">
@@ -610,7 +623,7 @@ function EmptyTranscript({
             key={p}
             type="button"
             onClick={() => onPick(p)}
-            className="flex items-center justify-between gap-2 rounded-md border border-ink-200 bg-white px-3 py-2 text-left text-xs text-ink-700 hover:border-ink-400 hover:bg-ink-50"
+            className="flex items-center justify-between gap-2 rounded-md border border-ink-200 bg-surface px-3 py-2 text-left text-xs text-ink-700 hover:border-ink-400 hover:bg-ink-50"
           >
             <span>{p}</span>
             <ArrowRightIcon className="h-3 w-3 shrink-0 text-ink-400" />
@@ -643,15 +656,17 @@ function AssistantBubble({ turn }: { turn: ChatTurn }) {
 
   return (
     <div className="group flex justify-start">
-      <div className="relative max-w-[85%] rounded-2xl rounded-bl-sm border border-ink-200 bg-white px-3.5 py-2 text-sm text-ink-800 shadow-sm">
-        <button
-          type="button"
-          onClick={copyContent}
-          title="Copy message"
-          className="absolute right-2 top-2 hidden rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 group-hover:flex"
-        >
-          {copied ? <CheckIcon className="h-3.5 w-3.5 text-emerald-600" /> : <CopyIcon className="h-3.5 w-3.5" />}
-        </button>
+      <div className="relative max-w-[85%] rounded-2xl rounded-bl-sm border border-ink-200 bg-surface px-3.5 py-2 text-sm text-ink-900 shadow-sm">
+        <Tooltip content="Copy to clipboard">
+          <button
+            type="button"
+            onClick={copyContent}
+            aria-label="Copy message"
+            className="absolute right-2 top-2 hidden rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 group-hover:flex"
+          >
+            {copied ? <CheckIcon className="h-3.5 w-3.5 text-emerald-600" /> : <CopyIcon className="h-3.5 w-3.5" />}
+          </button>
+        </Tooltip>
         <div className="whitespace-pre-wrap pr-6">{turn.content}</div>
         {(turn.is_mock || turn.error || turn.mode_hint || turn.used_context) && (
           <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-ink-100 pt-2 text-[10px] text-ink-500">
@@ -684,7 +699,7 @@ function AssistantBubble({ turn }: { turn: ChatTurn }) {
 function TypingIndicator() {
   return (
     <div className="flex justify-start">
-      <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-ink-200 bg-white px-3.5 py-2 text-sm text-ink-500 shadow-sm">
+      <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-ink-200 bg-surface px-3.5 py-2 text-sm text-ink-500 shadow-sm">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink-400" />
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink-400 [animation-delay:150ms]" />
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ink-400 [animation-delay:300ms]" />

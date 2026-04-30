@@ -23,7 +23,11 @@
       "WebFetch(domain:htdocs.dev)",
       "Read(//c/Users/owner/OneDrive - huji.ac.il/שולחן העבודה/yishi - moran's lab'/Frenkel-Pinter-Lab-Vault/**)",
       "WebFetch(domain:www.npmjs.com)",
-      "Read(//c/Users/owner/OneDrive - huji.ac.il/שולחן העبודה/yishi - moran's lab'/github copilot folder/Yishi's app/MFP_analysis_app/web/frontend/**)"
+      "Read(//c/Users/owner/OneDrive - huji.ac.il/שולחן העبודה/yishi - moran's lab'/github copilot folder/Yishi's app/MFP_analysis_app/web/frontend/**)",
+      "mcp__stitch__create_project",
+      "mcp__stitch__create_design_system",
+      "mcp__stitch__update_design_system",
+      "mcp__stitch__generate_screen_from_text"
     ],
     "additionalDirectories": [
       "C:\\Users\\owner\\.claude"

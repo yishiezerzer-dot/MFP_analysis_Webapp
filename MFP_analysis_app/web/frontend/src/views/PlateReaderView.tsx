@@ -13,6 +13,8 @@ import {
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
+import { AlertBanner } from "../components/AlertBanner";
+import { Tooltip } from "../components/Tooltip";
 
 type RowRole = "none" | "sample" | "control" | "blank";
 
@@ -521,12 +523,12 @@ export function PlateReaderView() {
   return (
     <div className="flex h-full flex-col">
       {error && (
-        <div className="border-b border-red-200 bg-red-50 px-6 py-2 text-sm text-red-700">
-          {error}{" "}
-          <button className="underline" onClick={() => setError(null)}>
-            dismiss
-          </button>
-        </div>
+        <AlertBanner
+          kind="error"
+          message={error}
+          onDismiss={() => setError(null)}
+          className="border-b"
+        />
       )}
 
       <div className="flex min-h-0 flex-1">
@@ -542,7 +544,7 @@ export function PlateReaderView() {
                 key={s.session_id}
                 className={clsx(
                   "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                  isActive ? "bg-white shadow-card" : "hover:bg-ink-100",
+                  isActive ? "bg-surface shadow-card" : "hover:bg-ink-100",
                 )}
                 onClick={() => setActiveSid(s.session_id)}
               >
@@ -722,7 +724,7 @@ function LoadControls(props: {
         <div>
           <div className="label">Sheet</div>
           <select
-            className="mt-1 rounded border border-ink-200 bg-white px-2 py-1 text-sm"
+            className="mt-1 rounded border border-ink-200 bg-surface px-2 py-1 text-sm"
             value={props.sheet ?? ""}
             onChange={(e) => props.setSheet(e.target.value || null)}
           >
@@ -786,7 +788,7 @@ function PreviewTable(props: {
           {concCols.map((c, i) => (
             <span
               key={c}
-              className="inline-flex items-center gap-0.5 rounded-full bg-white px-2 py-0.5 font-medium ring-1 ring-ink-200"
+              className="inline-flex items-center gap-0.5 rounded-full bg-surface px-2 py-0.5 font-medium ring-1 ring-ink-200"
             >
               <span className="text-[10px] text-ink-400 mr-0.5">{i + 1}</span>
               <span>{c}</span>
@@ -814,7 +816,7 @@ function PreviewTable(props: {
 
       <div className="overflow-x-auto">
         <table className="min-w-full border-separate border-spacing-0 text-xs">
-          <thead className="bg-white">
+          <thead className="bg-surface">
             <tr>
               <th className="border-b border-ink-200 bg-ink-50 px-2 py-1.5 text-left font-medium text-ink-500">
                 #
@@ -851,7 +853,7 @@ function PreviewTable(props: {
                           onClick={() => props.onSetRole(i, r)}
                           className={clsx(
                             "rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
-                            role === r ? activeRoleClass(r) : "border border-ink-200 bg-white text-ink-400 hover:bg-ink-100",
+                            role === r ? activeRoleClass(r) : "border border-ink-200 bg-surface text-ink-400 hover:bg-ink-100",
                           )}
                         >
                           {roleLabel(r)}
@@ -1020,10 +1022,11 @@ function WizardForm(props: {
         </div>
       </div>
       {!props.canRun && (
-        <div className="mt-3 rounded-md bg-ink-50 px-3 py-2 text-xs text-ink-600">
-          Select at least one <b>sample</b> row (click row numbers) and one or more
-          <b> concentration columns</b> (click column headers).
-        </div>
+        <AlertBanner
+          kind="info"
+          message="Select at least one sample row and one or more concentration columns to run MIC analysis."
+          className="mt-3"
+        />
       )}
     </div>
   );
@@ -1044,7 +1047,7 @@ function Segmented<T extends string>(props: {
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="mt-1 inline-flex rounded-md border border-ink-200 bg-white p-0.5 text-xs">
+    <div className="mt-1 inline-flex rounded-md border border-ink-200 bg-surface p-0.5 text-xs">
       {props.options.map((o) => (
         <button
           key={o}
@@ -1080,16 +1083,24 @@ function ChartControls(props: {
       <div className="mb-3 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold">MIC plot and exports</h3>
         <div className="flex flex-wrap gap-2">
-          <button className="btn-ghost" onClick={props.onExportCsv}>CSV</button>
-          <button className="btn-ghost" onClick={props.onExportJson}>JSON</button>
-          <button className="btn-ghost" onClick={props.onExportPng}>PNG</button>
-          <button className="btn-ghost" onClick={props.onExportSvg}>SVG</button>
+          <Tooltip content="Export MIC data as CSV">
+            <button className="btn-ghost" onClick={props.onExportCsv}>CSV</button>
+          </Tooltip>
+          <Tooltip content="Export full result as JSON">
+            <button className="btn-ghost" onClick={props.onExportJson}>JSON</button>
+          </Tooltip>
+          <Tooltip content="Export chart as PNG image">
+            <button className="btn-ghost" onClick={props.onExportPng}>PNG</button>
+          </Tooltip>
+          <Tooltip content="Export chart as SVG vector">
+            <button className="btn-ghost" onClick={props.onExportSvg}>SVG</button>
+          </Tooltip>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Field label="Sample color">
           <input
-            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-white p-1"
+            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-surface p-1"
             type="color"
             value={props.settings.sampleColor}
             onChange={(e) => props.setSettings((prev) => ({ ...prev, sampleColor: e.target.value }))}
@@ -1097,7 +1108,7 @@ function ChartControls(props: {
         </Field>
         <Field label="Control color">
           <input
-            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-white p-1"
+            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-surface p-1"
             type="color"
             value={props.settings.controlColor}
             onChange={(e) => props.setSettings((prev) => ({ ...prev, controlColor: e.target.value }))}
@@ -1105,7 +1116,7 @@ function ChartControls(props: {
         </Field>
         <Field label="Blank color">
           <input
-            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-white p-1"
+            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-surface p-1"
             type="color"
             value={props.settings.blankColor}
             onChange={(e) => props.setSettings((prev) => ({ ...prev, blankColor: e.target.value }))}

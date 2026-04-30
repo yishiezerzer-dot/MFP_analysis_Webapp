@@ -1,0 +1,557 @@
+{
+  "schema_version": 3,
+  "library_version": "3.0",
+  "name": "Built-in FTIR correlation library v3",
+  "notes": "Broad organic/inorganic FTIR correlation bands for automated candidate suggestions. Ranges are in cm^-1. The matcher uses these bands as suggestions, not definitive identifications.",
+  "sources": [
+    "Common IR correlation tables: Chemistry LibreTexts, CSU Stanislaus IR characteristic frequencies, and standard undergraduate organic spectroscopy references.",
+    "Band ranges are intentionally broad because FTIR position shifts with matrix, ATR/transmission mode, conjugation, hydrogen bonding, and instrument processing."
+  ],
+  "bands": [
+    {
+      "id": "oh_free_alcohol",
+      "range_cm1": [3700, 3580],
+      "primary": {
+        "label": "O-H stretch (free alcohol)",
+        "group": "single bond X-H",
+        "category": "alcohol",
+        "subcategory": "free O-H",
+        "shape": ["sharp"],
+        "intensity": ["weak", "medium", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1260, 1000], "text": "C-O stretch supports alcohol/phenol", "boost": 9 }
+      ],
+      "exclude_if_present": [
+        { "range_cm1": [3300, 2500], "text": "very broad acid O-H argues against free alcohol", "penalty": 18 }
+      ]
+    },
+    {
+      "id": "oh_hbond_alcohol",
+      "range_cm1": [3600, 3200],
+      "primary": {
+        "label": "O-H stretch (H-bonded alcohol/phenol)",
+        "group": "single bond X-H",
+        "category": "alcohol",
+        "subcategory": "hydrogen-bonded O-H",
+        "shape": ["broad"],
+        "intensity": ["strong", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1260, 1000], "text": "C-O stretch supports alcohol/phenol", "boost": 9 }
+      ]
+    },
+    {
+      "id": "oh_acid_broad",
+      "range_cm1": [3300, 2500],
+      "primary": {
+        "label": "O-H stretch (carboxylic acid, very broad)",
+        "group": "single bond X-H",
+        "category": "carboxylic acid",
+        "subcategory": "acid O-H",
+        "shape": ["broad"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1760, 1680], "text": "carbonyl supports carboxylic acid", "boost": 14 },
+        { "range_cm1": [1320, 1210], "text": "acid C-O stretch supports carboxylic acid", "boost": 8 }
+      ]
+    },
+    {
+      "id": "nh_stretch",
+      "range_cm1": [3500, 3200],
+      "primary": {
+        "label": "N-H stretch (amine/amide)",
+        "group": "single bond X-H",
+        "category": "amine",
+        "subcategory": "N-H stretch",
+        "shape": ["sharp", "medium"],
+        "intensity": ["weak", "medium", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1690, 1630], "text": "amide I region supports amide N-H", "boost": 8 },
+        { "range_cm1": [1580, 1510], "text": "amide II / N-H bend region supports N-H", "boost": 8 }
+      ],
+      "exclude_if_present": [
+        { "range_cm1": [3300, 2500], "text": "very broad acid O-H can obscure N-H", "penalty": 8 }
+      ]
+    },
+    {
+      "id": "terminal_alkyne_ch",
+      "range_cm1": [3330, 3260],
+      "primary": {
+        "label": "C-H stretch (terminal alkyne)",
+        "group": "single bond X-H",
+        "category": "alkyne",
+        "subcategory": "terminal alkyne C-H",
+        "shape": ["sharp"],
+        "intensity": ["medium", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [2260, 2100], "text": "C#C stretch supports terminal alkyne", "boost": 12 }
+      ]
+    },
+    {
+      "id": "ch_sp2",
+      "range_cm1": [3100, 3000],
+      "primary": {
+        "label": "=C-H stretch (sp2)",
+        "group": "single bond C-H",
+        "category": "alkene/aromatic",
+        "subcategory": "sp2 C-H",
+        "shape": ["sharp"],
+        "intensity": ["weak", "medium"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1680, 1450], "text": "C=C/ring band supports sp2 C-H", "boost": 8 }
+      ]
+    },
+    {
+      "id": "ch_sp3",
+      "range_cm1": [3000, 2840],
+      "primary": {
+        "label": "C-H stretch (sp3 alkyl)",
+        "group": "single bond C-H",
+        "category": "alkane",
+        "subcategory": "sp3 C-H",
+        "shape": ["sharp"],
+        "intensity": ["medium", "strong", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1470, 1350], "text": "CH bending region supports alkyl C-H", "boost": 7 }
+      ]
+    },
+    {
+      "id": "aldehyde_ch",
+      "range_cm1": [2830, 2695],
+      "primary": {
+        "label": "Aldehyde C-H stretch (Fermi doublet)",
+        "group": "single bond C-H",
+        "category": "aldehyde",
+        "subcategory": "aldehydic C-H",
+        "shape": ["sharp"],
+        "intensity": ["weak", "medium"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1740, 1720], "text": "aldehyde carbonyl supports aldehyde C-H", "boost": 14 }
+      ]
+    },
+    {
+      "id": "nitrile_cn",
+      "range_cm1": [2260, 2220],
+      "primary": {
+        "label": "C#N stretch (nitrile)",
+        "group": "triple bond",
+        "category": "nitrile",
+        "subcategory": "C#N stretch",
+        "shape": ["sharp"],
+        "intensity": ["medium", "strong"]
+      }
+    },
+    {
+      "id": "alkyne_cc",
+      "range_cm1": [2260, 2100],
+      "primary": {
+        "label": "C#C stretch (alkyne)",
+        "group": "triple bond",
+        "category": "alkyne",
+        "subcategory": "C#C stretch",
+        "shape": ["sharp"],
+        "intensity": ["weak", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [3330, 3260], "text": "terminal alkyne C-H supports alkyne", "boost": 12 }
+      ]
+    },
+    {
+      "id": "aromatic_overtone",
+      "range_cm1": [2000, 1660],
+      "primary": {
+        "label": "Aromatic overtone/combination bands",
+        "group": "combination/overtone",
+        "category": "aromatic",
+        "subcategory": "overtone",
+        "shape": ["medium", "broad"],
+        "intensity": ["weak", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1620, 1585], "text": "aromatic C=C band supports overtone pattern", "boost": 10 },
+        { "range_cm1": [1515, 1450], "text": "aromatic ring band supports overtone pattern", "boost": 10 }
+      ]
+    },
+    {
+      "id": "anhydride_co_asym",
+      "range_cm1": [1820, 1760],
+      "primary": {
+        "label": "C=O stretch (anhydride, asymmetric)",
+        "group": "carbonyl",
+        "category": "anhydride",
+        "subcategory": "asymmetric C=O",
+        "shape": ["sharp"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1760, 1700], "text": "second anhydride C=O band supports anhydride", "boost": 16 }
+      ]
+    },
+    {
+      "id": "anhydride_co_sym",
+      "range_cm1": [1760, 1700],
+      "primary": {
+        "label": "C=O stretch (anhydride, symmetric)",
+        "group": "carbonyl",
+        "category": "anhydride",
+        "subcategory": "symmetric C=O",
+        "shape": ["sharp"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1820, 1760], "text": "higher anhydride C=O band supports anhydride", "boost": 16 }
+      ]
+    },
+    {
+      "id": "acid_halide_co",
+      "range_cm1": [1815, 1770],
+      "primary": {
+        "label": "C=O stretch (acid halide)",
+        "group": "carbonyl",
+        "category": "acid halide",
+        "subcategory": "acid chloride C=O",
+        "shape": ["sharp"],
+        "intensity": ["strong"]
+      },
+      "exclude_if_present": [
+        { "range_cm1": [3300, 2500], "text": "acid O-H argues against acid halide", "penalty": 18 }
+      ]
+    },
+    {
+      "id": "ester_co",
+      "range_cm1": [1760, 1730],
+      "primary": {
+        "label": "C=O stretch (ester)",
+        "group": "carbonyl",
+        "category": "ester",
+        "subcategory": "ester C=O",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1300, 1000], "text": "C-O stretch supports ester", "boost": 18 },
+        { "range_cm1": [3000, 2840], "text": "alkyl C-H commonly accompanies ester", "boost": 5 }
+      ],
+      "exclude_if_present": [
+        { "range_cm1": [3300, 2500], "text": "very broad acid O-H argues for carboxylic acid", "penalty": 22 }
+      ]
+    },
+    {
+      "id": "carboxylic_acid_co",
+      "range_cm1": [1725, 1680],
+      "primary": {
+        "label": "C=O stretch (carboxylic acid)",
+        "group": "carbonyl",
+        "category": "carboxylic acid",
+        "subcategory": "acid C=O",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [3300, 2500], "text": "very broad acid O-H supports carboxylic acid", "boost": 20 }
+      ]
+    },
+    {
+      "id": "aldehyde_co",
+      "range_cm1": [1740, 1720],
+      "primary": {
+        "label": "C=O stretch (aldehyde)",
+        "group": "carbonyl",
+        "category": "aldehyde",
+        "subcategory": "aldehyde C=O",
+        "shape": ["sharp"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [2830, 2695], "text": "aldehyde C-H doublet supports aldehyde", "boost": 18 }
+      ]
+    },
+    {
+      "id": "ketone_co",
+      "range_cm1": [1725, 1705],
+      "primary": {
+        "label": "C=O stretch (ketone)",
+        "group": "carbonyl",
+        "category": "ketone",
+        "subcategory": "ketone C=O",
+        "shape": ["sharp"],
+        "intensity": ["strong"]
+      }
+    },
+    {
+      "id": "amide_I",
+      "range_cm1": [1690, 1630],
+      "primary": {
+        "label": "Amide I (C=O stretch)",
+        "group": "carbonyl",
+        "category": "amide",
+        "subcategory": "amide I",
+        "shape": ["medium", "sharp"],
+        "intensity": ["strong", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1580, 1510], "text": "amide II supports amide I", "boost": 20 },
+        { "range_cm1": [3500, 3200], "text": "N-H stretch supports amide", "boost": 10 }
+      ],
+      "exclude_if_present": [
+        { "range_cm1": [3300, 2500], "text": "acid O-H can shift carbonyl interpretation", "penalty": 8 }
+      ]
+    },
+    {
+      "id": "amide_II",
+      "range_cm1": [1580, 1510],
+      "primary": {
+        "label": "Amide II (N-H bend + C-N stretch)",
+        "group": "mixed mode",
+        "category": "amide",
+        "subcategory": "amide II",
+        "shape": ["medium"],
+        "intensity": ["medium", "strong", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1690, 1630], "text": "amide I supports amide II", "boost": 20 },
+        { "range_cm1": [3500, 3200], "text": "N-H stretch supports amide II", "boost": 8 }
+      ]
+    },
+    {
+      "id": "alkene_cc",
+      "range_cm1": [1680, 1620],
+      "primary": {
+        "label": "C=C stretch (alkene)",
+        "group": "double bond",
+        "category": "alkene",
+        "subcategory": "alkene C=C",
+        "shape": ["medium"],
+        "intensity": ["weak", "medium", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [3100, 3000], "text": "sp2 C-H supports alkene/aromatic C=C", "boost": 10 }
+      ]
+    },
+    {
+      "id": "aromatic_cc",
+      "range_cm1": [1620, 1585],
+      "primary": {
+        "label": "Aromatic C=C stretch (~1600)",
+        "group": "double bond/ring",
+        "category": "aromatic",
+        "subcategory": "aromatic C=C 1600",
+        "shape": ["medium"],
+        "intensity": ["weak", "medium", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1515, 1450], "text": "aromatic ~1500 band supports ring", "boost": 14 },
+        { "range_cm1": [900, 675], "text": "aromatic C-H out-of-plane supports ring", "boost": 8 }
+      ]
+    },
+    {
+      "id": "aromatic_cc_1500",
+      "range_cm1": [1515, 1450],
+      "primary": {
+        "label": "Aromatic C=C stretch (~1500)",
+        "group": "double bond/ring",
+        "category": "aromatic",
+        "subcategory": "aromatic C=C 1500",
+        "shape": ["medium"],
+        "intensity": ["weak", "medium", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1620, 1585], "text": "aromatic ~1600 band supports ring", "boost": 14 },
+        { "range_cm1": [900, 675], "text": "aromatic C-H out-of-plane supports ring", "boost": 8 }
+      ]
+    },
+    {
+      "id": "nitro_no2_asym",
+      "range_cm1": [1660, 1500],
+      "primary": {
+        "label": "NO2 asymmetric stretch (nitro)",
+        "group": "nitrogen oxide",
+        "category": "nitro",
+        "subcategory": "NO2 asymmetric",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1390, 1260], "text": "NO2 symmetric stretch supports nitro", "boost": 18 }
+      ]
+    },
+    {
+      "id": "nitro_no2_sym",
+      "range_cm1": [1390, 1260],
+      "primary": {
+        "label": "NO2 symmetric stretch (nitro)",
+        "group": "nitrogen oxide",
+        "category": "nitro",
+        "subcategory": "NO2 symmetric",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1660, 1500], "text": "NO2 asymmetric stretch supports nitro", "boost": 18 }
+      ]
+    },
+    {
+      "id": "ester_co_asym",
+      "range_cm1": [1300, 1150],
+      "primary": {
+        "label": "C-O stretch (ester, asymmetric)",
+        "group": "single bond C-O",
+        "category": "ester",
+        "subcategory": "ester C-O asymmetric",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1760, 1730], "text": "ester carbonyl supports ester C-O", "boost": 18 }
+      ]
+    },
+    {
+      "id": "ester_co_sym",
+      "range_cm1": [1150, 1000],
+      "primary": {
+        "label": "C-O stretch (ester, symmetric)",
+        "group": "single bond C-O",
+        "category": "ester",
+        "subcategory": "ester C-O symmetric",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1760, 1730], "text": "ester carbonyl supports ester C-O", "boost": 18 }
+      ]
+    },
+    {
+      "id": "alcohol_co",
+      "range_cm1": [1260, 1000],
+      "primary": {
+        "label": "C-O stretch (alcohol/phenol)",
+        "group": "single bond C-O",
+        "category": "alcohol",
+        "subcategory": "alcohol C-O",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [3600, 3200], "text": "O-H stretch supports alcohol C-O", "boost": 12 }
+      ]
+    },
+    {
+      "id": "ether_co",
+      "range_cm1": [1150, 1050],
+      "primary": {
+        "label": "C-O-C stretch (ether)",
+        "group": "single bond C-O",
+        "category": "ether",
+        "subcategory": "ether C-O-C",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong", "variable"]
+      }
+    },
+    {
+      "id": "sulfoxide_so",
+      "range_cm1": [1070, 1030],
+      "primary": {
+        "label": "S=O stretch (sulfoxide)",
+        "group": "sulfur oxide",
+        "category": "sulfoxide",
+        "subcategory": "S=O",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong"]
+      }
+    },
+    {
+      "id": "sulfone_so2_asym",
+      "range_cm1": [1350, 1290],
+      "primary": {
+        "label": "SO2 asymmetric stretch (sulfone)",
+        "group": "sulfur oxide",
+        "category": "sulfone",
+        "subcategory": "SO2 asymmetric",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1170, 1120], "text": "SO2 symmetric stretch supports sulfone", "boost": 18 }
+      ]
+    },
+    {
+      "id": "sulfone_so2_sym",
+      "range_cm1": [1170, 1120],
+      "primary": {
+        "label": "SO2 symmetric stretch (sulfone)",
+        "group": "sulfur oxide",
+        "category": "sulfone",
+        "subcategory": "SO2 symmetric",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1350, 1290], "text": "SO2 asymmetric stretch supports sulfone", "boost": 18 }
+      ]
+    },
+    {
+      "id": "phosphate_po",
+      "range_cm1": [1260, 1150],
+      "primary": {
+        "label": "P=O stretch (phosphate/phosphoryl)",
+        "group": "phosphorus oxide",
+        "category": "phosphate",
+        "subcategory": "P=O",
+        "shape": ["sharp", "medium"],
+        "intensity": ["strong", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1100, 900], "text": "P-O region supports phosphate", "boost": 10 }
+      ]
+    },
+    {
+      "id": "phosphate_po_stretch",
+      "range_cm1": [1100, 900],
+      "primary": {
+        "label": "P-O stretch (phosphate)",
+        "group": "phosphorus oxide",
+        "category": "phosphate",
+        "subcategory": "P-O",
+        "shape": ["medium", "broad"],
+        "intensity": ["strong", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1260, 1150], "text": "P=O supports phosphate", "boost": 10 }
+      ]
+    },
+    {
+      "id": "sio_si_o",
+      "range_cm1": [1130, 1000],
+      "primary": {
+        "label": "Si-O stretch (siloxane/silicate)",
+        "group": "silicon oxide",
+        "category": "siloxane/silicate",
+        "subcategory": "Si-O",
+        "shape": ["broad", "medium"],
+        "intensity": ["strong", "variable"]
+      }
+    },
+    {
+      "id": "aromatic_ch_oop",
+      "range_cm1": [900, 675],
+      "primary": {
+        "label": "Aromatic C-H out-of-plane bend",
+        "group": "bending",
+        "category": "aromatic",
+        "subcategory": "C-H out-of-plane",
+        "shape": ["sharp", "medium"],
+        "intensity": ["medium", "strong", "variable"]
+      },
+      "confirm_if_present": [
+        { "range_cm1": [1620, 1450], "text": "aromatic ring bands support out-of-plane bend", "boost": 12 }
+      ]
+    }
+  ]
+}

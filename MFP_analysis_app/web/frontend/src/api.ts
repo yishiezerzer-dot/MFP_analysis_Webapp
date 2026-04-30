@@ -240,8 +240,8 @@ export interface MICResult {
 // --- FTIR types ---
 
 export type FTIRYMode = "absorbance" | "transmittance";
-export type FTIRBaseline = "none" | "polyfit";
-export type FTIRNormalize = "none" | "max" | "area";
+export type FTIRBaseline = "none" | "polyfit" | "rubberband" | "asls" | "airpls";
+export type FTIRNormalize = "none" | "max" | "area" | "snv" | "vector" | "min-max" | "msc";
 
 export interface FTIRSessionSummary {
   session_id: string;
@@ -262,6 +262,11 @@ export interface FTIRPreprocessOptions {
   poly_order: number;
   baseline: FTIRBaseline;
   normalize: FTIRNormalize;
+  baseline_lambda: number;
+  baseline_p: number;
+  mask_atmospheric: boolean;
+  atr_correction: boolean;
+  atr_n_crystal: number;
 }
 
 export interface FTIRSpectrumResponse {
@@ -275,7 +280,13 @@ export interface FTIRSpectrumResponse {
     poly_order: number;
     baseline: FTIRBaseline;
     normalize: FTIRNormalize;
+    baseline_lambda?: number;
+    baseline_p?: number;
+    mask_atmospheric?: boolean;
+    atr_correction?: boolean;
+    atr_n_crystal?: number;
   };
+  atmospheric_regions?: Array<{ lo: number; hi: number; label: string }>;
 }
 
 export interface FTIRPeak {
@@ -289,9 +300,13 @@ export interface FTIRPeak {
 
 export interface FTIRAssignmentCandidate {
   id: string;
+  band_id?: string;
   label: string;
   score: number;
   reasons: string[];
+  group?: string;
+  category?: string;
+  subcategory?: string;
 }
 
 export interface FTIRAssignment {
@@ -305,6 +320,10 @@ export interface FTIRAssignment {
     shape: string;
     intensity: string;
   };
+  status?: "auto" | "ambiguous" | "none";
+  auto_band_id?: string | null;
+  ambiguity_ratio?: number;
+  override?: FTIRPeakLabelOverride | null;
   candidates: FTIRAssignmentCandidate[];
 }
 
@@ -318,13 +337,113 @@ export interface FTIRPeaksRequest extends FTIRPreprocessOptions {
   min_height?: number | null;
   min_distance_cm1: number;
   top_n: number;
+  second_derivative?: boolean;
   assign: boolean;
   assign_top_n?: number;
   assign_min_score?: number;
+  excluded_categories?: string[];
+  excluded_subcategories?: string[];
+  ambiguity_ratio?: number;
+}
+
+export interface FTIRLibraryCategories {
+  version: string;
+  categories: string[];
+  subcategories_by_category: Record<string, string[]>;
+}
+
+export interface FTIRPeakLabelOverride {
+  band_id?: string | null;
+  custom_text?: string | null;
+  hidden?: boolean;
 }
 
 export interface FTIRSpectrumRequest extends FTIRPreprocessOptions {
   max_points: number;
+}
+
+export interface FTIRIntegrationRequest extends FTIRSpectrumRequest {
+  region: [number, number];
+  baseline_mode: "linear" | "horizontal" | "tangent";
+}
+
+export interface FTIRIntegrationResponse {
+  region: [number, number];
+  baseline_mode: string;
+  area: number;
+  height: number;
+  fwhm: number | null;
+  baseline_y_at_lo: number;
+  baseline_y_at_hi: number;
+  peak_wn: number;
+}
+
+export interface FTIRSubtractRequest extends FTIRSpectrumRequest {
+  sid_b: string;
+  k: number;
+  region_minimize?: [number, number] | null;
+}
+
+export interface FTIRSubtractResponse {
+  wn: number[];
+  y: number[];
+  sid_a: string;
+  sid_b: string;
+  k: number;
+  n_points_full: number;
+  n_points_returned: number;
+}
+
+export interface FTIRReferenceHit {
+  name: string;
+  label: string;
+  correlation: number;
+  ranking_method: string;
+  source: string;
+  reference: {
+    wn: number[];
+    y: number[];
+  };
+}
+
+export interface FTIRMatchRequest extends FTIRSpectrumRequest {
+  region?: [number, number] | null;
+  derivative_order: 0 | 1 | 2;
+  top_n: number;
+}
+
+export interface FTIRMatchResponse {
+  hits: FTIRReferenceHit[];
+  ranking_method: string;
+  region: [number, number];
+}
+
+export interface FTIRFitRequest extends FTIRSpectrumRequest {
+  region: [number, number];
+  n_components: number;
+  profile: "gauss" | "lorentz" | "voigt";
+}
+
+export interface FTIRFitComponent {
+  index: number;
+  amplitude: number;
+  center: number;
+  width: number;
+  area: number;
+  wn: number[];
+  y: number[];
+}
+
+export interface FTIRFitResponse {
+  region: [number, number];
+  profile: string;
+  components: FTIRFitComponent[];
+  fit: {
+    wn: number[];
+    y: number[];
+  };
+  r2: number | null;
+  residual_rms: number;
 }
 
 // --- Data Studio types ---
@@ -575,6 +694,38 @@ export const api = {
       }).then((r) => handle<FTIRPeaksResponse>(r)),
     library: () =>
       fetch("/api/ftir/library").then((r) => handle<{ version: string; n_entries: number }>(r)),
+    libraryCategories: () =>
+      fetch("/api/ftir/library/categories").then((r) => handle<FTIRLibraryCategories>(r)),
+    updatePeakLabel: (sid: string, wn: number, override: FTIRPeakLabelOverride | null) =>
+      fetch(`/api/ftir/sessions/${sid}/peak-labels`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wn, override }),
+      }).then((r) => handle<{ wn: number; key: string; override: FTIRPeakLabelOverride | null }>(r)),
+    integrate: (sid: string, body: FTIRIntegrationRequest) =>
+      fetch(`/api/ftir/sessions/${sid}/integrate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<FTIRIntegrationResponse>(r)),
+    subtract: (sid: string, body: FTIRSubtractRequest) =>
+      fetch(`/api/ftir/sessions/${sid}/subtract`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<FTIRSubtractResponse>(r)),
+    match: (sid: string, body: FTIRMatchRequest) =>
+      fetch(`/api/ftir/sessions/${sid}/match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<FTIRMatchResponse>(r)),
+    fit: (sid: string, body: FTIRFitRequest) =>
+      fetch(`/api/ftir/sessions/${sid}/fit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<FTIRFitResponse>(r)),
   },
 
   plateReader: {

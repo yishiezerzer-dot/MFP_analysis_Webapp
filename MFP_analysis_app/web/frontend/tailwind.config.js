@@ -4,10 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Neutral gray ramp used for text, borders and muted surfaces.
-        // Values are supplied as CSS custom properties so the active theme
-        // (`[data-theme="day|night|night-vision"]`) can remap the entire
-        // ramp at runtime. See `styles.css` for the per-theme definitions.
+        // Neutral gray ramp — remapped per theme via CSS custom properties.
         ink: {
           50: "rgb(var(--ink-50) / <alpha-value>)",
           100: "rgb(var(--ink-100) / <alpha-value>)",
@@ -20,9 +17,7 @@ export default {
           800: "rgb(var(--ink-800) / <alpha-value>)",
           900: "rgb(var(--ink-900) / <alpha-value>)",
         },
-        // Primary brand ramp. `brand-500` is the canonical #5573B9 in the
-        // light theme. Dark themes remap 400/500/600 to values that keep
-        // buttons and active states readable on darker surfaces.
+        // Primary brand ramp — lighter in dark themes for readability.
         brand: {
           50: "rgb(var(--brand-50) / <alpha-value>)",
           100: "rgb(var(--brand-100) / <alpha-value>)",
@@ -35,15 +30,26 @@ export default {
           800: "rgb(var(--brand-800) / <alpha-value>)",
           900: "rgb(var(--brand-900) / <alpha-value>)",
         },
+        // Surface / canvas semantic tokens — use these instead of bg-white
+        // so surfaces automatically adapt to all three themes.
+        canvas:            "rgb(var(--canvas) / <alpha-value>)",
+        surface:           "rgb(var(--surface) / <alpha-value>)",
+        "surface-raised":  "rgb(var(--surface-raised) / <alpha-value>)",
+        // Semantic status colors — remapped per theme for dark-mode readability.
+        success:           "rgb(var(--success) / <alpha-value>)",
+        "success-surface": "rgb(var(--success-surface) / <alpha-value>)",
+        warning:           "rgb(var(--warning) / <alpha-value>)",
+        "warning-surface": "rgb(var(--warning-surface) / <alpha-value>)",
+        danger:            "rgb(var(--danger) / <alpha-value>)",
+        "danger-surface":  "rgb(var(--danger-surface) / <alpha-value>)",
+        info:              "rgb(var(--info) / <alpha-value>)",
+        "info-surface":    "rgb(var(--info-surface) / <alpha-value>)",
       },
       fontFamily: {
         sans: [
-          "Inter",
-          "-apple-system",
-          "BlinkMacSystemFont",
-          "SF Pro Text",
-          "Segoe UI",
-          "Helvetica Neue",
+          "Instrument Sans",
+          "DM Sans",
+          "system-ui",
           "sans-serif",
         ],
         mono: [

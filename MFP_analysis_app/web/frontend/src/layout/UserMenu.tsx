@@ -68,7 +68,10 @@ export function UserMenu({
   }, [open, close]);
 
   return (
-    <div className="shrink-0 border-t border-ink-200 bg-white">
+    <div
+      className="shrink-0 border-t border-ink-200/40"
+      style={{ backgroundColor: "rgb(var(--surface))" }}
+    >
       <button
         ref={triggerRef}
         type="button"
@@ -77,25 +80,25 @@ export function UserMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         className={clsx(
-          "flex w-full items-center gap-3 transition-colors hover:bg-ink-50",
+          "flex w-full items-center gap-2.5 transition-colors hover:bg-ink-100/50",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
-          expanded ? "px-3 py-3" : "justify-center px-2 py-3",
+          expanded ? "px-3 py-2.5" : "justify-center px-2 py-2.5",
         )}
       >
         <Avatar user={user} size="sm" withPresence />
         {expanded && (
           <>
             <div className="min-w-0 flex-1 text-left">
-              <div className="truncate text-sm font-semibold text-ink-900">
+              <div className="truncate text-[13px] font-semibold text-ink-900">
                 {user.name}
               </div>
               {user.secondary && (
-                <div className="truncate text-xs text-ink-500">
+                <div className="truncate text-[11px] text-ink-500">
                   {user.secondary}
                 </div>
               )}
             </div>
-            <IconChevronUpDown className="h-4 w-4 shrink-0 text-ink-400" />
+            <IconChevronUpDown className="h-3.5 w-3.5 shrink-0 text-ink-400" />
           </>
         )}
       </button>
@@ -202,21 +205,24 @@ function UserMenuPopover({ anchor, popoverRef, user, onClose }: PopoverProps) {
         left: coords?.left ?? -9999,
         width: POPOVER_WIDTH,
         zIndex: 50,
+        backgroundColor: "rgb(var(--surface-raised))",
+        border: "1px solid rgb(var(--ink-200) / 0.5)",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)",
       }}
       className={clsx(
-        "rounded-xl border border-ink-200 bg-white shadow-xl",
+        "rounded-[10px]",
         "transition-[opacity,transform] duration-150 ease-out",
         mounted ? "translate-y-0 opacity-100" : "translate-y-1 opacity-0",
       )}
     >
-      <div className="flex items-center gap-3 px-4 pb-3 pt-4">
+      <div className="flex items-center gap-3 px-3.5 pb-3 pt-3.5">
         <Avatar user={user} size="lg" withPresence />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-semibold text-ink-900">
+          <div className="truncate text-[14px] font-semibold text-ink-900">
             {user.name}
           </div>
           {user.secondary && (
-            <div className="truncate text-sm text-ink-500">{user.secondary}</div>
+            <div className="truncate text-[12px] text-ink-500">{user.secondary}</div>
           )}
         </div>
       </div>
@@ -226,16 +232,16 @@ function UserMenuPopover({ anchor, popoverRef, user, onClose }: PopoverProps) {
       <div className="p-1">
         <MenuRow
           onClick={() => handleItemClick("My settings")}
-          icon={<IconSliders className="h-5 w-5 shrink-0" />}
+          icon={<IconSliders className="h-[17px] w-[17px] shrink-0 text-ink-500" />}
         >
-          <span className="text-sm text-ink-800">My settings</span>
+          <span className="text-[13px] text-ink-800">My settings</span>
         </MenuRow>
 
         <MenuRow
           onClick={() => handleItemClick("Administration")}
-          icon={<IconShield className="h-5 w-5 shrink-0" />}
+          icon={<IconShield className="h-[17px] w-[17px] shrink-0 text-ink-500" />}
         >
-          <span className="text-sm text-ink-800">Administration</span>
+          <span className="text-[13px] text-ink-800">Administration</span>
         </MenuRow>
       </div>
 
@@ -247,13 +253,13 @@ function UserMenuPopover({ anchor, popoverRef, user, onClose }: PopoverProps) {
 
       <DividerThin />
 
-      <div className="p-1 pb-2">
+      <div className="p-1 pb-1.5">
         <MenuRow
           onClick={() => handleItemClick("Sign out")}
-          icon={<IconSignOut className="h-5 w-5 shrink-0 text-red-600" />}
+          icon={<IconSignOut className="h-[17px] w-[17px] shrink-0 text-red-500" />}
           danger
         >
-          <span className="text-sm font-medium text-red-600">Sign out</span>
+          <span className="text-[13px] font-medium text-red-500">Sign out</span>
         </MenuRow>
       </div>
     </div>,
@@ -264,7 +270,7 @@ function UserMenuPopover({ anchor, popoverRef, user, onClose }: PopoverProps) {
 // --------------------------- shared bits ---------------------------
 
 function DividerThin() {
-  return <div className="h-px bg-ink-200" role="presentation" />;
+  return <div className="h-px bg-ink-200/40" role="presentation" />;
 }
 
 /**
@@ -295,21 +301,21 @@ function ThemeSubmenu() {
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className={clsx(
-          "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left",
-          "transition-colors hover:bg-ink-100",
+          "flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-[7px] text-left",
+          "transition-colors hover:bg-ink-100/60",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
         )}
       >
-        <IconTheme className="h-5 w-5 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-sm text-ink-800">
+        <IconTheme className="h-[17px] w-[17px] shrink-0 text-ink-500" />
+        <span className="min-w-0 flex-1 truncate text-[13px] text-ink-800">
           Theme
         </span>
-        <span className="shrink-0 truncate text-xs text-ink-500">
+        <span className="shrink-0 truncate text-[11px] text-ink-500">
           {current.label}
         </span>
         <IconChevronRight
           className={clsx(
-            "h-4 w-4 shrink-0 text-ink-400 transition-transform duration-150",
+            "h-3.5 w-3.5 shrink-0 text-ink-400 transition-transform duration-150",
             open && "rotate-90",
           )}
         />
@@ -319,7 +325,7 @@ function ThemeSubmenu() {
         <div
           role="menu"
           aria-label="Theme"
-          className="mt-1 flex flex-col gap-0.5 pl-2"
+          className="mt-0.5 flex flex-col gap-px pl-1.5"
         >
           {themes.map((opt) => {
             const active = opt.id === theme;
@@ -331,27 +337,27 @@ function ThemeSubmenu() {
                 aria-checked={active}
                 onClick={() => setTheme(opt.id)}
                 className={clsx(
-                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left",
+                  "flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-[6px] text-left",
                   "transition-colors",
                   active
                     ? "bg-brand-500/10 text-brand-600"
-                    : "text-ink-800 hover:bg-ink-100",
+                    : "text-ink-800 hover:bg-ink-100/60",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
                 )}
               >
                 <ThemeSwatch theme={opt.id} />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium">
+                  <span className="block text-[13px] font-medium">
                     {opt.label}
                   </span>
-                  <span className="block text-xs text-ink-500">
+                  <span className="block text-[11px] text-ink-500">
                     {opt.description}
                   </span>
                 </span>
                 {active ? (
-                  <IconCheck className="h-4 w-4 shrink-0 text-brand-600" />
+                  <IconCheck className="h-3.5 w-3.5 shrink-0 text-brand-600" />
                 ) : (
-                  <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 )}
               </button>
             );
@@ -370,7 +376,7 @@ function ThemeSubmenu() {
 function ThemeSwatch({ theme }: { theme: ThemeName }) {
   const palette: Record<ThemeName, { bg: string; fg: string; accent: string }> = {
     day: { bg: "#ffffff", fg: "#0f1420", accent: "#5573b9" },
-    night: { bg: "#161b26", fg: "#f3f5fa", accent: "#7694ce" },
+    night: { bg: "#001a37", fg: "#d9e6ff", accent: "#7694ce" },
     "night-vision": { bg: "#120606", fg: "#ffafaa", accent: "#d23c3c" },
   };
   const p = palette[theme];
@@ -407,15 +413,15 @@ function MenuRow({
       role="menuitem"
       onClick={onClick}
       className={clsx(
-        "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left",
+        "flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-[7px] text-left",
         "transition-colors",
-        danger ? "hover:bg-red-50" : "hover:bg-ink-100",
+        danger ? "hover:bg-red-500/10" : "hover:bg-ink-100/60",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
       )}
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      {hasSubmenu && <IconChevronRight className="h-4 w-4 shrink-0 text-ink-400" />}
+      {hasSubmenu && <IconChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-400" />}
     </button>
   );
 }

@@ -113,6 +113,8 @@ export interface PlotlyThemeColors {
   gridColor: string;
   legendBg: string;
   zerolineColor: string;
+  /** Ordered trace colorway — use as Plotly layout.colorway */
+  colorway: string[];
 }
 
 const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
@@ -123,6 +125,7 @@ const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
     gridColor: "#d6dcea",
     legendBg: "rgba(255,255,255,0.88)",
     zerolineColor: "#b6c4da",
+    colorway: ["#3559A8","#0F766E","#B45309","#7C3AED","#BE123C","#0891B2"],
   },
   night: {
     plot_bgcolor: "#001a37",
@@ -131,6 +134,7 @@ const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
     gridColor: "#002042",
     legendBg: "rgba(0,26,55,0.88)",
     zerolineColor: "#284974",
+    colorway: ["#7290E8","#5EEAD4","#FCD34D","#C4B5FD","#FDA4AF","#67E8F9"],
   },
   "night-vision": {
     plot_bgcolor: "#100505",
@@ -139,6 +143,7 @@ const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
     gridColor: "#1a0808",
     legendBg: "rgba(16,5,5,0.88)",
     zerolineColor: "#3c1616",
+    colorway: ["#FF6B6B","#FFB347","#FFEAA7","#FF9F80","#E8A0BF","#AFF8D8"],
   },
 };
 
