@@ -450,11 +450,34 @@ def get_library_v2() -> List[Dict[str, Any]]:
 
 def _load_library_v3() -> List[Dict[str, Any]]:
     path = Path(__file__).with_name("ftir_library_v3.json")
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        import warnings
+        warnings.warn(
+            f"ftir_library_v3.json not found at {path}; v3 library will be empty.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return []
+    except Exception as exc:
+        import warnings
+        warnings.warn(
+            f"Failed to load ftir_library_v3.json: {exc}; v3 library will be empty.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return []
     bands = payload.get("bands")
     if not isinstance(bands, list):
-        raise ValueError("FTIR library v3 JSON must contain a 'bands' list")
-    return [dict(item) for item in bands]
+        import warnings
+        warnings.warn(
+            "ftir_library_v3.json has no 'bands' list; v3 library will be empty.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return []
+    return [dict(item) for item in bands if isinstance(item, dict)]
 
 
 FTIR_LIBRARY_V3: List[Dict[str, Any]] = _load_library_v3()

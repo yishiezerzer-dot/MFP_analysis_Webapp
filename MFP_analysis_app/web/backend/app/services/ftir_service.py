@@ -217,6 +217,8 @@ def subtract_sessions(
 ) -> Dict[str, Any]:
     xa, ya = compute_preprocessed(a, **preprocess)
     xb, yb = compute_preprocessed(b, **preprocess)
+    if xa.size == 0 or xb.size == 0:
+        raise ValueError("One or both spectra are empty after preprocessing")
     lo = max(float(np.nanmin(xa)), float(np.nanmin(xb)))
     hi = min(float(np.nanmax(xa)), float(np.nanmax(xb)))
     if not hi > lo:

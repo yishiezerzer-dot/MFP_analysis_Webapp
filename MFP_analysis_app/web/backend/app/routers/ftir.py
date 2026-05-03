@@ -335,7 +335,7 @@ def get_library_categories() -> Dict[str, Any]:
 @router.put("/sessions/{sid}/peak-labels")
 def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> Dict[str, Any]:
     state = _require(sid)
-    override = body.override.dict() if body.override is not None else None
+    override = body.override.model_dump() if body.override is not None else None
     return set_peak_label_override(state, body.wn, override)
 
 

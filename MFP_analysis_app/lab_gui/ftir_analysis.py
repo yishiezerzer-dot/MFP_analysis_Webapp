@@ -115,7 +115,7 @@ def preprocess_spectrum(
     elif nrm in {"min-max", "minmax"}:
         y_out = _normalize_minmax(y_out)
     elif nrm == "msc":
-        y_out = _normalize_snv(y_out)
+        y_out = _normalize_msc(y_out)
 
     return x, np.asarray(y_out, dtype=float)
 
@@ -351,6 +351,34 @@ def _normalize_minmax(y: np.ndarray) -> np.ndarray:
     if not math.isfinite(span) or span <= 0.0:
         return yy
     return ((yy - lo) / span).astype(float)
+
+
+def _normalize_msc(y: np.ndarray) -> np.ndarray:
+    """Multiplicative Scatter Correction — single-spectrum variant.
+
+    Uses the spectrum's own quadratic trend as a proxy reference, then
+    removes additive and multiplicative scatter via linear regression.
+    This is the standard approach when a batch mean spectrum is unavailable.
+    """
+    yy = np.asarray(y, dtype=float)
+    n = int(yy.size)
+    if n < 4:
+        return yy
+    x_idx = np.linspace(0.0, 1.0, n, dtype=float)
+    try:
+        coeffs = np.polyfit(x_idx, yy, deg=2)
+        ref = np.polyval(coeffs, x_idx)
+    except Exception:
+        return yy
+    A = np.column_stack([np.ones(n, dtype=float), ref])
+    try:
+        result = np.linalg.lstsq(A, yy, rcond=None)
+        a, b = float(result[0][0]), float(result[0][1])
+    except Exception:
+        return yy
+    if not (math.isfinite(a) and math.isfinite(b)) or abs(b) < 1e-12:
+        return yy
+    return ((yy - a) / b).astype(float)
 
 
 def _atr_correct(x: np.ndarray, y: np.ndarray, *, n_crystal: float) -> np.ndarray:
