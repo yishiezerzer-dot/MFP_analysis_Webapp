@@ -23,7 +23,22 @@
       "WebFetch(domain:htdocs.dev)",
       "Read(//c/Users/owner/OneDrive - huji.ac.il/שולחן העבודה/yishi - moran's lab'/Frenkel-Pinter-Lab-Vault/**)",
       "WebFetch(domain:www.npmjs.com)",
-      "Read(//c/Users/owner/OneDrive - huji.ac.il/שולחן העبודה/yishi - moran's lab'/github copilot folder/Yishi's app/MFP_analysis_app/web/frontend/**)"
+      "Read(//c/Users/owner/OneDrive - huji.ac.il/שולחן העبודה/yishi - moran's lab'/github copilot folder/Yishi's app/MFP_analysis_app/web/frontend/**)",
+      "mcp__stitch__create_project",
+      "mcp__stitch__create_design_system",
+      "mcp__stitch__update_design_system",
+      "mcp__stitch__generate_screen_from_text",
+      "Read(//c/Users/owner/OneDrive - huji.ac.il/שולחן העبودה/yishi - moran's lab'/github copilot folder/Yishi's app/MFP_analysis_app/lab_gui/**)",
+      "PowerShell($oa = Invoke-RestMethod \"http://127.0.0.1:8000/openapi.json\"; $oa.paths.PSObject.Properties.Name | Where-Object { $_ -match 'ftir' } | Sort-Object)",
+      "PowerShell(Get-Process python)",
+      "PowerShell(netstat -ano)",
+      "PowerShell(Get-Process -Id 64340 | Select-Object Id, Name, Path; \\(Get-WmiObject Win32_Process -Filter \"ProcessId=64340\"\\).CommandLine)",
+      "PowerShell(Get-Process -Id 64340 -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Id 64340 -Force)",
+      "PowerShell(Get-Command uvicorn -ErrorAction SilentlyContinue)",
+      "PowerShell(python -m uvicorn --version 2>&1)",
+      "PowerShell(py -m uvicorn --version 2>&1)",
+      "PowerShell(python -m pip install pyteomics 2>&1)"
     ],
     "additionalDirectories": [
       "C:\\Users\\owner\\.claude"

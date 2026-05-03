@@ -32,6 +32,10 @@ def preprocess_spectrum(
     poly_order: int = 2,
     baseline: str = "none",
     normalize: str = "none",
+    baseline_lambda: float = 100000.0,
+    baseline_p: float = 0.01,
+    atr_correction: bool = False,
+    atr_n_crystal: float = 1.5,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Preprocess an FTIR spectrum for peak picking.
 
@@ -40,8 +44,9 @@ def preprocess_spectrum(
     Steps (in order):
       1) sanitize + sort by `wn`
       2) optional smoothing
-      3) optional baseline correction (polyfit)
-      4) optional normalization (max/area)
+      3) optional ATR correction
+      4) optional baseline correction
+      5) optional normalization
 
     Args:
         wn: x array (wavenumber).
@@ -51,8 +56,12 @@ def preprocess_spectrum(
         smoothing_window: Savitzky-Golay (SciPy) or moving-average window size.
             Use 0/1 to disable.
         poly_order: For Savitzky-Golay (if SciPy available). Must be < window.
-        baseline: "none" or "polyfit".
-        normalize: "none", "max", or "area".
+        baseline: "none", "polyfit", "rubberband", "asls", or "airpls".
+        normalize: "none", "max", "area", "snv", "vector", or "min-max".
+        baseline_lambda: smoothness for iterative baselines.
+        baseline_p: asymmetry for AsLS.
+        atr_correction: apply a gentle ATR penetration-depth correction.
+        atr_n_crystal: refractive index used to scale ATR correction.
 
     Returns:
         (wn_sorted, y_processed)
@@ -78,10 +87,20 @@ def preprocess_spectrum(
         if w >= 3 and w <= int(y_out.size):
             y_out = _smooth(y_out, window=w, poly_order=int(poly_order or 0))
 
+    # --- ATR correction ---
+    if bool(atr_correction):
+        y_out = _atr_correct(x, y_out, n_crystal=float(atr_n_crystal or 1.5))
+
     # --- baseline correction ---
     b = (baseline or "none").strip().lower()
     if b == "polyfit":
         y_out = _baseline_polyfit(x, y_out)
+    elif b == "rubberband":
+        y_out = _baseline_rubberband(x, y_out)
+    elif b == "asls":
+        y_out = _baseline_asls(y_out, lam=float(baseline_lambda or 100000.0), p=float(baseline_p or 0.01))
+    elif b == "airpls":
+        y_out = _baseline_airpls(y_out, lam=float(baseline_lambda or 100000.0))
 
     # --- normalization ---
     nrm = (normalize or "none").strip().lower()
@@ -89,6 +108,14 @@ def preprocess_spectrum(
         y_out = _normalize_max(y_out)
     elif nrm == "area":
         y_out = _normalize_area(x, y_out)
+    elif nrm == "snv":
+        y_out = _normalize_snv(y_out)
+    elif nrm == "vector":
+        y_out = _normalize_vector(y_out)
+    elif nrm in {"min-max", "minmax"}:
+        y_out = _normalize_minmax(y_out)
+    elif nrm == "msc":
+        y_out = _normalize_msc(y_out)
 
     return x, np.asarray(y_out, dtype=float)
 
@@ -153,6 +180,120 @@ def _baseline_polyfit(x: np.ndarray, y: np.ndarray) -> np.ndarray:
         return yy
 
 
+def _baseline_rubberband(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Subtract a lower-envelope rubberband baseline."""
+
+    xx = np.asarray(x, dtype=float)
+    yy = np.asarray(y, dtype=float)
+    if yy.size < 3:
+        return yy
+
+    try:
+      from scipy.spatial import ConvexHull  # type: ignore
+
+      points = np.column_stack([xx, yy])
+      hull = ConvexHull(points)
+      vertices = sorted(int(v) for v in hull.vertices)
+      lower = []
+      for idx in vertices:
+          x0 = xx[idx]
+          y0 = yy[idx]
+          if not lower:
+              lower.append(idx)
+              continue
+          last = lower[-1]
+          if x0 <= xx[last]:
+              continue
+          slope = (y0 - yy[last]) / max(1e-12, x0 - xx[last])
+          while len(lower) >= 2:
+              prev = lower[-2]
+              prev_slope = (yy[last] - yy[prev]) / max(1e-12, xx[last] - xx[prev])
+              if slope > prev_slope:
+                  break
+              lower.pop()
+              last = lower[-1]
+              slope = (y0 - yy[last]) / max(1e-12, x0 - xx[last])
+          lower.append(idx)
+      if len(lower) >= 2:
+          base = np.interp(xx, xx[lower], yy[lower])
+          return (yy - base).astype(float)
+    except Exception:
+        pass
+
+    return _baseline_rolling_minimum(xx, yy)
+
+
+def _baseline_rolling_minimum(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    yy = np.asarray(y, dtype=float)
+    n = int(yy.size)
+    if n < 3:
+        return yy
+    window = max(5, min(101, (n // 20) | 1))
+    pad = window // 2
+    padded = np.pad(yy, (pad, pad), mode="edge")
+    mins = np.array([np.nanmin(padded[i : i + window]) for i in range(n)], dtype=float)
+    base = _smooth(mins, window=min(window, n if n % 2 else n - 1), poly_order=2)
+    return (yy - base).astype(float)
+
+
+def _baseline_asls(y: np.ndarray, *, lam: float, p: float, n_iter: int = 12) -> np.ndarray:
+    """Asymmetric least-squares baseline correction."""
+
+    yy = np.asarray(y, dtype=float)
+    n = int(yy.size)
+    if n < 5:
+        return yy
+    lam = float(max(1.0, min(1e9, lam)))
+    p = float(max(0.001, min(0.1, p)))
+    try:
+        from scipy import sparse  # type: ignore
+        from scipy.sparse.linalg import spsolve  # type: ignore
+
+        dmat = sparse.diags([1.0, -2.0, 1.0], [0, 1, 2], shape=(n - 2, n), format="csc")
+        penalty = lam * (dmat.T @ dmat)
+        weights = np.ones(n, dtype=float)
+        z = yy.copy()
+        for _ in range(int(n_iter)):
+            wmat = sparse.spdiags(weights, 0, n, n, format="csc")
+            z = np.asarray(spsolve(wmat + penalty, weights * yy), dtype=float)
+            weights = p * (yy > z) + (1.0 - p) * (yy <= z)
+        return (yy - z).astype(float)
+    except Exception:
+        return _baseline_rubberband(np.arange(n, dtype=float), yy)
+
+
+def _baseline_airpls(y: np.ndarray, *, lam: float, n_iter: int = 15) -> np.ndarray:
+    """Adaptive iteratively reweighted penalized least-squares baseline."""
+
+    yy = np.asarray(y, dtype=float)
+    n = int(yy.size)
+    if n < 5:
+        return yy
+    lam = float(max(1.0, min(1e9, lam)))
+    try:
+        from scipy import sparse  # type: ignore
+        from scipy.sparse.linalg import spsolve  # type: ignore
+
+        dmat = sparse.diags([1.0, -2.0, 1.0], [0, 1, 2], shape=(n - 2, n), format="csc")
+        penalty = lam * (dmat.T @ dmat)
+        weights = np.ones(n, dtype=float)
+        z = yy.copy()
+        for i in range(1, int(n_iter) + 1):
+            wmat = sparse.spdiags(weights, 0, n, n, format="csc")
+            z = np.asarray(spsolve(wmat + penalty, weights * yy), dtype=float)
+            residual = yy - z
+            negative = residual[residual < 0]
+            if negative.size == 0 or abs(float(negative.sum())) < 1e-9:
+                break
+            scale = abs(float(negative.mean())) or 1.0
+            weights[residual >= 0] = 0.0
+            weights[residual < 0] = np.exp(min(50.0, i * np.abs(residual[residual < 0]) / scale))
+            weights[0] = weights[-1] = np.max(weights)
+        return (yy - z).astype(float)
+    except Exception:
+        return _baseline_asls(yy, lam=lam, p=0.01)
+
+
 def _normalize_max(y: np.ndarray) -> np.ndarray:
     """Implement the `_normalize_max` behavior for this module.
 
@@ -183,6 +324,97 @@ def _normalize_area(x: np.ndarray, y: np.ndarray) -> np.ndarray:
         return (yy / area).astype(float)
     except Exception:
         return yy
+
+
+def _normalize_snv(y: np.ndarray) -> np.ndarray:
+    yy = np.asarray(y, dtype=float)
+    mean = float(np.nanmean(yy)) if yy.size else 0.0
+    sd = float(np.nanstd(yy)) if yy.size else 0.0
+    if not math.isfinite(sd) or sd <= 0.0:
+        return yy
+    return ((yy - mean) / sd).astype(float)
+
+
+def _normalize_vector(y: np.ndarray) -> np.ndarray:
+    yy = np.asarray(y, dtype=float)
+    norm = float(np.sqrt(np.nansum(yy * yy)))
+    if not math.isfinite(norm) or norm <= 0.0:
+        return yy
+    return (yy / norm).astype(float)
+
+
+def _normalize_minmax(y: np.ndarray) -> np.ndarray:
+    yy = np.asarray(y, dtype=float)
+    lo = float(np.nanmin(yy)) if yy.size else 0.0
+    hi = float(np.nanmax(yy)) if yy.size else 0.0
+    span = hi - lo
+    if not math.isfinite(span) or span <= 0.0:
+        return yy
+    return ((yy - lo) / span).astype(float)
+
+
+def _normalize_msc(y: np.ndarray) -> np.ndarray:
+    """Multiplicative Scatter Correction — single-spectrum variant.
+
+    Uses the spectrum's own quadratic trend as a proxy reference, then
+    removes additive and multiplicative scatter via linear regression.
+    This is the standard approach when a batch mean spectrum is unavailable.
+    """
+    yy = np.asarray(y, dtype=float)
+    n = int(yy.size)
+    if n < 4:
+        return yy
+    x_idx = np.linspace(0.0, 1.0, n, dtype=float)
+    try:
+        coeffs = np.polyfit(x_idx, yy, deg=2)
+        ref = np.polyval(coeffs, x_idx)
+    except Exception:
+        return yy
+    A = np.column_stack([np.ones(n, dtype=float), ref])
+    try:
+        result = np.linalg.lstsq(A, yy, rcond=None)
+        a, b = float(result[0][0]), float(result[0][1])
+    except Exception:
+        return yy
+    if not (math.isfinite(a) and math.isfinite(b)) or abs(b) < 1e-12:
+        return yy
+    return ((yy - a) / b).astype(float)
+
+
+def _atr_correct(x: np.ndarray, y: np.ndarray, *, n_crystal: float) -> np.ndarray:
+    xx = np.asarray(x, dtype=float)
+    yy = np.asarray(y, dtype=float)
+    if xx.size == 0:
+        return yy
+    ref = float(np.nanmedian(xx))
+    if not math.isfinite(ref) or ref <= 0.0:
+        return yy
+    n_scale = 1.5 / max(1.1, min(4.0, float(n_crystal or 1.5)))
+    factor = np.clip((xx / ref) * n_scale, 0.2, 3.0)
+    return (yy * factor).astype(float)
+
+
+ATMOSPHERIC_MASK_REGIONS: Tuple[Tuple[float, float, str], ...] = (
+    (2310.0, 2390.0, "CO2"),
+    (1340.0, 1900.0, "H2O"),
+    (3400.0, 4000.0, "H2O"),
+)
+
+
+def atmospheric_mask_regions() -> List[dict]:
+    return [
+        {"lo": lo, "hi": hi, "label": label}
+        for lo, hi, label in ATMOSPHERIC_MASK_REGIONS
+    ]
+
+
+def mask_atmospheric_regions(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    xx = np.asarray(x, dtype=float)
+    yy = np.asarray(y, dtype=float)
+    keep = np.ones(xx.shape, dtype=bool)
+    for lo, hi, _label in ATMOSPHERIC_MASK_REGIONS:
+        keep &= ~((xx >= lo) & (xx <= hi))
+    return xx[keep], yy[keep]
 
 
 @dataclass(frozen=True)
@@ -287,6 +519,62 @@ def pick_peaks(
     # Present in ascending wavenumber order
     selected = sorted(selected, key=lambda p: float(p.wn))
     return selected
+
+
+def pick_peaks_second_derivative(
+    wn: Sequence[float] | np.ndarray,
+    y: Sequence[float] | np.ndarray,
+    *,
+    mode: str = "absorbance",
+    min_distance_cm1: float = 8.0,
+    top_n: int = 0,
+    smoothing_window: int = 9,
+    poly_order: int = 3,
+) -> List[FTIRPeak]:
+    """Pick likely shoulders/bands from minima in the second derivative."""
+
+    x, y0 = _sanitize_xy(wn, y)
+    if x.size < 7:
+        return []
+    y_pick = -y0 if (mode or "absorbance").strip().lower() == "transmittance" else y0
+    w = max(5, int(smoothing_window or 9))
+    if (w % 2) == 0:
+        w += 1
+    if w > int(y_pick.size):
+        w = int(y_pick.size) if int(y_pick.size) % 2 else int(y_pick.size) - 1
+    smooth = _smooth(y_pick, window=max(3, w), poly_order=int(poly_order or 3))
+    second = np.gradient(np.gradient(smooth, x), x)
+    score = -np.asarray(second, dtype=float)
+    prom = float(np.nanstd(score)) * 0.25
+    if not math.isfinite(prom) or prom <= 0:
+        return []
+    derivative_peaks = pick_peaks(
+        x,
+        score,
+        mode="absorbance",
+        min_prominence=prom,
+        min_height=None,
+        min_distance_cm1=min_distance_cm1,
+        top_n=top_n,
+    )
+    out: List[FTIRPeak] = []
+    for peak in derivative_peaks:
+        idx = int(np.nanargmin(np.abs(x - float(peak.wn))))
+        prom_orig, lb_i, rb_i = _approx_prominence_with_bases(idx, y_pick)
+        lb = float(x[lb_i]) if lb_i is not None else None
+        rb = float(x[rb_i]) if rb_i is not None else None
+        width = float(abs(rb - lb)) if lb is not None and rb is not None else None
+        out.append(
+            FTIRPeak(
+                wn=float(x[idx]),
+                y=float(y0[idx]),
+                prominence=float(max(prom_orig, peak.prominence)),
+                left_base_wn=lb,
+                right_base_wn=rb,
+                width_cm1=width,
+            )
+        )
+    return sorted(out, key=lambda item: float(item.wn))
 
 
 def _sanitize_xy(wn: Sequence[float] | np.ndarray, y: Sequence[float] | np.ndarray) -> Tuple[np.ndarray, np.ndarray]:

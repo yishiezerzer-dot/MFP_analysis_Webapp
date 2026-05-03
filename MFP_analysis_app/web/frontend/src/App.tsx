@@ -9,6 +9,7 @@ import { FTIRView } from "./views/FTIRView";
 import { AIView } from "./views/AIView";
 import type { PageHeaderContextValue } from "./layout/PageHeader";
 import { UserMenu, type AppUser } from "./layout/UserMenu";
+import { Tooltip } from "./components/Tooltip";
 import mfpLogo from "./assets/mfp-logo.png";
 
 const CURRENT_USER: AppUser = {
@@ -194,22 +195,24 @@ function Sidebar() {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={clsx(
-        "flex h-full shrink-0 flex-col overflow-hidden border-r border-ink-200 bg-white",
+        "flex h-full shrink-0 flex-col overflow-hidden border-r border-ink-200/70",
         "transition-[width] duration-200 ease-out",
-        expanded ? "w-64" : "w-14",
+        expanded ? "w-64" : "w-[56px]",
       )}
+      style={{ backgroundColor: "rgb(var(--surface))" }}
       aria-expanded={expanded}
     >
+      {/* Logo area */}
       <div
         className={clsx(
-          "flex items-center gap-2 border-b border-ink-200 py-4",
-          expanded ? "px-5" : "justify-center px-0",
+          "flex items-center gap-2.5 border-b border-ink-200/60 py-3",
+          expanded ? "px-3" : "justify-center px-0",
         )}
       >
         <img
           src={mfpLogo}
           alt="MFP Analysis"
-          className="h-9 w-9 shrink-0 select-none object-contain"
+          className="h-8 w-8 shrink-0 select-none object-contain rounded-[6px]"
           draggable={false}
         />
         <div
@@ -220,37 +223,38 @@ function Sidebar() {
               : "pointer-events-none w-0 flex-none opacity-0",
           )}
         >
-          <div className="truncate text-sm font-semibold">MFP Analysis</div>
-          <div className="truncate text-xs text-ink-500">Web edition</div>
+          <div className="truncate text-[13px] font-semibold tracking-tight text-ink-900">MFP Analysis</div>
+          <div className="truncate text-[11px] text-ink-500 leading-tight">Lab Platform</div>
         </div>
-        <button
-          type="button"
-          onClick={() => setPinned((p) => !p)}
-          title={pinned ? "Unpin sidebar (collapse when not hovered)" : "Pin sidebar (always open)"}
-          aria-label={pinned ? "Unpin sidebar" : "Pin sidebar"}
-          aria-pressed={pinned}
-          className={clsx(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-800",
-            !expanded && "hidden",
-          )}
-        >
-          <IconPin pinned={pinned} className="h-4 w-4" />
-        </button>
+        <Tooltip content={pinned ? "Unpin sidebar" : "Pin sidebar"} placement="bottom">
+          <button
+            type="button"
+            onClick={() => setPinned((p) => !p)}
+            aria-label={pinned ? "Unpin sidebar" : "Pin sidebar"}
+            aria-pressed={pinned}
+            className={clsx(
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700",
+              !expanded && "hidden",
+            )}
+          >
+            <IconPin pinned={pinned} className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
       </div>
 
+      {/* Nav items */}
       <nav
         className={clsx(
           "flex flex-1 flex-col gap-0.5 py-2",
-          expanded ? "px-3" : "px-2",
+          expanded ? "px-2" : "px-1.5",
         )}
       >
         {TABS.map((t) => {
           const Icon = t.icon;
-          return (
+          const navLink = (
             <NavLink
               key={t.to}
               to={t.to}
-              title={expanded ? undefined : `${t.label} — ${t.hint}`}
               className={({ isActive }) =>
                 clsx(
                   "nav-item",
@@ -259,29 +263,29 @@ function Sidebar() {
                 )
               }
             >
-              <Icon className="h-6 w-6 shrink-0" />
+              <Icon className="h-[18px] w-[18px] shrink-0" />
               <div
                 className={clsx(
                   "min-w-0 flex-1 transition-opacity duration-150",
                   expanded ? "opacity-100" : "pointer-events-none hidden opacity-0",
                 )}
               >
-                <div className="truncate font-medium">{t.label}</div>
-                <div
-                  className={clsx(
-                    "truncate text-[11px]",
-                    t.status === "ready" ? "opacity-70" : "opacity-60",
-                  )}
-                >
+                <div className="truncate text-[13px]">{t.label}</div>
+                <div className="truncate text-[11px] opacity-60 leading-tight">
                   {t.hint}
                 </div>
               </div>
               {expanded && t.status === "stub" && (
-                <span className="rounded bg-ink-100 px-1.5 py-0.5 text-[10px] font-medium text-ink-600">
+                <span className="rounded-full bg-ink-200/60 px-1.5 py-0.5 text-[10px] font-medium text-ink-500">
                   soon
                 </span>
               )}
             </NavLink>
+          );
+          return expanded ? navLink : (
+            <Tooltip key={t.to} content={`${t.label} — ${t.hint}`} placement="right">
+              {navLink}
+            </Tooltip>
           );
         })}
       </nav>
@@ -314,12 +318,12 @@ function Layout() {
 
   return (
     <div className="flex h-full w-full flex-col">
-      <header className="shrink-0 border-b border-ink-200 bg-white">
-        {headerNode ?? <div className="h-[57px]" aria-hidden="true" />}
+      <header className="shrink-0 border-b border-ink-200/70 shadow-sm" style={{ backgroundColor: "rgb(var(--surface))" }}>
+        {headerNode ?? <div className="h-12" aria-hidden="true" />}
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar />
-        <main className="min-w-0 flex-1 overflow-hidden">
+        <main className="min-w-0 flex-1 overflow-hidden" style={{ backgroundColor: "rgb(var(--canvas))" }}>
           <Outlet context={ctx} />
         </main>
       </div>

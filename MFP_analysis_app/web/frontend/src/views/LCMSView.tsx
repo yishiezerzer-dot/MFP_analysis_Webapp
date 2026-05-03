@@ -23,6 +23,9 @@ import {
   UVChromatogramResponse,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
+import { usePlotlyTheme } from "../theme/ThemeProvider";
+import { AlertBanner } from "../components/AlertBanner";
+import { Tooltip } from "../components/Tooltip";
 
 let pendingPlotResizeFrame: number | null = null;
 
@@ -180,6 +183,8 @@ interface ChartSettings {
   showGrid: boolean;
   frameMode: FrameMode;
   showScaleBars: boolean;
+  annotationConnectorColor?: string;
+  annotationConnectorOpacity?: number;
   axis: AxisLimits;
   labels: LabelSettings;
 }
@@ -373,6 +378,8 @@ const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
     showGrid: true,
     frameMode: "half",
     showScaleBars: true,
+    annotationConnectorColor: "#334155",
+    annotationConnectorOpacity: 0.7,
     axis: { ...DEFAULT_AXIS_LIMITS },
     labels: { enabled: false, fontSize: 10, color: "#46536a" },
   },
@@ -396,6 +403,7 @@ const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
 };
 
 const GRAPH_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.graphSettings.default";
+const POLYMER_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.polymerSettings.default";
 const POLYMER_MONOMER_PRESETS_STORAGE_KEY = "mfp.lcms.polymerMonomerPresets";
 const UV_PEAK_FETCH_LIMIT = 250;
 const UV_LABEL_STAIR_X_STEP_MIN = 0.5;
@@ -485,6 +493,31 @@ function clonePolymerMonomers(monomers: PolymerMonomerPreset[]): PolymerMonomerP
   return monomers.map((monomer) => ({ ...monomer }));
 }
 
+function mergePolymerMonomerPresets(saved: PolymerMonomerPreset[]): PolymerMonomerPreset[] {
+  const builtIns = clonePolymerMonomers(BUILT_IN_POLYMER_MONOMERS);
+  const savedById = new Map(saved.map((monomer) => [monomer.id, monomer]));
+  const merged = builtIns.map((monomer) => {
+    const savedMonomer = savedById.get(monomer.id);
+    return savedMonomer
+      ? {
+          ...monomer,
+          abbr: savedMonomer.abbr || monomer.abbr,
+          selected: Boolean(savedMonomer.selected),
+        }
+      : monomer;
+  });
+  for (const monomer of saved) {
+    if (monomer.custom && !merged.some((existing) => existing.id === monomer.id)) {
+      merged.push({
+        ...monomer,
+        selected: Boolean(monomer.selected),
+        custom: true,
+      });
+    }
+  }
+  return merged;
+}
+
 function loadPolymerMonomerPresets(): PolymerMonomerPreset[] {
   const builtIns = clonePolymerMonomers(BUILT_IN_POLYMER_MONOMERS);
   if (typeof window === "undefined") return builtIns;
@@ -492,27 +525,7 @@ function loadPolymerMonomerPresets(): PolymerMonomerPreset[] {
     const stored = window.localStorage.getItem(POLYMER_MONOMER_PRESETS_STORAGE_KEY);
     if (!stored) return builtIns;
     const saved = JSON.parse(stored) as PolymerMonomerPreset[];
-    const savedById = new Map(saved.map((monomer) => [monomer.id, monomer]));
-    const merged = builtIns.map((monomer) => {
-      const savedMonomer = savedById.get(monomer.id);
-      return savedMonomer
-        ? {
-            ...monomer,
-            abbr: savedMonomer.abbr || monomer.abbr,
-            selected: Boolean(savedMonomer.selected),
-          }
-        : monomer;
-    });
-    for (const monomer of saved) {
-      if (monomer.custom && !merged.some((existing) => existing.id === monomer.id)) {
-        merged.push({
-          ...monomer,
-          selected: Boolean(monomer.selected),
-          custom: true,
-        });
-      }
-    }
-    return merged;
+    return mergePolymerMonomerPresets(saved);
   } catch {
     return builtIns;
   }
@@ -523,7 +536,7 @@ function savePolymerMonomerPresets(monomers: PolymerMonomerPreset[]) {
   window.localStorage.setItem(POLYMER_MONOMER_PRESETS_STORAGE_KEY, JSON.stringify(monomers));
 }
 
-function loadPolymerUiSettings(): PolymerUiSettings {
+function defaultPolymerUiSettings(): PolymerUiSettings {
   return {
     ...DEFAULT_POLYMER_UI_SETTINGS,
     shared: { ...DEFAULT_POLYMER_SHARED_SETTINGS },
@@ -531,6 +544,35 @@ function loadPolymerUiSettings(): PolymerUiSettings {
     negative: { ...DEFAULT_POLYMER_UI_SETTINGS.negative },
     monomers: loadPolymerMonomerPresets(),
   };
+}
+
+function mergePolymerUiSettings(saved: Partial<PolymerUiSettings>): PolymerUiSettings {
+  const base = defaultPolymerUiSettings();
+  return {
+    ...base,
+    shared: { ...base.shared, ...(saved.shared ?? {}) },
+    positive: { ...base.positive, ...(saved.positive ?? {}) },
+    negative: { ...base.negative, ...(saved.negative ?? {}) },
+    monomers: Array.isArray(saved.monomers)
+      ? mergePolymerMonomerPresets(saved.monomers)
+      : base.monomers,
+  };
+}
+
+function loadPolymerUiSettings(): PolymerUiSettings {
+  if (typeof window === "undefined") return defaultPolymerUiSettings();
+  try {
+    const stored = window.localStorage.getItem(POLYMER_SETTINGS_DEFAULT_STORAGE_KEY);
+    if (!stored) return defaultPolymerUiSettings();
+    return mergePolymerUiSettings(JSON.parse(stored) as Partial<PolymerUiSettings>);
+  } catch {
+    return defaultPolymerUiSettings();
+  }
+}
+
+function savePolymerUiSettingsDefault(settings: PolymerUiSettings) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(POLYMER_SETTINGS_DEFAULT_STORAGE_KEY, JSON.stringify(settings));
 }
 
 function polymerMonomerText(settings: PolymerUiSettings): string {
@@ -725,6 +767,30 @@ function saveGraphSettingsDefault(settings: GraphSettings) {
     GRAPH_SETTINGS_DEFAULT_STORAGE_KEY,
     JSON.stringify(settings),
   );
+}
+
+function withAlpha(color: string, alpha: number): string {
+  const safeAlpha = Math.min(1, Math.max(0, alpha));
+  const hex = color.trim();
+  const short = /^#([0-9a-fA-F]{3})$/;
+  const long = /^#([0-9a-fA-F]{6})$/;
+  if (short.test(hex)) {
+    const [, triplet] = short.exec(hex) ?? [];
+    if (!triplet) return color;
+    const r = parseInt(`${triplet[0]}${triplet[0]}`, 16);
+    const g = parseInt(`${triplet[1]}${triplet[1]}`, 16);
+    const b = parseInt(`${triplet[2]}${triplet[2]}`, 16);
+    return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+  }
+  if (long.test(hex)) {
+    const [, value] = long.exec(hex) ?? [];
+    if (!value) return color;
+    const r = parseInt(value.slice(0, 2), 16);
+    const g = parseInt(value.slice(2, 4), 16);
+    const b = parseInt(value.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+  }
+  return color;
 }
 
 // --- Helpers -----------------------------------------------------------------
@@ -967,6 +1033,11 @@ export function LCMSView() {
   useEffect(() => {
     savePolymerMonomerPresets(polymerSettings.monomers);
   }, [polymerSettings.monomers]);
+
+  const savePolymerDefaults = useCallback(() => {
+    savePolymerUiSettingsDefault(polymerSettings);
+    setInfo("Saved polymer matching defaults.");
+  }, [polymerSettings]);
 
   useEffect(() => {
     if (!activeSid) {
@@ -1988,26 +2059,32 @@ export function LCMSView() {
               e.target.value = "";
             }}
           />
-          <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100"
-            disabled={busy}
-            onClick={() => workspaceFileRef.current?.click()}
-          >
-            Load workspace
-          </button>
-          <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
-            disabled={busy || sessions.length === 0}
-            onClick={saveWorkspace}
-          >
-            Save workspace
-          </button>
+          <Tooltip content="Load a saved workspace (.json)">
+            <button
+              className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100"
+              disabled={busy}
+              onClick={() => workspaceFileRef.current?.click()}
+            >
+              Load workspace
+            </button>
+          </Tooltip>
+          <Tooltip content={sessions.length === 0 ? "Open a file first" : "Save current workspace"}>
+            <span>
+              <button
+                className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+                disabled={busy || sessions.length === 0}
+                onClick={saveWorkspace}
+              >
+                Save workspace
+              </button>
+            </span>
+          </Tooltip>
           <button
             className="btn-primary"
             disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
-            {busy ? "Working…" : "Open mzML…"}
+            {busy ? "Loading…" : "Open mzML…"}
           </button>
         </>
       }
@@ -2031,20 +2108,20 @@ export function LCMSView() {
   return (
     <div className="flex h-full flex-col">
       {error && (
-        <div className="border-b border-red-200 bg-red-50 px-6 py-2 text-sm text-red-700">
-          {error}{" "}
-          <button className="underline" onClick={() => setError(null)}>
-            dismiss
-          </button>
-        </div>
+        <AlertBanner
+          kind="error"
+          message={error}
+          onDismiss={() => setError(null)}
+          className="border-b"
+        />
       )}
       {info && (
-        <div className="border-b border-brand-200 bg-brand-50 px-6 py-2 text-sm text-brand-700">
-          {info}{" "}
-          <button className="underline" onClick={() => setInfo(null)}>
-            dismiss
-          </button>
-        </div>
+        <AlertBanner
+          kind="info"
+          message={info}
+          onDismiss={() => setInfo(null)}
+          className="border-b"
+        />
       )}
 
       <div className="flex min-h-0 flex-1">
@@ -2240,6 +2317,7 @@ export function LCMSView() {
           polymerSettings={polymerSettings}
           setPolymerSettings={setPolymerSettings}
           onPolymerDialog={() => setPolymerDialogOpen(true)}
+          onSavePolymerDefaults={savePolymerDefaults}
         />
       </div>
 
@@ -2419,8 +2497,8 @@ function SessionsSidebar(props: {
                 className={clsx(
                   "flex h-7 w-8 shrink-0 items-center justify-center rounded-md border text-[10px] font-semibold transition-colors",
                   isActive
-                    ? "border-brand-500 bg-white text-brand-600 shadow-card"
-                    : "border-transparent text-ink-500 hover:border-ink-200 hover:bg-white",
+                    ? "border-brand-500 bg-surface text-brand-600 shadow-card"
+                    : "border-transparent text-ink-500 hover:border-ink-200 hover:bg-surface",
                 )}
               >
                 {idx + 1}
@@ -2432,7 +2510,7 @@ function SessionsSidebar(props: {
               key={s.session_id}
               className={clsx(
                 "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
-                isActive ? "bg-white shadow-card" : "hover:bg-ink-100",
+                isActive ? "bg-surface shadow-card" : "hover:bg-ink-100",
               )}
               onClick={() => props.onSelect(s.session_id)}
             >
@@ -2695,6 +2773,7 @@ interface ToolsPanelProps {
   polymerSettings: PolymerUiSettings;
   setPolymerSettings: (v: PolymerUiSettings) => void;
   onPolymerDialog: () => void;
+  onSavePolymerDefaults: () => void;
 }
 
 function ToolsPanel(p: ToolsPanelProps) {
@@ -2757,6 +2836,7 @@ function ToolsPanel(p: ToolsPanelProps) {
                 settings={p.polymerSettings}
                 onChange={p.setPolymerSettings}
                 onOpen={p.onPolymerDialog}
+                onSaveDefaults={p.onSavePolymerDefaults}
               />
             )}
           </WorkflowTools>
@@ -2790,7 +2870,7 @@ function PrimaryActions({
   onCollapse?: () => void;
 }) {
   return (
-    <section className="border-b border-ink-200 bg-white p-4">
+    <section className="border-b border-ink-200 bg-surface p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">Primary Actions</h3>
@@ -2820,14 +2900,14 @@ function PrimaryActions({
         </button>
         <div className="grid grid-cols-2 gap-2">
           <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
             disabled={!activeLoaded || busy}
             onClick={onJumpMz}
           >
             Jump to m/z…
           </button>
           <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
             disabled={!activeLoaded || busy}
             onClick={onExportLabels}
           >
@@ -2866,7 +2946,7 @@ function WorkflowTools({
 }) {
   return (
     <section className="flex flex-1 flex-col">
-      <header className="flex items-start justify-between gap-2 bg-white p-4 pb-2">
+      <header className="flex items-start justify-between gap-2 bg-surface p-4 pb-2">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">Workflow &amp; Tools</h3>
           <p className="mt-0.5 text-xs text-ink-500">
@@ -2874,7 +2954,7 @@ function WorkflowTools({
           </p>
         </div>
         <button
-          className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-dashed border-ink-300 bg-white px-2 text-xs text-ink-700 hover:bg-ink-100"
+          className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-dashed border-ink-300 bg-surface px-2 text-xs text-ink-700 hover:bg-ink-100"
           onClick={() => setHidden(!hidden)}
         >
           {hidden ? "Show ▼" : "Hide ▲"}
@@ -2883,7 +2963,7 @@ function WorkflowTools({
 
       {!hidden && (
         <>
-          <div className="flex flex-col gap-1 bg-white/70 px-4 pb-2">
+          <div className="flex flex-col gap-1 bg-surface/70px-4 pb-2">
             <Check
               label="Show polymer matching controls"
               checked={showPolymerControls}
@@ -2901,7 +2981,7 @@ function WorkflowTools({
             />
           </div>
 
-          <div className="flex items-center gap-1 border-b border-ink-200 bg-white/70 px-3 pt-2">
+          <div className="flex items-center gap-1 border-b border-ink-200 bg-surface/70px-3 pt-2">
             {(
               [
                 { id: "navigate", label: "Browse" },
@@ -3066,7 +3146,7 @@ function ViewTab(p: ToolsPanelProps) {
           checked={p.overlaySpectrumEnabled}
           onChange={p.setOverlaySpectrumEnabled}
         />
-        <div className="max-h-28 overflow-auto rounded-md border border-ink-200 bg-white p-2">
+        <div className="max-h-28 overflow-auto rounded-md border border-ink-200 bg-surface p-2">
           {p.sessions.map((session) => (
             <label key={session.session_id} className="flex items-center gap-2 py-0.5 text-xs">
               <input
@@ -3118,7 +3198,7 @@ function ViewTab(p: ToolsPanelProps) {
           onChange={p.setRegionSelect}
         />
         <button
-          className="mt-2 rounded-md border border-ink-200 bg-white px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-2 rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!p.regionSelect}
           onClick={() => p.setRegionSelect(false)}
         >
@@ -3262,14 +3342,14 @@ function AnnotateTab(p: ToolsPanelProps) {
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={!p.activeLoaded}
             onClick={p.onLabelSelectedRT}
           >
             Label selected RT
           </button>
           <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
             onClick={p.onAutoLabelUV}
             disabled={!p.activeLoaded}
           >
@@ -3280,21 +3360,21 @@ function AnnotateTab(p: ToolsPanelProps) {
 
       <div className="grid grid-cols-3 gap-2">
         <button
-          className="rounded-md border border-ink-200 bg-white px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
           disabled
           title="Coming soon"
         >
           Annotate Peaks…
         </button>
         <button
-          className="rounded-md border border-ink-200 bg-white px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
+          className="rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
           onClick={p.onAutoArrangeLabels}
           disabled={p.uvLabelCount === 0}
         >
           Auto Arrange Labels
         </button>
         <button
-          className="rounded-md border border-ink-200 bg-white px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!p.canAddCustomUvLabel}
           title={
             p.canAddCustomUvLabel
@@ -3328,11 +3408,13 @@ function PolymerTab({
   settings,
   onChange,
   onOpen,
+  onSaveDefaults,
 }: {
   polarity: Polarity;
   settings: PolymerUiSettings;
   onChange: (settings: PolymerUiSettings) => void;
   onOpen: () => void;
+  onSaveDefaults: () => void;
 }) {
   const disabled = polarity === "all";
   const status =
@@ -3367,6 +3449,13 @@ function PolymerTab({
         <NavyButton className="mt-2 w-full" onClick={onOpen}>
           Polymer Match…
         </NavyButton>
+        <button
+          type="button"
+          className="w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+          onClick={onSaveDefaults}
+        >
+          Save current as defaults
+        </button>
       </GroupBox>
     </div>
   );
@@ -3376,7 +3465,7 @@ function PolymerTab({
 
 function GroupBox({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <fieldset className="rounded-md border border-ink-200 bg-white p-3">
+    <fieldset className="rounded-md border border-ink-200 bg-surface p-3">
       <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
         {title}
       </legend>
@@ -3479,6 +3568,7 @@ function TICChart(props: {
     props.overlayTraces.length,
     props.rtUnit,
   ], plotRef);
+  const pt = usePlotlyTheme();
   const scale = props.rtUnit === "seconds" ? 60 : 1;
   const unit = props.rtUnit === "seconds" ? "s" : "min";
   const xs = useMemo(
@@ -3580,8 +3670,9 @@ function TICChart(props: {
                 ...axisFrame(props.settings),
               },
               hovermode: "x",
-              plot_bgcolor: "#ffffff",
-              paper_bgcolor: "#ffffff",
+              colorway: pt.colorway,
+              plot_bgcolor: pt.plot_bgcolor,
+              paper_bgcolor: pt.paper_bgcolor,
               showlegend: overlayData.length > 0,
               shapes,
               dragmode: props.regionSelect ? "select" : "zoom",
@@ -3616,6 +3707,7 @@ function EICChart(props: {
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<PlotlyHTMLElement | null>(null);
   const plotSize = useContainerSize(containerRef, Math.max(240, props.settings.height * 0.75));
+  const pt = usePlotlyTheme();
   const scale = props.rtUnit === "seconds" ? 60 : 1;
   const unit = props.rtUnit === "seconds" ? "s" : "min";
   const xs = props.eic.rt_min.map((v) => v * scale);
@@ -3651,7 +3743,7 @@ function EICChart(props: {
         <div className="flex items-center gap-2 text-xs text-ink-500">
           <span>{props.eic.n_scans} scans</span>
           <button
-            className="rounded-md border border-ink-200 bg-white px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
+            className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
             onClick={props.onClear}
           >
             Clear
@@ -3697,8 +3789,9 @@ function EICChart(props: {
               ...axisFrame(props.settings),
             },
             hovermode: "x",
-            plot_bgcolor: "#ffffff",
-            paper_bgcolor: "#ffffff",
+            colorway: pt.colorway,
+            plot_bgcolor: pt.plot_bgcolor,
+            paper_bgcolor: pt.paper_bgcolor,
             showlegend: false,
             shapes,
           }}
@@ -3755,6 +3848,7 @@ function UVChromatogramChart(props: {
     labelOrientation,
     settings,
   } = props;
+  const pt = usePlotlyTheme();
   const available = uv?.available === true;
   const canPlot = available || overlayTraces.length > 0;
   const meta = available ? uv.meta : null;
@@ -3763,6 +3857,9 @@ function UVChromatogramChart(props: {
   const uvContainerRef = useRef<HTMLDivElement>(null);
   const uvPlotRef = useRef<PlotlyHTMLElement | null>(null);
   const uvPlotSize = useContainerSize(uvContainerRef, settings.height);
+  const connectorColor = settings.annotationConnectorColor ?? "#334155";
+  const connectorOpacity = Math.min(1, Math.max(0, settings.annotationConnectorOpacity ?? 0.7));
+  const connectorArrowColor = withAlpha(connectorColor, connectorOpacity);
 
   const xs = available ? uv.rt_min.map((v) => (v + xOffset) * scale) : [];
   const overlayData = useMemo(
@@ -3800,6 +3897,7 @@ function UVChromatogramChart(props: {
             textangle: labelOrientation === "vertical" ? ("-90" as const) : ("0" as const),
             showarrow: true,
             arrowhead: 0,
+            arrowcolor: connectorArrowColor,
             ax: label.ax ?? 0,
             axref: label.axRef === "x" ? ("x" as const) : ("pixel" as const),
             ayref: label.ayRef === "y" ? ("y" as const) : ("pixel" as const),
@@ -3812,7 +3910,7 @@ function UVChromatogramChart(props: {
           };
         }),
       ),
-    [labelOrientation, overlayTraces, scale, settings.labels.fontSize, xOffset],
+    [connectorArrowColor, labelOrientation, overlayTraces, scale, settings.labels.fontSize, xOffset],
   );
   usePlotResizePulses([
     available,
@@ -3948,7 +4046,7 @@ function UVChromatogramChart(props: {
                 {labels.length} transferred label{labels.length === 1 ? "" : "s"}
               </span>
               <button
-                className="rounded-md border border-red-200 bg-white px-2 py-1 text-red-600 transition-colors hover:bg-red-50"
+                className="rounded-md border border-red-200 bg-surface px-2 py-1 text-red-600 transition-colors hover:bg-red-50"
                 onClick={onClearLabels}
                 title="Delete all transferred UV labels"
               >
@@ -3958,7 +4056,7 @@ function UVChromatogramChart(props: {
           )}
           {available && (
             <button
-              className="rounded-md border border-ink-200 bg-white px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
+              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
               onClick={saveSvg}
               disabled={busy}
               title="Save the UV chromatogram as an SVG file"
@@ -3967,7 +4065,7 @@ function UVChromatogramChart(props: {
             </button>
           )}
           <button
-            className="rounded-md border border-ink-200 bg-white px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={onPickFile}
             disabled={busy}
             title="Attach a UV/DAD chromatogram exported from your LC"
@@ -3976,7 +4074,7 @@ function UVChromatogramChart(props: {
           </button>
           {available && (
             <button
-              className="rounded-md border border-ink-200 bg-white px-2 py-1 text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600"
+              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600"
               onClick={onRemove}
               disabled={busy}
               title="Detach UV chromatogram"
@@ -4067,6 +4165,7 @@ function UVChromatogramChart(props: {
                     textangle: labelOrientation === "vertical" ? ("-90" as const) : ("0" as const),
                     showarrow: true,
                     arrowhead: 0,
+                    arrowcolor: connectorArrowColor,
                     ax: label.ax ?? 0,
                     axref: label.axRef === "x" ? ("x" as const) : ("pixel" as const),
                     ayref: label.ayRef === "y" ? ("y" as const) : ("pixel" as const),
@@ -4080,8 +4179,9 @@ function UVChromatogramChart(props: {
                   })),
                   ...overlayAnnotations,
                 ],
-                plot_bgcolor: "#ffffff",
-                paper_bgcolor: "#ffffff",
+                colorway: pt.colorway,
+                plot_bgcolor: pt.plot_bgcolor,
+                paper_bgcolor: pt.paper_bgcolor,
                 showlegend: overlayData.length > 0,
                 shapes,
               }}
@@ -4114,7 +4214,7 @@ function UVChromatogramChart(props: {
               {labels.map((label) => (
                 <span
                   key={label.id}
-                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-ink-200 bg-white px-2 py-1 text-ink-700"
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-ink-200 bg-surface px-2 py-1 text-ink-700"
                   title={`UV RT ${label.uv_rt_min.toFixed(4)} min`}
                 >
                   <button
@@ -4163,6 +4263,7 @@ function SpectrumChart(props: {
   const specContainerRef = useRef<HTMLDivElement>(null);
   const specPlotRef = useRef<PlotlyHTMLElement | null>(null);
   const specPlotSize = useContainerSize(specContainerRef, props.settings.height);
+  const pt = usePlotlyTheme();
   usePlotResizePulses([
     props.annotate,
     props.polymerEnabled,
@@ -4338,8 +4439,9 @@ function SpectrumChart(props: {
                     ...overlayAnnotations,
                   ]
                 : [],
-              plot_bgcolor: "#ffffff",
-              paper_bgcolor: "#ffffff",
+              colorway: pt.colorway,
+              plot_bgcolor: pt.plot_bgcolor,
+              paper_bgcolor: pt.paper_bgcolor,
               showlegend: overlayData.length > 0,
               barmode: "overlay",
               bargap: 0,
@@ -4408,7 +4510,7 @@ function StatusBar({
 }) {
   const sep = <span className="text-ink-300">·</span>;
   return (
-    <footer className="flex shrink-0 items-center justify-between border-t border-ink-200 bg-white px-6 py-1.5 text-[11px] text-ink-500">
+    <footer className="flex shrink-0 items-center justify-between border-t border-ink-200 bg-surface px-6 py-1.5 text-[11px] text-ink-500">
       <span className="font-medium text-ink-700 truncate max-w-[220px]">
         {truncName || "No session loaded"}
       </span>
@@ -4451,7 +4553,7 @@ function Modal({
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink-900/40 p-4">
       <div
         className={clsx(
-          "flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl border border-ink-200 bg-white shadow-xl",
+          "flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl border border-ink-200 bg-surface shadow-xl",
           width,
         )}
       >
@@ -4500,7 +4602,7 @@ function FindMzDialog({
       footer={
         <>
           <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
             onClick={onClose}
           >
             Cancel
@@ -4562,7 +4664,7 @@ function CustomUvLabelDialog({
       footer={
         <>
           <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
             onClick={onClose}
           >
             Cancel
@@ -4629,7 +4731,7 @@ function EICDialog({
       footer={
         <>
           <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
             onClick={onClose}
           >
             Cancel
@@ -4706,7 +4808,7 @@ function GraphSettingsDialog({
     const labelsAvailable = id === "spectrum" || id === "uv";
     const labelControlsTitle = id === "uv" ? "UV labels" : "Peak labels";
     return (
-      <section className="rounded-lg border border-ink-200 bg-white p-4" key={id}>
+      <section className="rounded-lg border border-ink-200 bg-surface p-4" key={id}>
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-semibold">{label}</h3>
           <div className="flex items-center gap-4">
@@ -4883,6 +4985,27 @@ function GraphSettingsDialog({
                 value={s.labels.color}
                 onChange={(value) => updateLabels(id, { color: value })}
               />
+              {id === "uv" && (
+                <ColorSetting
+                  label="Connector line color"
+                  value={s.annotationConnectorColor ?? "#334155"}
+                  onChange={(value) => updateChart(id, { annotationConnectorColor: value })}
+                />
+              )}
+              {id === "uv" && (
+                <NumberSetting
+                  label="Connector line opacity"
+                  value={s.annotationConnectorOpacity ?? 0.7}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(value) =>
+                    updateChart(id, {
+                      annotationConnectorOpacity: Math.min(1, Math.max(0, value ?? 0.7)),
+                    })
+                  }
+                />
+              )}
             </div>
           ) : (
             <p className="text-xs text-ink-500">
@@ -4901,7 +5024,7 @@ function GraphSettingsDialog({
       footer={
         <>
           <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
             onClick={onReset}
           >
             Reset defaults
@@ -5041,7 +5164,7 @@ function ColorSetting({
       <div className="mt-1 flex items-center gap-2">
         <input
           type="color"
-          className="h-9 w-12 rounded border border-ink-200 bg-white p-1"
+          className="h-9 w-12 rounded border border-ink-200 bg-surface p-1"
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -5104,7 +5227,7 @@ function MonomerPresetBox({
     setMassText("");
   };
   return (
-    <div className="rounded-md border border-ink-200 bg-white p-3">
+    <div className="rounded-md border border-ink-200 bg-surface p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-ink-500">
           {title}
@@ -5174,7 +5297,7 @@ function MonomerPresetBox({
           onChange={(e) => setMassText(e.target.value)}
         />
         <button
-          className="rounded-md border border-ink-200 bg-white px-2 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md border border-ink-200 bg-surface px-2 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
           onClick={addCustom}
           disabled={!name.trim() || !Number.isFinite(parseFloat(massText))}
         >
@@ -5217,7 +5340,7 @@ function PolymerDialog({
       footer={
         <>
           <button
-            className="rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
             onClick={() => onChange(loadPolymerUiSettings())}
           >
             Reset
