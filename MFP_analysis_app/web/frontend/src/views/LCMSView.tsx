@@ -403,6 +403,7 @@ const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
 };
 
 const GRAPH_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.graphSettings.default";
+const POLYMER_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.polymerSettings.default";
 const POLYMER_MONOMER_PRESETS_STORAGE_KEY = "mfp.lcms.polymerMonomerPresets";
 const UV_PEAK_FETCH_LIMIT = 250;
 const UV_LABEL_STAIR_X_STEP_MIN = 0.5;
@@ -492,6 +493,31 @@ function clonePolymerMonomers(monomers: PolymerMonomerPreset[]): PolymerMonomerP
   return monomers.map((monomer) => ({ ...monomer }));
 }
 
+function mergePolymerMonomerPresets(saved: PolymerMonomerPreset[]): PolymerMonomerPreset[] {
+  const builtIns = clonePolymerMonomers(BUILT_IN_POLYMER_MONOMERS);
+  const savedById = new Map(saved.map((monomer) => [monomer.id, monomer]));
+  const merged = builtIns.map((monomer) => {
+    const savedMonomer = savedById.get(monomer.id);
+    return savedMonomer
+      ? {
+          ...monomer,
+          abbr: savedMonomer.abbr || monomer.abbr,
+          selected: Boolean(savedMonomer.selected),
+        }
+      : monomer;
+  });
+  for (const monomer of saved) {
+    if (monomer.custom && !merged.some((existing) => existing.id === monomer.id)) {
+      merged.push({
+        ...monomer,
+        selected: Boolean(monomer.selected),
+        custom: true,
+      });
+    }
+  }
+  return merged;
+}
+
 function loadPolymerMonomerPresets(): PolymerMonomerPreset[] {
   const builtIns = clonePolymerMonomers(BUILT_IN_POLYMER_MONOMERS);
   if (typeof window === "undefined") return builtIns;
@@ -499,27 +525,7 @@ function loadPolymerMonomerPresets(): PolymerMonomerPreset[] {
     const stored = window.localStorage.getItem(POLYMER_MONOMER_PRESETS_STORAGE_KEY);
     if (!stored) return builtIns;
     const saved = JSON.parse(stored) as PolymerMonomerPreset[];
-    const savedById = new Map(saved.map((monomer) => [monomer.id, monomer]));
-    const merged = builtIns.map((monomer) => {
-      const savedMonomer = savedById.get(monomer.id);
-      return savedMonomer
-        ? {
-            ...monomer,
-            abbr: savedMonomer.abbr || monomer.abbr,
-            selected: Boolean(savedMonomer.selected),
-          }
-        : monomer;
-    });
-    for (const monomer of saved) {
-      if (monomer.custom && !merged.some((existing) => existing.id === monomer.id)) {
-        merged.push({
-          ...monomer,
-          selected: Boolean(monomer.selected),
-          custom: true,
-        });
-      }
-    }
-    return merged;
+    return mergePolymerMonomerPresets(saved);
   } catch {
     return builtIns;
   }
@@ -530,7 +536,7 @@ function savePolymerMonomerPresets(monomers: PolymerMonomerPreset[]) {
   window.localStorage.setItem(POLYMER_MONOMER_PRESETS_STORAGE_KEY, JSON.stringify(monomers));
 }
 
-function loadPolymerUiSettings(): PolymerUiSettings {
+function defaultPolymerUiSettings(): PolymerUiSettings {
   return {
     ...DEFAULT_POLYMER_UI_SETTINGS,
     shared: { ...DEFAULT_POLYMER_SHARED_SETTINGS },
@@ -538,6 +544,35 @@ function loadPolymerUiSettings(): PolymerUiSettings {
     negative: { ...DEFAULT_POLYMER_UI_SETTINGS.negative },
     monomers: loadPolymerMonomerPresets(),
   };
+}
+
+function mergePolymerUiSettings(saved: Partial<PolymerUiSettings>): PolymerUiSettings {
+  const base = defaultPolymerUiSettings();
+  return {
+    ...base,
+    shared: { ...base.shared, ...(saved.shared ?? {}) },
+    positive: { ...base.positive, ...(saved.positive ?? {}) },
+    negative: { ...base.negative, ...(saved.negative ?? {}) },
+    monomers: Array.isArray(saved.monomers)
+      ? mergePolymerMonomerPresets(saved.monomers)
+      : base.monomers,
+  };
+}
+
+function loadPolymerUiSettings(): PolymerUiSettings {
+  if (typeof window === "undefined") return defaultPolymerUiSettings();
+  try {
+    const stored = window.localStorage.getItem(POLYMER_SETTINGS_DEFAULT_STORAGE_KEY);
+    if (!stored) return defaultPolymerUiSettings();
+    return mergePolymerUiSettings(JSON.parse(stored) as Partial<PolymerUiSettings>);
+  } catch {
+    return defaultPolymerUiSettings();
+  }
+}
+
+function savePolymerUiSettingsDefault(settings: PolymerUiSettings) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(POLYMER_SETTINGS_DEFAULT_STORAGE_KEY, JSON.stringify(settings));
 }
 
 function polymerMonomerText(settings: PolymerUiSettings): string {
@@ -998,6 +1033,11 @@ export function LCMSView() {
   useEffect(() => {
     savePolymerMonomerPresets(polymerSettings.monomers);
   }, [polymerSettings.monomers]);
+
+  const savePolymerDefaults = useCallback(() => {
+    savePolymerUiSettingsDefault(polymerSettings);
+    setInfo("Saved polymer matching defaults.");
+  }, [polymerSettings]);
 
   useEffect(() => {
     if (!activeSid) {
@@ -2277,6 +2317,7 @@ export function LCMSView() {
           polymerSettings={polymerSettings}
           setPolymerSettings={setPolymerSettings}
           onPolymerDialog={() => setPolymerDialogOpen(true)}
+          onSavePolymerDefaults={savePolymerDefaults}
         />
       </div>
 
@@ -2732,6 +2773,7 @@ interface ToolsPanelProps {
   polymerSettings: PolymerUiSettings;
   setPolymerSettings: (v: PolymerUiSettings) => void;
   onPolymerDialog: () => void;
+  onSavePolymerDefaults: () => void;
 }
 
 function ToolsPanel(p: ToolsPanelProps) {
@@ -2794,6 +2836,7 @@ function ToolsPanel(p: ToolsPanelProps) {
                 settings={p.polymerSettings}
                 onChange={p.setPolymerSettings}
                 onOpen={p.onPolymerDialog}
+                onSaveDefaults={p.onSavePolymerDefaults}
               />
             )}
           </WorkflowTools>
@@ -3365,11 +3408,13 @@ function PolymerTab({
   settings,
   onChange,
   onOpen,
+  onSaveDefaults,
 }: {
   polarity: Polarity;
   settings: PolymerUiSettings;
   onChange: (settings: PolymerUiSettings) => void;
   onOpen: () => void;
+  onSaveDefaults: () => void;
 }) {
   const disabled = polarity === "all";
   const status =
@@ -3404,6 +3449,13 @@ function PolymerTab({
         <NavyButton className="mt-2 w-full" onClick={onOpen}>
           Polymer Match…
         </NavyButton>
+        <button
+          type="button"
+          className="w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+          onClick={onSaveDefaults}
+        >
+          Save current as defaults
+        </button>
       </GroupBox>
     </div>
   );

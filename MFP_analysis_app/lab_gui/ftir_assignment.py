@@ -276,11 +276,11 @@ def _score_entry(
 
     intensities = set(entry.get("typical_intensity") or [])
     if peak_intensity and intensities:
-        if "variable" in intensities:
-            score += 1.0
-        elif peak_intensity in intensities:
+        if peak_intensity in intensities:
             score += 7.0
             reasons.append(f"intensity matches ({peak_intensity})")
+        elif "variable" in intensities:
+            score += 1.0
         else:
             score -= 5.0
 

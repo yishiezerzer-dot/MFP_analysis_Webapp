@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Plot from "react-plotly.js";
 import Plotly from "plotly.js-dist-min";
 import type { Data, Layout } from "plotly.js";
@@ -88,6 +88,9 @@ interface GraphSettings {
   showGroupRegions?: boolean;
   overlayMode?: "overlay" | "offset" | "stacked";
   peakLabelColor: string;
+  peakLabelSize: number;
+  axisTitleSize: number;
+  axisTickSize: number;
   traceColors: Record<string, string>;
 }
 
@@ -156,8 +159,25 @@ const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   showGroupRegions: false,
   overlayMode: "overlay",
   peakLabelColor: "#dc2626",
+  peakLabelSize: 10,
+  axisTitleSize: 13,
+  axisTickSize: 12,
   traceColors: {},
 };
+
+type FTIRControlPanelKey = "preprocess" | "overlay" | "peaks" | "assignments" | "quant";
+
+type FTIRControlPanels = Record<FTIRControlPanelKey, boolean>;
+
+const DEFAULT_CONTROL_PANELS: FTIRControlPanels = {
+  preprocess: false,
+  overlay: false,
+  peaks: false,
+  assignments: false,
+  quant: false,
+};
+
+const FTIR_STORAGE_PREFIX = "mfp.ftir";
 
 interface FTIRWorkspaceEnvelope {
   version: 1;
@@ -334,14 +354,76 @@ function buildStackedAxes(mode: GraphSettings["overlayMode"], count: number, col
   return axes;
 }
 
+function readStoredValue<T>(key: string, fallback: T, reconcile?: (value: Partial<T>) => T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<T>;
+    return reconcile ? reconcile(parsed) : (parsed as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function useStoredState<T>(key: string, fallback: T, reconcile?: (value: Partial<T>) => T) {
+  const [value, setValue] = useState<T>(() => readStoredValue(key, fallback, reconcile));
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // Best-effort persistence; the controls still work if storage is unavailable.
+    }
+  }, [key, value]);
+
+  return [value, setValue] as const;
+}
+
+function mergeAssignmentConstraints(value: Partial<FTIRAssignmentConstraints>): FTIRAssignmentConstraints {
+  return {
+    ...DEFAULT_ASSIGNMENT_CONSTRAINTS,
+    ...value,
+    excluded_categories: Array.isArray(value.excluded_categories) ? value.excluded_categories : [],
+    excluded_subcategories: Array.isArray(value.excluded_subcategories) ? value.excluded_subcategories : [],
+  };
+}
+
+function mergeQuantState(value: Partial<FTIRQuantState>): FTIRQuantState {
+  return {
+    ...DEFAULT_QUANT_STATE,
+    ...value,
+    integrationRegion: { ...DEFAULT_QUANT_STATE.integrationRegion, ...(value.integrationRegion ?? {}) },
+    subtractRegion: { ...DEFAULT_QUANT_STATE.subtractRegion, ...(value.subtractRegion ?? {}) },
+    matchRegion: { ...DEFAULT_QUANT_STATE.matchRegion, ...(value.matchRegion ?? {}) },
+    fitRegion: { ...DEFAULT_QUANT_STATE.fitRegion, ...(value.fitRegion ?? {}) },
+  };
+}
+
 export function FTIRView() {
   const [sessions, setSessions] = useState<FTIRSessionSummary[]>([]);
-  const [activeSid, setActiveSid] = useState<string | null>(null);
-  const [pre, setPre] = useState<FTIRPreprocessOptions>(DEFAULT_PRE);
-  const [pk, setPk] = useState<PeakPickOptions>(DEFAULT_PEAK);
+  const [activeSid, setActiveSid] = useStoredState<string | null>(
+    `${FTIR_STORAGE_PREFIX}.activeSessionId`,
+    null,
+    (value) => (typeof value === "string" ? value : null),
+  );
+  const [pre, setPre] = useStoredState<FTIRPreprocessOptions>(
+    `${FTIR_STORAGE_PREFIX}.preprocess`,
+    DEFAULT_PRE,
+    (value) => ({ ...DEFAULT_PRE, ...value }),
+  );
+  const [pk, setPk] = useStoredState<PeakPickOptions>(
+    `${FTIR_STORAGE_PREFIX}.peakPick`,
+    DEFAULT_PEAK,
+    (value) => ({ ...DEFAULT_PEAK, ...value }),
+  );
   const [spectrum, setSpectrum] = useState<FTIRSpectrumResponse | null>(null);
-  const [overlayEnabled, setOverlayEnabled] = useState(false);
-  const [overlaySessionIds, setOverlaySessionIds] = useState<string[]>([]);
+  const [overlayEnabled, setOverlayEnabled] = useStoredState<boolean>(`${FTIR_STORAGE_PREFIX}.overlayEnabled`, false);
+  const [overlaySessionIds, setOverlaySessionIds] = useStoredState<string[]>(
+    `${FTIR_STORAGE_PREFIX}.overlaySessionIds`,
+    [],
+    (value) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []),
+  );
   const [overlaySpectra, setOverlaySpectra] = useState<FTIROverlaySpectrum[]>([]);
   const [peaks, setPeaks] = useState<FTIRPeak[]>([]);
   const [assignmentsBySession, setAssignmentsBySession] = useState<Record<string, FTIRAssignment[] | null>>({});
@@ -349,15 +431,37 @@ export function FTIRView() {
   const [manualPeakEdits, setManualPeakEdits] = useState<Record<string, ManualPeakEdits>>({});
   const [peakEditMode, setPeakEditMode] = useState<PeakEditMode>("none");
   const [labelEdits, setLabelEdits] = useState<FTIRLabelEdits>({});
-  const [graphSettings, setGraphSettings] = useState<GraphSettings>(DEFAULT_GRAPH_SETTINGS);
+  const [graphSettings, setGraphSettings] = useStoredState<GraphSettings>(
+    `${FTIR_STORAGE_PREFIX}.graphSettings`,
+    DEFAULT_GRAPH_SETTINGS,
+    (value) => ({
+      ...DEFAULT_GRAPH_SETTINGS,
+      ...value,
+      peakLabelSize: Math.max(6, Math.min(28, Number(value.peakLabelSize) || DEFAULT_GRAPH_SETTINGS.peakLabelSize)),
+      axisTitleSize: Math.max(8, Math.min(28, Number(value.axisTitleSize) || DEFAULT_GRAPH_SETTINGS.axisTitleSize)),
+      axisTickSize: Math.max(8, Math.min(24, Number(value.axisTickSize) || DEFAULT_GRAPH_SETTINGS.axisTickSize)),
+      traceColors: value.traceColors ?? {},
+    }),
+  );
   const [assignments, setAssignments] = useState<FTIRAssignment[] | null>(null);
-  const [pickAcrossOverlay, setPickAcrossOverlay] = useState(false);
+  const [pickAcrossOverlay, setPickAcrossOverlay] = useStoredState<boolean>(`${FTIR_STORAGE_PREFIX}.pickAcrossOverlay`, false);
   const [libMeta, setLibMeta] = useState<{ version: string; n_entries: number } | null>(null);
   const [libraryCategories, setLibraryCategories] = useState<FTIRLibraryCategories | null>(null);
-  const [assignmentConstraints, setAssignmentConstraints] = useState<FTIRAssignmentConstraints>(
+  const [assignmentConstraints, setAssignmentConstraints] = useStoredState<FTIRAssignmentConstraints>(
+    `${FTIR_STORAGE_PREFIX}.assignmentConstraints`,
     DEFAULT_ASSIGNMENT_CONSTRAINTS,
+    mergeAssignmentConstraints,
   );
-  const [quantState, setQuantState] = useState<FTIRQuantState>(DEFAULT_QUANT_STATE);
+  const [quantState, setQuantState] = useStoredState<FTIRQuantState>(
+    `${FTIR_STORAGE_PREFIX}.quantState`,
+    DEFAULT_QUANT_STATE,
+    mergeQuantState,
+  );
+  const [controlPanels, setControlPanels] = useStoredState<FTIRControlPanels>(
+    `${FTIR_STORAGE_PREFIX}.controlPanels`,
+    DEFAULT_CONTROL_PANELS,
+    (value) => ({ ...DEFAULT_CONTROL_PANELS, ...value }),
+  );
   const [integrationResult, setIntegrationResult] = useState<FTIRIntegrationResponse | null>(null);
   const [differenceSpectrum, setDifferenceSpectrum] = useState<FTIRSubtractResponse | null>(null);
   const [matchResult, setMatchResult] = useState<FTIRMatchResponse | null>(null);
@@ -381,6 +485,12 @@ export function FTIRView() {
     api.ftir.library().then(setLibMeta).catch(() => undefined);
     api.ftir.libraryCategories().then(setLibraryCategories).catch(() => undefined);
   }, []);
+
+  // Retry library categories if the initial fetch failed (e.g. backend not ready on mount).
+  useEffect(() => {
+    if (libraryCategories !== null) return;
+    api.ftir.libraryCategories().then(setLibraryCategories).catch(() => undefined);
+  }, [sessions, libraryCategories]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -415,7 +525,7 @@ export function FTIRView() {
 
   // Refetch spectrum whenever session or preprocessing changes.
   useEffect(() => {
-    if (!activeSid) {
+    if (!activeSid || !sessions.some((session) => session.session_id === activeSid)) {
       setSpectrum(null);
       setPeaks([]);
       setAssignmentsBySession({});
@@ -430,7 +540,7 @@ export function FTIRView() {
       .then(setSpectrum)
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(false));
-  }, [activeSid, pre]);
+  }, [activeSid, pre, sessions]);
 
   useEffect(() => {
     if (!activeSid) return;
@@ -956,6 +1066,10 @@ export function FTIRView() {
     if (f) void onUpload(f);
   };
 
+  const setControlPanelOpen = (key: FTIRControlPanelKey, open: boolean) => {
+    setControlPanels((prev) => ({ ...prev, [key]: open }));
+  };
+
   return (
     <div
       className="flex h-full flex-col"
@@ -990,63 +1104,100 @@ export function FTIRView() {
             <>
               <SummaryCard active={active} spectrum={spectrum} peaks={peaks} />
 
-              <PreprocessCard pre={pre} setPre={setPre} />
+              <div className="flex shrink-0 flex-col gap-2">
+                <CollapsiblePanel
+                  title="Reprocess"
+                  summary={`${pre.mode}, ${pre.baseline} baseline, ${pre.normalize} normalize`}
+                  open={controlPanels.preprocess}
+                  onOpenChange={(open) => setControlPanelOpen("preprocess", open)}
+                >
+                  <PreprocessCard pre={pre} setPre={setPre} />
+                </CollapsiblePanel>
 
-              <OverlayCard
-                sessions={sessions}
-                enabled={overlayEnabled}
-                setEnabled={setOverlayEnabled}
-                selectedIds={overlaySessionIds}
-                setSelectedIds={setOverlaySessionIds}
-                overlayMode={graphSettings.overlayMode}
-                setOverlayMode={(overlayMode) => setGraphSettings((prev) => ({ ...prev, overlayMode }))}
-              />
+                <CollapsiblePanel
+                  title="Overlay"
+                  summary={overlayEnabled ? `${overlaySessionIds.length} selected` : "Off"}
+                  open={controlPanels.overlay}
+                  onOpenChange={(open) => setControlPanelOpen("overlay", open)}
+                >
+                  <OverlayCard
+                    sessions={sessions}
+                    enabled={overlayEnabled}
+                    setEnabled={setOverlayEnabled}
+                    selectedIds={overlaySessionIds}
+                    setSelectedIds={setOverlaySessionIds}
+                    overlayMode={graphSettings.overlayMode}
+                    setOverlayMode={(overlayMode) => setGraphSettings((prev) => ({ ...prev, overlayMode }))}
+                  />
+                </CollapsiblePanel>
 
-              <PeakCard
-                pk={pk}
-                setPk={setPk}
-                onRun={runPick}
-                picking={picking}
-                disabled={!spectrum}
-                pickAcrossOverlay={pickAcrossOverlay}
-                setPickAcrossOverlay={setPickAcrossOverlay}
-                overlayEnabled={overlayEnabled}
-                overlayCount={overlaySessionIds.length}
-                peakEditMode={peakEditMode}
-                setPeakEditMode={setPeakEditMode}
-                onClearManualPeaks={clearManualPeaks}
-                manualPeakCount={(manualPeakEdits[active.session_id]?.added.length ?? 0) + (manualPeakEdits[active.session_id]?.removed.length ?? 0)}
-              />
+                <CollapsiblePanel
+                  title="Assignments"
+                  summary={`${pk.top_n || "all"} peaks, ${pk.assign ? "library on" : "library off"}`}
+                  open={controlPanels.peaks}
+                  onOpenChange={(open) => setControlPanelOpen("peaks", open)}
+                >
+                  <PeakCard
+                    pk={pk}
+                    setPk={setPk}
+                    onRun={runPick}
+                    picking={picking}
+                    disabled={!spectrum}
+                    pickAcrossOverlay={pickAcrossOverlay}
+                    setPickAcrossOverlay={setPickAcrossOverlay}
+                    overlayEnabled={overlayEnabled}
+                    overlayCount={overlaySessionIds.length}
+                    peakEditMode={peakEditMode}
+                    setPeakEditMode={setPeakEditMode}
+                    onClearManualPeaks={clearManualPeaks}
+                    manualPeakCount={(manualPeakEdits[active.session_id]?.added.length ?? 0) + (manualPeakEdits[active.session_id]?.removed.length ?? 0)}
+                  />
+                </CollapsiblePanel>
 
-              <AssignmentConstraintsCard
-                categories={libraryCategories}
-                constraints={assignmentConstraints}
-                setConstraints={setAssignmentConstraints}
-                onApply={runPick}
-                disabled={!spectrum || picking}
-              />
+                <CollapsiblePanel
+                  title="Constraints"
+                  summary={`${assignmentConstraints.excluded_categories.length + assignmentConstraints.excluded_subcategories.length} exclusions`}
+                  open={controlPanels.assignments}
+                  onOpenChange={(open) => setControlPanelOpen("assignments", open)}
+                >
+                  <AssignmentConstraintsCard
+                    categories={libraryCategories}
+                    constraints={assignmentConstraints}
+                    setConstraints={setAssignmentConstraints}
+                    onApply={runPick}
+                    disabled={!spectrum || picking}
+                  />
+                </CollapsiblePanel>
 
-              <QuantToolsCard
-                sessions={sessions}
-                activeSid={active.session_id}
-                state={quantState}
-                setState={setQuantState}
-                integrationResult={integrationResult}
-                differenceSpectrum={differenceSpectrum}
-                onIntegrate={runIntegrate}
-                onSubtract={runSubtract}
-                onMatch={runMatch}
-                onFit={runFit}
-                onClearDifference={() => setDifferenceSpectrum(null)}
-                matchResult={matchResult}
-                selectedReference={selectedReference}
-                onSelectReference={setSelectedReference}
-                onClearReference={() => setSelectedReference(null)}
-                fitResult={fitResult}
-                onClearFit={() => setFitResult(null)}
-                busy={quantBusy}
-                disabled={!spectrum}
-              />
+                <CollapsiblePanel
+                  title="Quant/tools"
+                  summary={`Integrate ${formatRange(quantState.integrationRegion.lo, quantState.integrationRegion.hi)} cm^-1`}
+                  open={controlPanels.quant}
+                  onOpenChange={(open) => setControlPanelOpen("quant", open)}
+                >
+                  <QuantToolsCard
+                    sessions={sessions}
+                    activeSid={active.session_id}
+                    state={quantState}
+                    setState={setQuantState}
+                    integrationResult={integrationResult}
+                    differenceSpectrum={differenceSpectrum}
+                    onIntegrate={runIntegrate}
+                    onSubtract={runSubtract}
+                    onMatch={runMatch}
+                    onFit={runFit}
+                    onClearDifference={() => setDifferenceSpectrum(null)}
+                    matchResult={matchResult}
+                    selectedReference={selectedReference}
+                    onSelectReference={setSelectedReference}
+                    onClearReference={() => setSelectedReference(null)}
+                    fitResult={fitResult}
+                    onClearFit={() => setFitResult(null)}
+                    busy={quantBusy}
+                    disabled={!spectrum}
+                  />
+                </CollapsiblePanel>
+              </div>
 
               <SpectrumChart
                 spectrum={spectrum}
@@ -1089,6 +1240,42 @@ export function FTIRView() {
 }
 
 // ------------------------------ components ------------------------------
+
+function CollapsiblePanel(props: {
+  title: string;
+  summary?: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="shrink-0">
+      <button
+        type="button"
+        className="card flex w-full items-center justify-between gap-3 p-3 text-left transition-colors hover:bg-ink-50"
+        aria-expanded={props.open}
+        onClick={() => props.onOpenChange(!props.open)}
+      >
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-ink-800">{props.title}</span>
+          {props.summary ? (
+            <span className="mt-0.5 block truncate text-xs text-ink-500">{props.summary}</span>
+          ) : null}
+        </span>
+        <span
+          className={clsx(
+            "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-ink-200 text-xs text-ink-600 transition-transform",
+            props.open && "rotate-90",
+          )}
+          aria-hidden="true"
+        >
+          {">"}
+        </span>
+      </button>
+      {props.open && <div className="mt-2">{props.children}</div>}
+    </section>
+  );
+}
 
 function SessionsSidebar(props: {
   sessions: FTIRSessionSummary[];
@@ -2253,7 +2440,7 @@ function SpectrumChart(props: {
       y: activePeaks.map((p) => p.y),
       text: activePeaks.map((p) => p.wn.toFixed(0)),
       textposition: "top center",
-      textfont: { size: 10, color: props.graphSettings.peakLabelColor },
+      textfont: { size: props.graphSettings.peakLabelSize, color: props.graphSettings.peakLabelColor },
       marker: { color: props.graphSettings.peakLabelColor, size: 7, symbol: "triangle-down" },
       hovertemplate:
         "<b>%{customdata[0]}</b><br>conf %{customdata[1]}<br>%{x:.1f} cm⁻¹<br>I=%{y:.4g}<br>prom %{customdata[2]:.3g}<extra></extra>",
@@ -2276,7 +2463,7 @@ function SpectrumChart(props: {
         y: overlayPeaks.map((p) => p.y),
         text: overlayPeaks.map((_, idx) => String(idx + 1)),
         textposition: "top center",
-        textfont: { size: 10, color },
+        textfont: { size: Math.max(6, props.graphSettings.peakLabelSize - 1), color },
         marker: { color, size: 6, symbol: "circle-open" },
         hovertemplate:
           `${overlay.display_name} peak #%{text}: %{x:.1f} cm⁻¹<br>y: %{y:.4g}<br>prom: %{customdata:.3g}<extra></extra>`,
@@ -2294,6 +2481,7 @@ function SpectrumChart(props: {
     visibleOverlays,
     props.graphSettings.lineWidth,
     props.graphSettings.peakLabelColor,
+    props.graphSettings.peakLabelSize,
     props.graphSettings.overlayMode,
     props.activeSessionId,
     props.activeAssignments,
@@ -2325,7 +2513,7 @@ function SpectrumChart(props: {
           bgcolor: pt.legendBg,
           bordercolor: props.graphSettings.peakLabelColor,
           borderpad: 2,
-          font: { size: 10, color: props.graphSettings.peakLabelColor },
+          font: { size: props.graphSettings.peakLabelSize, color: props.graphSettings.peakLabelColor },
         },
       });
     }
@@ -2353,7 +2541,7 @@ function SpectrumChart(props: {
             bgcolor: pt.legendBg,
             bordercolor: color,
             borderpad: 2,
-            font: { size: 9, color },
+            font: { size: Math.max(6, props.graphSettings.peakLabelSize - 1), color },
           },
         });
       }
@@ -2365,6 +2553,7 @@ function SpectrumChart(props: {
     props.activeSessionId,
     props.assignmentsBySession,
     props.graphSettings.peakLabelColor,
+    props.graphSettings.peakLabelSize,
     props.labelEdits,
     props.overlayPeaksBySession,
     resolveTraceColor,
@@ -2458,6 +2647,8 @@ function SpectrumChart(props: {
       margin: { l: 50, r: 20, t: 8, b: 40 },
       height: 420,
       xaxis: {
+        titlefont: { size: props.graphSettings.axisTitleSize },
+        tickfont: { size: props.graphSettings.axisTickSize },
         title: { text: "Wavenumber (cm⁻¹)" },
         autorange: xRange ? false : "reversed",
         range: xRange ? [xRange[1], xRange[0]] : undefined,
@@ -2468,6 +2659,8 @@ function SpectrumChart(props: {
         ...axisFrameProps,
       },
       yaxis: {
+        titlefont: { size: props.graphSettings.axisTitleSize },
+        tickfont: { size: props.graphSettings.axisTickSize },
         title: { text: mode === "absorbance" ? "Absorbance" : "Transmittance" },
         zeroline: false,
         showgrid: props.graphSettings.showGrid,
@@ -2498,6 +2691,8 @@ function SpectrumChart(props: {
       integrationShape,
       axisFrameProps,
       mode,
+      props.graphSettings.axisTickSize,
+      props.graphSettings.axisTitleSize,
       props.graphSettings.showGrid,
       props.graphSettings.overlayMode,
       props.graphSettings.showTicks,
@@ -2678,6 +2873,54 @@ function SpectrumChart(props: {
                 props.setGraphSettings({
                   ...props.graphSettings,
                   peakLabelColor: e.target.value,
+                })
+              }
+            />
+          </Field>
+          <Field label="Peak label size">
+            <input
+              type="number"
+              min={6}
+              max={28}
+              step={1}
+              className="input w-full"
+              value={props.graphSettings.peakLabelSize}
+              onChange={(e) =>
+                props.setGraphSettings({
+                  ...props.graphSettings,
+                  peakLabelSize: Math.max(6, Math.min(28, Number(e.target.value) || DEFAULT_GRAPH_SETTINGS.peakLabelSize)),
+                })
+              }
+            />
+          </Field>
+          <Field label="Axis title size">
+            <input
+              type="number"
+              min={8}
+              max={28}
+              step={1}
+              className="input w-full"
+              value={props.graphSettings.axisTitleSize}
+              onChange={(e) =>
+                props.setGraphSettings({
+                  ...props.graphSettings,
+                  axisTitleSize: Math.max(8, Math.min(28, Number(e.target.value) || DEFAULT_GRAPH_SETTINGS.axisTitleSize)),
+                })
+              }
+            />
+          </Field>
+          <Field label="Axis tick size">
+            <input
+              type="number"
+              min={8}
+              max={24}
+              step={1}
+              className="input w-full"
+              value={props.graphSettings.axisTickSize}
+              onChange={(e) =>
+                props.setGraphSettings({
+                  ...props.graphSettings,
+                  axisTickSize: Math.max(8, Math.min(24, Number(e.target.value) || DEFAULT_GRAPH_SETTINGS.axisTickSize)),
                 })
               }
             />
