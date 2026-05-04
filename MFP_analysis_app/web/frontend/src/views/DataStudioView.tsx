@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Plot from "react-plotly.js";
 import type { Data, Layout } from "plotly.js";
 import clsx from "clsx";
+import { useLocation } from "react-router-dom";
 import {
   api,
   DSHistResponse,
@@ -13,6 +14,8 @@ import {
   DSTransformStep,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
+import { HelpOpenButton, HelpShell } from "../help/HelpShell";
+import { getHelpModule } from "../help/registry";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { ChartPanel } from "../components/ChartPanel";
@@ -75,6 +78,10 @@ export function DataStudioView() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const location = useLocation();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
 
   const active = useMemo(
     () => sessions.find((s) => s.session_id === activeSid) ?? null,
@@ -235,6 +242,7 @@ export function DataStudioView() {
       subtitle="Load tabular data, apply a transform pipeline, build interactive plots."
       actions={
         <>
+          <HelpOpenButton onClick={() => setHelpOpen(true)} />
           <input
             ref={fileRef}
             type="file"
@@ -342,6 +350,9 @@ export function DataStudioView() {
           )}
         </div>
       </div>
+      {helpModule ? (
+        <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
+      ) : null}
     </div>
   );
 }

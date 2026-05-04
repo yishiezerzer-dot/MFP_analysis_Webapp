@@ -5,6 +5,7 @@
 export interface LCMSUVMeta {
   available: boolean;
   filename?: string;
+  path?: string;
   n_points?: number;
   rt_min?: number;
   rt_max?: number;
@@ -769,6 +770,12 @@ export const api = {
         handle<LCMSSessionSummary>(r),
       );
     },
+    loadFromPath: (path: string, displayName?: string, rtUnit?: "minutes" | "seconds") =>
+      fetch("/api/lcms/sessions/from_path", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, display_name: displayName, rt_unit: rtUnit ?? "minutes" }),
+      }).then((r) => handle<LCMSSessionSummary>(r)),
     list: () => fetch("/api/lcms/sessions").then((r) => handle<LCMSSessionSummary[]>(r)),
     get: (sid: string) =>
       fetch(`/api/lcms/sessions/${sid}`).then((r) => handle<LCMSSessionSummary>(r)),
@@ -870,6 +877,12 @@ export const api = {
     },
     exportUV: (sid: string) =>
       fetch(`/api/lcms/sessions/${sid}/exports/uv.csv`).then(handleBlob),
+    attachUVFromPath: (sid: string, path: string) =>
+      fetch(`/api/lcms/sessions/${sid}/uv/from_path`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      }).then((r) => handle<LCMSSessionSummary>(r)),
     uploadUV: (sid: string, file: File) => {
       const fd = new FormData();
       fd.append("file", file);

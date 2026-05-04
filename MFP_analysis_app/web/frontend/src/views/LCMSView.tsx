@@ -1,6 +1,7 @@
 import {
   ChangeEvent,
   DependencyList,
+  DragEvent,
   ReactNode,
   useCallback,
   useEffect,
@@ -11,6 +12,7 @@ import {
 import Plot from "react-plotly.js";
 import type { PlotMouseEvent, PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
+import { useLocation } from "react-router-dom";
 import {
   api,
   LCMSEICData,
@@ -23,6 +25,8 @@ import {
   UVChromatogramResponse,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
+import { HelpOpenButton, HelpShell } from "../help/HelpShell";
+import { getHelpModule } from "../help/registry";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
@@ -292,17 +296,28 @@ interface PolymerUiSettings {
   monomers: PolymerMonomerPreset[];
 }
 
+interface LCMSProject {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+type LCMSActiveProjectId = "__all" | "__unassigned" | string;
+
 interface LCMSWorkspaceEnvelope {
-  version: 1;
+  version: 1 | 2;
   module: "LCMS";
   createdAt: string;
   sessions: Array<{
     session_id: string;
     display_name: string;
     path?: string;
-    uv?: { available: boolean; filename?: string };
+    uv?: { available: boolean; filename?: string; path?: string };
   }>;
   activeSessionId: string | null;
+  projects?: LCMSProject[];
+  sessionProjectById?: Record<string, string | null>;
+  activeProjectId?: LCMSActiveProjectId;
   viewState: {
     polarity: Polarity;
     rtUnit: RtUnit;
@@ -329,6 +344,7 @@ interface LCMSWorkspaceEnvelope {
     uvProminence: number;
     uvMinDistance: number;
     snapUvLabels: boolean;
+    uvBunchLabels?: boolean;
     uvLabelOrientation: UVLabelOrientation;
     uvLabelStairXStep: number;
     uvLabelStairYStep: number;
@@ -337,6 +353,13 @@ interface LCMSWorkspaceEnvelope {
     polymerSettings: PolymerUiSettings;
     eic: LCMSEICData | null;
   };
+}
+
+interface LCMSProjectPersistenceEnvelope {
+  version: 1;
+  projects: LCMSProject[];
+  sessionProjectById: Record<string, string | null>;
+  activeProjectId: LCMSActiveProjectId;
 }
 
 const DEFAULT_AXIS_LIMITS: AxisLimits = {
@@ -405,6 +428,7 @@ const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
 const GRAPH_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.graphSettings.default";
 const POLYMER_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.polymerSettings.default";
 const POLYMER_MONOMER_PRESETS_STORAGE_KEY = "mfp.lcms.polymerMonomerPresets";
+const LCMS_PROJECTS_STORAGE_KEY = "mfp.lcms.projects";
 const UV_PEAK_FETCH_LIMIT = 250;
 const UV_LABEL_STAIR_X_STEP_MIN = 0.5;
 const UV_LABEL_STAIR_Y_STEP_PX = 5;
@@ -613,6 +637,257 @@ function makeCustomUvLabelId(uvRt: number, text: string): string {
 
 function cleanLabelText(text: string): string {
   return text.replace(/\s+z=1\b/gi, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function normalizeUvBunchText(text: string): string {
+  return cleanLabelText(text).toLowerCase();
+}
+
+interface UvPlotAnnotation {
+  x: number;
+  y: number;
+  text: string;
+  textangle: "-90" | "0";
+  showarrow: boolean;
+  arrowhead?: number;
+  arrowcolor?: string;
+  ax?: number;
+  axref?: "x" | "pixel";
+  ay?: number;
+  ayref?: "y" | "pixel";
+  editable?: boolean;
+  font: { size: number; color: string };
+  bgcolor?: string;
+  bordercolor?: string;
+  borderpad?: number;
+}
+
+interface UvPlotShape {
+  type: "line";
+  xref: "x";
+  yref: "y" | "paper";
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+  line: { color: string; width: number; dash?: "dot" | "solid" };
+}
+
+interface UvBunchOptions {
+  xOffset: number;
+  scale: number;
+  labelOrientation: UVLabelOrientation;
+  connectorColor: string;
+  connectorArrowColor: string;
+  fontSize: number;
+  fontColor: string;
+  signalMin: number;
+  signalMax: number;
+}
+
+function buildBunchedAnnotations(
+  labels: UVTextLabel[],
+  opts: UvBunchOptions,
+): { annotations: UvPlotAnnotation[]; shapes: UvPlotShape[] } {
+  const groups = new Map<string, UVTextLabel[]>();
+  for (const label of labels) {
+    const key = normalizeUvBunchText(label.text);
+    if (!key) continue;
+    groups.set(key, [...(groups.get(key) ?? []), label]);
+  }
+
+  const signalRange = Math.max(1, opts.signalMax - opts.signalMin);
+  const annotations: UvPlotAnnotation[] = [];
+  const shapes: UvPlotShape[] = [];
+
+  [...groups.values()].forEach((group, groupIndex) => {
+    const xs = group.map((label) => (label.uv_rt_min + opts.xOffset) * opts.scale);
+    const anchorX = xs.reduce((sum, value) => sum + value, 0) / xs.length;
+    const peakY = Math.max(...group.map((label) => label.signal));
+    const anchorY = peakY + signalRange * (0.08 + (groupIndex % 4) * 0.035);
+    const isBunched = group.length > 1;
+    const first = group[0];
+
+    annotations.push({
+      x: isBunched ? anchorX : (first.uv_rt_min + opts.xOffset) * opts.scale,
+      y: isBunched ? anchorY : first.signal,
+      text: cleanLabelText(first.text),
+      textangle: opts.labelOrientation === "vertical" ? "-90" : "0",
+      showarrow: !isBunched,
+      arrowhead: 0,
+      arrowcolor: opts.connectorArrowColor,
+      ax: isBunched ? 0 : first.ax ?? 0,
+      axref: isBunched ? "pixel" : first.axRef === "x" ? "x" : "pixel",
+      ayref: isBunched ? "pixel" : first.ayRef === "y" ? "y" : "pixel",
+      ay:
+        isBunched
+          ? 0
+          : first.ay ?? (opts.labelOrientation === "vertical" ? -78 : -42),
+      editable: false,
+      font: {
+        size: opts.fontSize,
+        color: opts.fontColor,
+      },
+      ...(isBunched
+        ? { bordercolor: opts.connectorArrowColor, borderpad: 2 }
+        : {}),
+    });
+
+    if (!isBunched) return;
+    group.forEach((label) => {
+      shapes.push({
+        type: "line",
+        xref: "x",
+        yref: "y",
+        x0: anchorX,
+        x1: (label.uv_rt_min + opts.xOffset) * opts.scale,
+        y0: anchorY,
+        y1: label.signal,
+        line: { color: opts.connectorColor, width: 1, dash: "solid" },
+      });
+    });
+  });
+
+  return { annotations, shapes };
+}
+
+function normalizeLinkName(name: string): string {
+  return name
+    .replace(/^.*[\\/]/, "")
+    .replace(/\.[^.]+$/, "")
+    .toLowerCase()
+    .replace(/\b(uv|dad|pda|chrom|chromatogram|trace|lcms|mzml|csv|export)\b/g, " ")
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function linkNameTokens(name: string): string[] {
+  return normalizeLinkName(name)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1);
+}
+
+function scoreUvSessionMatch(file: File, session: LCMSSessionSummary): number {
+  const fileName = normalizeLinkName(file.name);
+  const sessionName = normalizeLinkName(session.display_name || session.path || session.session_id);
+  if (!fileName || !sessionName) return 0;
+  if (fileName === sessionName) return 1;
+
+  const fileCompact = fileName.replace(/\s+/g, "");
+  const sessionCompact = sessionName.replace(/\s+/g, "");
+  const contains =
+    fileCompact.includes(sessionCompact) || sessionCompact.includes(fileCompact)
+      ? Math.min(fileCompact.length, sessionCompact.length) / Math.max(fileCompact.length, sessionCompact.length)
+      : 0;
+
+  const fileTokens = new Set(linkNameTokens(file.name));
+  const sessionTokens = new Set([
+    ...linkNameTokens(session.display_name),
+    ...linkNameTokens(session.path),
+  ]);
+  const shared = [...fileTokens].filter((token) => sessionTokens.has(token)).length;
+  const union = new Set([...fileTokens, ...sessionTokens]).size || 1;
+  return Math.max(contains, shared / union);
+}
+
+function matchUvFilesToSessions(
+  files: File[],
+  sessions: LCMSSessionSummary[],
+  activeSid: string | null,
+): Array<{ file: File; session: LCMSSessionSummary; score: number }> {
+  const remaining = new Set(sessions.map((session) => session.session_id));
+  const matches: Array<{ file: File; session: LCMSSessionSummary; score: number }> = [];
+  for (const file of files) {
+    const ranked = sessions
+      .filter((session) => remaining.has(session.session_id))
+      .map((session) => ({ file, session, score: scoreUvSessionMatch(file, session) }))
+      .sort((a, b) => b.score - a.score);
+    const best = ranked[0];
+    if (best && (best.score >= 0.45 || (files.length === 1 && activeSid === best.session.session_id))) {
+      matches.push(best);
+      remaining.delete(best.session.session_id);
+    }
+  }
+  return matches;
+}
+
+function makeProjectId(): string {
+  return `project:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function sessionsForProject(
+  sessions: LCMSSessionSummary[],
+  sessionProjectById: Record<string, string | null>,
+  activeProjectId: LCMSActiveProjectId,
+): LCMSSessionSummary[] {
+  if (activeProjectId === "__all") return sessions;
+  if (activeProjectId === "__unassigned") {
+    return sessions.filter((session) => !sessionProjectById[session.session_id]);
+  }
+  return sessions.filter((session) => sessionProjectById[session.session_id] === activeProjectId);
+}
+
+function normalizeProjectPersistence(
+  saved: Partial<LCMSProjectPersistenceEnvelope> | null | undefined,
+): LCMSProjectPersistenceEnvelope {
+  const projects: LCMSProject[] = [];
+  const seenProjectIds = new Set<string>();
+  for (const project of saved?.projects ?? []) {
+    if (
+      !project ||
+      typeof project.id !== "string" ||
+      typeof project.name !== "string" ||
+      typeof project.createdAt !== "string" ||
+      seenProjectIds.has(project.id)
+    ) {
+      continue;
+    }
+    projects.push(project);
+    seenProjectIds.add(project.id);
+  }
+
+  const sessionProjectById: Record<string, string | null> = {};
+  if (saved?.sessionProjectById && typeof saved.sessionProjectById === "object") {
+    for (const [sid, projectId] of Object.entries(saved.sessionProjectById)) {
+      if (!sid) continue;
+      sessionProjectById[sid] =
+        typeof projectId === "string" && seenProjectIds.has(projectId) ? projectId : null;
+    }
+  }
+
+  const activeProjectId =
+    saved?.activeProjectId === "__all" ||
+    saved?.activeProjectId === "__unassigned" ||
+    (typeof saved?.activeProjectId === "string" && seenProjectIds.has(saved.activeProjectId))
+      ? saved.activeProjectId
+      : "__all";
+
+  return {
+    version: 1,
+    projects,
+    sessionProjectById,
+    activeProjectId,
+  };
+}
+
+function loadProjectPersistence(): LCMSProjectPersistenceEnvelope {
+  if (typeof window === "undefined") {
+    return normalizeProjectPersistence(null);
+  }
+  try {
+    const stored = window.localStorage.getItem(LCMS_PROJECTS_STORAGE_KEY);
+    if (!stored) return normalizeProjectPersistence(null);
+    return normalizeProjectPersistence(JSON.parse(stored) as Partial<LCMSProjectPersistenceEnvelope>);
+  } catch {
+    return normalizeProjectPersistence(null);
+  }
+}
+
+function saveProjectPersistence(state: LCMSProjectPersistenceEnvelope) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(LCMS_PROJECTS_STORAGE_KEY, JSON.stringify(state));
 }
 
 type LabeledSpectrumLabel = SpectrumLabel & { text: string };
@@ -880,9 +1155,19 @@ function readJsonFile<T>(file: File): Promise<T> {
 // --- Main view ---------------------------------------------------------------
 
 export function LCMSView() {
+  const persistedProjectState = useMemo(() => loadProjectPersistence(), []);
+
   // Sessions / data
   const [sessions, setSessions] = useState<LCMSSessionSummary[]>([]);
+  const [sessionsHydrated, setSessionsHydrated] = useState(false);
   const [activeSid, setActiveSid] = useState<string | null>(null);
+  const [projects, setProjects] = useState<LCMSProject[]>(() => persistedProjectState.projects);
+  const [sessionProjectById, setSessionProjectById] = useState<Record<string, string | null>>(
+    () => persistedProjectState.sessionProjectById,
+  );
+  const [activeProjectId, setActiveProjectId] = useState<LCMSActiveProjectId>(
+    () => persistedProjectState.activeProjectId,
+  );
   const [tic, setTic] = useState<TICData | null>(null);
   const [spectrum, setSpectrum] = useState<SpectrumData | null>(null);
   const [uv, setUv] = useState<UVChromatogramResponse | null>(null);
@@ -928,6 +1213,7 @@ export function LCMSView() {
   const [uvProminence, setUvProminence] = useState(0.05);
   const [uvMinDistance, setUvMinDistance] = useState(0.2);
   const [snapUvLabels, setSnapUvLabels] = useState(true);
+  const [uvBunchLabels, setUvBunchLabels] = useState(false);
   const [uvLabelOrientation, setUvLabelOrientation] =
     useState<UVLabelOrientation>("vertical");
   const [uvLabelStairXStep, setUvLabelStairXStep] =
@@ -995,19 +1281,73 @@ export function LCMSView() {
   const uvFileRef = useRef<HTMLInputElement>(null);
   const workspaceFileRef = useRef<HTMLInputElement>(null);
 
+  const location = useLocation();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
+
   const active = useMemo(
     () => sessions.find((s) => s.session_id === activeSid) ?? null,
     [sessions, activeSid],
   );
+  const projectSessions = useMemo(
+    () => sessionsForProject(sessions, sessionProjectById, activeProjectId),
+    [activeProjectId, sessionProjectById, sessions],
+  );
+
+  useEffect(() => {
+    const projectIds = new Set(projects.map((project) => project.id));
+    if (activeProjectId !== "__all" && activeProjectId !== "__unassigned" && !projectIds.has(activeProjectId)) {
+      setActiveProjectId("__all");
+    }
+  }, [activeProjectId, projects]);
+
+  useEffect(() => {
+    saveProjectPersistence({
+      version: 1,
+      projects,
+      sessionProjectById,
+      activeProjectId,
+    });
+  }, [activeProjectId, projects, sessionProjectById]);
+
+  useEffect(() => {
+    if (!sessionsHydrated) return;
+    setSessionProjectById((prev) => {
+      const available = new Set(sessions.map((session) => session.session_id));
+      const projectIds = new Set(projects.map((project) => project.id));
+      const next: Record<string, string | null> = {};
+      let changed = false;
+      for (const session of sessions) {
+        const current = prev[session.session_id] ?? null;
+        next[session.session_id] = current && projectIds.has(current) ? current : null;
+        if (next[session.session_id] !== prev[session.session_id]) changed = true;
+      }
+      for (const sid of Object.keys(prev)) {
+        if (!available.has(sid)) changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [projects, sessions, sessionsHydrated]);
+
+  useEffect(() => {
+    if (activeProjectId === "__all") return;
+    const visible = sessionsForProject(sessions, sessionProjectById, activeProjectId);
+    if (activeSid && visible.some((session) => session.session_id === activeSid)) return;
+    setActiveSid(visible[0]?.session_id ?? null);
+    setSpectrum(null);
+    setSelectedRt(null);
+    setSelectedUvRt(null);
+  }, [activeProjectId, activeSid, sessionProjectById, sessions]);
 
   useEffect(() => {
     setOverlaySessionIds((prev) => {
-      const available = new Set(sessions.map((session) => session.session_id));
+      const scopedSessions = activeProjectId === "__all" ? sessions : projectSessions;
+      const available = new Set(scopedSessions.map((session) => session.session_id));
       const kept = prev.filter((sid) => available.has(sid));
-      if (kept.length > 0 || sessions.length === 0) return kept;
-      return sessions.map((session) => session.session_id);
+      if (kept.length > 0 || scopedSessions.length === 0) return kept;
+      return scopedSessions.map((session) => session.session_id);
     });
-  }, [sessions]);
+  }, [activeProjectId, projectSessions, sessions]);
 
   const pol = polarity === "all" ? undefined : polarity;
   const activePolymerSettings = useMemo(
@@ -1025,6 +1365,7 @@ export function LCMSView() {
       .list()
       .then((list) => {
         setSessions(list);
+        setSessionsHydrated(true);
         if (list.length && !activeSid) setActiveSid(list[0].session_id);
       })
       .catch((err) => setError(String(err)));
@@ -1038,6 +1379,35 @@ export function LCMSView() {
     savePolymerUiSettingsDefault(polymerSettings);
     setInfo("Saved polymer matching defaults.");
   }, [polymerSettings]);
+
+  const createProject = useCallback(() => {
+    const name = window.prompt("Project name");
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    const project: LCMSProject = {
+      id: makeProjectId(),
+      name: trimmed,
+      createdAt: new Date().toISOString(),
+    };
+    setProjects((prev) => [...prev, project]);
+    setActiveProjectId(project.id);
+  }, []);
+
+  const deleteProject = useCallback((projectId: string) => {
+    setProjects((prev) => prev.filter((project) => project.id !== projectId));
+    setSessionProjectById((prev) => {
+      const next = { ...prev };
+      for (const [sid, assignedProjectId] of Object.entries(next)) {
+        if (assignedProjectId === projectId) next[sid] = null;
+      }
+      return next;
+    });
+    setActiveProjectId((current) => (current === projectId ? "__unassigned" : current));
+  }, []);
+
+  const moveSessionToProject = useCallback((sessionId: string, projectId: string | null) => {
+    setSessionProjectById((prev) => ({ ...prev, [sessionId]: projectId }));
+  }, []);
 
   useEffect(() => {
     if (!activeSid) {
@@ -1550,6 +1920,16 @@ export function LCMSView() {
       }
       if (uploaded.length > 0) {
         setSessions((prev) => [...prev, ...uploaded]);
+        setSessionProjectById((prev) => {
+          const next = { ...prev };
+          uploaded.forEach((session) => {
+            next[session.session_id] = null;
+          });
+          return next;
+        });
+        if (activeProjectId !== "__all" && activeProjectId !== "__unassigned") {
+          setActiveProjectId("__unassigned");
+        }
         setActiveSid(uploaded[uploaded.length - 1].session_id);
       }
       if (uploaded.length > 1) {
@@ -1565,6 +1945,12 @@ export function LCMSView() {
   const onRemove = async (sid: string) => {
     await api.lcms.remove(sid).catch((err) => setError(String(err)));
     setSessions((prev) => prev.filter((s) => s.session_id !== sid));
+    setSessionProjectById((prev) => {
+      if (!(sid in prev)) return prev;
+      const next = { ...prev };
+      delete next[sid];
+      return next;
+    });
     clearUvLabelsForSession(sid);
     if (activeSid === sid) {
       setActiveSid(null);
@@ -1590,6 +1976,47 @@ export function LCMSView() {
         min_distance_min: uvMinDistance,
       });
       setUv(data);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setUvBusy(false);
+    }
+  };
+
+  const onUploadUVFiles = async (files: File[]) => {
+    if (files.length === 0 || sessions.length === 0) return;
+    if (files.length === 1) {
+      await onUploadUV(files[0]);
+      return;
+    }
+
+    setUvBusy(true);
+    setError(null);
+    try {
+      const matches = matchUvFilesToSessions(files, sessions, activeSid);
+      const matchedFiles = new Set(matches.map((match) => match.file));
+      const summaries: LCMSSessionSummary[] = [];
+      for (const match of matches) {
+        summaries.push(await api.lcms.uploadUV(match.session.session_id, match.file));
+      }
+      setSessions((prev) =>
+        prev.map((session) =>
+          summaries.find((summary) => summary.session_id === session.session_id) ?? session,
+        ),
+      );
+      if (activeSid && summaries.some((summary) => summary.session_id === activeSid)) {
+        setUv(
+          await api.lcms.uv(activeSid, {
+            top_n: UV_PEAK_FETCH_LIMIT,
+            min_rel: uvProminence,
+            min_distance_min: uvMinDistance,
+          }),
+        );
+      }
+      const skipped = files.length - matchedFiles.size;
+      setInfo(
+        `Attached ${matches.length} UV CSV file${matches.length === 1 ? "" : "s"}${skipped ? `; ${skipped} unmatched` : ""}.`,
+      );
     } catch (err) {
       setError(String(err));
     } finally {
@@ -1889,7 +2316,7 @@ export function LCMSView() {
       ]),
     );
     const workspace: LCMSWorkspaceEnvelope = {
-      version: 1,
+      version: 2,
       module: "LCMS",
       createdAt: new Date().toISOString(),
       sessions: sessions.map((session) => ({
@@ -1897,10 +2324,13 @@ export function LCMSView() {
         display_name: session.display_name,
         path: session.path,
         uv: session.uv
-          ? { available: Boolean(session.uv.available), filename: session.uv.filename }
+          ? { available: Boolean(session.uv.available), filename: session.uv.filename, path: session.uv.path }
           : { available: false },
       })),
       activeSessionId: activeSid,
+      projects,
+      sessionProjectById,
+      activeProjectId,
       viewState: {
         polarity,
         rtUnit,
@@ -1927,6 +2357,7 @@ export function LCMSView() {
         uvProminence,
         uvMinDistance,
         snapUvLabels,
+        uvBunchLabels,
         uvLabelOrientation,
         uvLabelStairXStep,
         uvLabelStairYStep,
@@ -1947,24 +2378,80 @@ export function LCMSView() {
       if (workspace.module !== "LCMS") {
         throw new Error("This is not an LCMS workspace file.");
       }
-      const availableIds = new Set(sessions.map((session) => session.session_id));
-      const missing = workspace.sessions.filter((session) => !availableIds.has(session.session_id));
+
+      const availableIds = new Set(sessions.map((s) => s.session_id));
+
+      // old session_id → new session_id mapping (for restored sessions)
+      const idMap = new Map<string, string>();
+      let restored = 0;
+      let failed = 0;
+
+      for (const wsSession of workspace.sessions) {
+        if (availableIds.has(wsSession.session_id)) {
+          idMap.set(wsSession.session_id, wsSession.session_id);
+          continue;
+        }
+        if (!wsSession.path) {
+          failed++;
+          continue;
+        }
+        try {
+          const newSession = await api.lcms.loadFromPath(wsSession.path, wsSession.display_name, "minutes");
+          idMap.set(wsSession.session_id, newSession.session_id);
+          if (wsSession.uv?.available && wsSession.uv.path) {
+            try {
+              await api.lcms.attachUVFromPath(newSession.session_id, wsSession.uv.path);
+            } catch {
+              // UV file gone — mzML still loaded
+            }
+          }
+          restored++;
+        } catch {
+          failed++;
+        }
+      }
+
+      // Refresh sessions list after restoring
+      const updatedSessions = await api.lcms.list();
+      setSessions(updatedSessions);
+      setSessionsHydrated(true);
+      const newAvailableIds = new Set(updatedSessions.map((s) => s.session_id));
+
+      const remapId = (oldId: string | null): string | null => {
+        if (!oldId) return null;
+        const newId = idMap.get(oldId);
+        return newId && newAvailableIds.has(newId) ? newId : null;
+      };
+      const remapIds = (ids: string[]) =>
+        ids.map((id) => idMap.get(id) ?? id).filter((id) => newAvailableIds.has(id));
+
       const view = workspace.viewState;
       const analysis = workspace.analysisState;
+      const restoredProjects = Array.isArray(workspace.projects) ? workspace.projects : [];
+      const restoredProjectIds = new Set(restoredProjects.map((project) => project.id));
+      const nextSessionProjectById: Record<string, string | null> = {};
+      for (const session of updatedSessions) nextSessionProjectById[session.session_id] = null;
+      for (const [oldSid, projectId] of Object.entries(workspace.sessionProjectById ?? {})) {
+        const newSid = idMap.get(oldSid) ?? oldSid;
+        if (!newAvailableIds.has(newSid)) continue;
+        nextSessionProjectById[newSid] = projectId && restoredProjectIds.has(projectId) ? projectId : null;
+      }
+
       const nextUvLabelsBySessionId: Record<string, UVTextLabel[]> = {};
       if (analysis.uvTextLabelsBySessionId) {
         for (const [sid, labels] of Object.entries(analysis.uvTextLabelsBySessionId)) {
-          if (availableIds.has(sid) && Array.isArray(labels)) {
-            nextUvLabelsBySessionId[sid] = labels;
+          const newSid = idMap.get(sid) ?? sid;
+          if (newAvailableIds.has(newSid) && Array.isArray(labels)) {
+            nextUvLabelsBySessionId[newSid] = labels;
           }
         }
-      } else if (
-        workspace.activeSessionId &&
-        availableIds.has(workspace.activeSessionId) &&
-        Array.isArray(analysis.uvTextLabels)
-      ) {
-        nextUvLabelsBySessionId[workspace.activeSessionId] = analysis.uvTextLabels;
+      } else if (workspace.activeSessionId && Array.isArray(analysis.uvTextLabels)) {
+        const newActiveSid = remapId(workspace.activeSessionId);
+        if (newActiveSid) {
+          nextUvLabelsBySessionId[newActiveSid] = analysis.uvTextLabels;
+        }
       }
+
       setPolarity(view.polarity ?? "all");
       setRtUnit(view.rtUnit ?? "minutes");
       setActiveTab(view.activeTab ?? "navigate");
@@ -1979,7 +2466,7 @@ export function LCMSView() {
       setOverlayTicEnabled(Boolean(view.overlayTicEnabled));
       setOverlayUvEnabled(Boolean(view.overlayUvEnabled));
       setOverlaySpectrumEnabled(Boolean(view.overlaySpectrumEnabled));
-      setOverlaySessionIds((view.overlaySessionIds ?? []).filter((sid) => availableIds.has(sid)));
+      setOverlaySessionIds(remapIds(view.overlaySessionIds ?? []));
       setAnnotateSpectrum(Boolean(analysis.annotateSpectrum));
       setSpectrumTopN(analysis.spectrumTopN ?? 10);
       setSpectrumMinRel(analysis.spectrumMinRel ?? 0.05);
@@ -1988,20 +2475,29 @@ export function LCMSView() {
       setUvProminence(analysis.uvProminence ?? 0.05);
       setUvMinDistance(analysis.uvMinDistance ?? 0.2);
       setSnapUvLabels(Boolean(analysis.snapUvLabels));
+      setUvBunchLabels(Boolean(analysis.uvBunchLabels));
       setUvLabelOrientation(analysis.uvLabelOrientation ?? "vertical");
       setUvLabelStairXStep(analysis.uvLabelStairXStep ?? UV_LABEL_STAIR_X_STEP_MIN);
       setUvLabelStairYStep(analysis.uvLabelStairYStep ?? UV_LABEL_STAIR_Y_STEP_PX);
       setUvLabelsBySessionId(nextUvLabelsBySessionId);
       if (analysis.polymerSettings) setPolymerSettings(analysis.polymerSettings);
       setEic(analysis.eic ?? null);
-      if (workspace.activeSessionId && availableIds.has(workspace.activeSessionId)) {
-        setActiveSid(workspace.activeSessionId);
-      }
-      setInfo(
-        missing.length > 0
-          ? `Loaded workspace settings. ${missing.length} source session(s) are not loaded in the current server.`
-          : "Loaded LCMS workspace settings.",
+      setProjects(restoredProjects);
+      setSessionProjectById(nextSessionProjectById);
+      setActiveProjectId(
+        workspace.activeProjectId === "__unassigned" ||
+          workspace.activeProjectId === "__all" ||
+          (workspace.activeProjectId && restoredProjectIds.has(workspace.activeProjectId))
+          ? workspace.activeProjectId
+          : "__all",
       );
+      const newActiveSid = remapId(workspace.activeSessionId);
+      if (newActiveSid) setActiveSid(newActiveSid);
+
+      let infoMsg = "Loaded LCMS workspace.";
+      if (restored > 0) infoMsg += ` Restored ${restored} session(s) from disk.`;
+      if (failed > 0) infoMsg += ` ${failed} session(s) could not be found on disk.`;
+      setInfo(infoMsg);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -2036,6 +2532,7 @@ export function LCMSView() {
       subtitle="mzML viewer — TIC, UV, spectrum at click, top-peak annotation"
       actions={
         <>
+          <HelpOpenButton onClick={() => setHelpOpen(true)} />
           <input
             ref={fileRef}
             type="file"
@@ -2128,8 +2625,15 @@ export function LCMSView() {
         <SessionsSidebar
           sessions={sessions}
           activeSid={activeSid}
+          projects={projects}
+          sessionProjectById={sessionProjectById}
+          activeProjectId={activeProjectId}
           onSelect={setActiveSid}
           onRemove={onRemove}
+          onCreateProject={createProject}
+          onDeleteProject={deleteProject}
+          onMoveSession={moveSessionToProject}
+          onSelectProject={setActiveProjectId}
         />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-6">
@@ -2178,6 +2682,7 @@ export function LCMSView() {
                   onDeleteLabel={deleteUvLabel}
                   onEditLabel={editUvLabel}
                   onMoveLabel={moveUvLabel}
+                  bunchLabels={uvBunchLabels}
                   labelOrientation={uvLabelOrientation}
                   settings={graphSettings.uv}
                 />
@@ -2201,11 +2706,12 @@ export function LCMSView() {
           <input
             ref={uvFileRef}
             type="file"
+            multiple
             accept=".csv,.tsv,.txt,text/csv"
             className="hidden"
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onUploadUV(f);
+              const files = Array.from(e.target.files ?? []);
+              if (files.length > 0) void onUploadUVFiles(files);
               e.target.value = "";
             }}
           />
@@ -2275,7 +2781,7 @@ export function LCMSView() {
           setOverlaySpectrumEnabled={setOverlaySpectrumEnabled}
           overlaySessionIds={overlaySessionIds}
           setOverlaySessionIds={setOverlaySessionIds}
-          sessions={sessions}
+          sessions={projectSessions}
           // Annotate – spectrum
           annotateSpectrum={annotateSpectrum}
           setAnnotateSpectrum={setAnnotateSpectrum}
@@ -2296,6 +2802,8 @@ export function LCMSView() {
           setUvMinDistance={setUvMinDistance}
           snapUvLabels={snapUvLabels}
           setSnapUvLabels={setSnapUvLabels}
+          uvBunchLabels={uvBunchLabels}
+          setUvBunchLabels={setUvBunchLabels}
           uvLabelOrientation={uvLabelOrientation}
           setUvLabelOrientation={setUvLabelOrientation}
           uvLabelStairXStep={uvLabelStairXStep}
@@ -2373,6 +2881,9 @@ export function LCMSView() {
           onSave={saveCustomUvLabel}
         />
       )}
+      {helpModule ? (
+        <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
+      ) : null}
     </div>
   );
 }
@@ -2384,8 +2895,15 @@ const SESSIONS_PIN_STORAGE_KEY = "mfp.lcms.sessions.pinned";
 function SessionsSidebar(props: {
   sessions: LCMSSessionSummary[];
   activeSid: string | null;
+  projects: LCMSProject[];
+  sessionProjectById: Record<string, string | null>;
+  activeProjectId: LCMSActiveProjectId;
   onSelect: (sid: string) => void;
   onRemove: (sid: string) => void;
+  onCreateProject: () => void;
+  onDeleteProject: (projectId: string) => void;
+  onMoveSession: (sessionId: string, projectId: string | null) => void;
+  onSelectProject: (projectId: LCMSActiveProjectId) => void;
 }) {
   const [pinned, setPinned] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -2393,6 +2911,7 @@ function SessionsSidebar(props: {
     return stored === "1";
   });
   const [hovered, setHovered] = useState(false);
+  const [openProjectId, setOpenProjectId] = useState<LCMSActiveProjectId>("__unassigned");
   const hideTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -2406,7 +2925,27 @@ function SessionsSidebar(props: {
     }
   }, [pinned]);
 
-  const expanded = pinned || hovered;
+  const expanded = pinned || hovered || openProjectId !== "__all";
+  const unassignedSessions = props.sessions.filter((session) => !props.sessionProjectById[session.session_id]);
+  const sessionsByProject = useMemo(() => {
+    const grouped = new Map<string, LCMSSessionSummary[]>();
+    props.projects.forEach((project) => grouped.set(project.id, []));
+    props.sessions.forEach((session) => {
+      const projectId = props.sessionProjectById[session.session_id];
+      if (projectId) grouped.get(projectId)?.push(session);
+    });
+    return grouped;
+  }, [props.projects, props.sessionProjectById, props.sessions]);
+
+  const toggleProjectOpen = (key: string) => {
+    setOpenProjectId((prev) => (prev === key ? "__all" : key));
+  };
+
+  const handleDropSession = (event: DragEvent, projectId: string | null) => {
+    event.preventDefault();
+    const sessionId = event.dataTransfer.getData("text/plain");
+    if (sessionId) props.onMoveSession(sessionId, projectId);
+  };
 
   // Debounce mouse-leave slightly so flicking across a scrollbar or
   // trailing-edge padding doesn't collapse the panel mid-click.
@@ -2424,6 +2963,10 @@ function SessionsSidebar(props: {
   useEffect(() => () => {
     if (hideTimer.current !== null) window.clearTimeout(hideTimer.current);
   }, []);
+  useEffect(() => {
+    const available = new Set(["__all", "__unassigned", ...props.projects.map((project) => project.id)]);
+    if (!available.has(openProjectId)) setOpenProjectId("__unassigned");
+  }, [openProjectId, props.projects]);
 
   return (
     <aside
@@ -2445,6 +2988,14 @@ function SessionsSidebar(props: {
         {expanded ? (
           <>
             <span className="label flex-1 truncate">Sessions</span>
+            <button
+              type="button"
+              onClick={props.onCreateProject}
+              title="Create project"
+              className="rounded-md border border-ink-200 bg-surface px-1.5 py-0.5 text-[11px] font-medium text-ink-700 hover:bg-ink-100"
+            >
+              + Project
+            </button>
             <button
               type="button"
               onClick={() => setPinned((p) => !p)}
@@ -2484,7 +3035,99 @@ function SessionsSidebar(props: {
           <div className="px-2 text-xs text-ink-500">No files loaded.</div>
         )}
 
-        {props.sessions.map((s, idx) => {
+        {!expanded &&
+          props.sessions.map((s, idx) => {
+            const isActive = s.session_id === props.activeSid;
+            return (
+              <button
+                key={s.session_id}
+                type="button"
+                onClick={() => props.onSelect(s.session_id)}
+                title={s.display_name}
+                className={clsx(
+                  "flex h-7 w-8 shrink-0 items-center justify-center rounded-md border text-[10px] font-semibold transition-colors",
+                  isActive
+                    ? "border-brand-500 bg-surface text-brand-600 shadow-card"
+                    : "border-transparent text-ink-500 hover:border-ink-200 hover:bg-surface",
+                )}
+              >
+                {idx + 1}
+              </button>
+            );
+          })}
+
+        {expanded && props.sessions.length > 0 && (
+          <>
+            <button
+              type="button"
+              className={clsx(
+                "rounded-md px-2 py-1 text-left text-xs font-semibold",
+                props.activeProjectId === "__all"
+                  ? "bg-brand-500/10 text-brand-700"
+                  : "text-ink-600 hover:bg-ink-100",
+              )}
+              onClick={() => props.onSelectProject("__all")}
+            >
+              All <span className="font-mono text-[10px] text-ink-400">{props.sessions.length}</span>
+            </button>
+            <ProjectHeaderRow
+              id="__unassigned"
+              title="Unassigned"
+              count={unassignedSessions.length}
+              activeProjectId={props.activeProjectId}
+              expanded={openProjectId === "__unassigned"}
+              targetProjectId={null}
+              builtin
+              onToggle={() => toggleProjectOpen("__unassigned")}
+              onSelectProject={() => props.onSelectProject("__unassigned")}
+              onDropSession={handleDropSession}
+            />
+            {props.projects.map((project) => (
+              <ProjectHeaderRow
+                key={project.id}
+                id={project.id}
+                title={project.name}
+                count={sessionsByProject.get(project.id)?.length ?? 0}
+                activeProjectId={props.activeProjectId}
+                expanded={openProjectId === project.id}
+                targetProjectId={project.id}
+                onToggle={() => toggleProjectOpen(project.id)}
+                onSelectProject={() => props.onSelectProject(project.id)}
+                onDeleteProject={() => props.onDeleteProject(project.id)}
+                onDropSession={handleDropSession}
+              />
+            ))}
+            <div className="mt-1 flex flex-col gap-1 border-t border-ink-200/70 pt-1">
+              {openProjectId === "__unassigned" && (
+                <ProjectSessionRows
+                  sessions={unassignedSessions}
+                  activeSid={props.activeSid}
+                  projects={props.projects}
+                  sessionProjectById={props.sessionProjectById}
+                  onSelectSession={props.onSelect}
+                  onRemoveSession={props.onRemove}
+                  onMoveSession={props.onMoveSession}
+                />
+              )}
+              {props.projects.map((project) =>
+                openProjectId === project.id ? (
+                  <ProjectSessionRows
+                    key={project.id}
+                    sessions={sessionsByProject.get(project.id) ?? []}
+                    activeSid={props.activeSid}
+                    projects={props.projects}
+                    sessionProjectById={props.sessionProjectById}
+                    onSelectSession={props.onSelect}
+                    onRemoveSession={props.onRemove}
+                    onMoveSession={props.onMoveSession}
+                  />
+                ) : null,
+              )}
+            </div>
+          </>
+        )}
+
+        {false && props.sessions.map((s, idx) => {
           const isActive = s.session_id === props.activeSid;
           if (!expanded) {
             // Compact rail: small active-aware chip per session.
@@ -2536,6 +3179,269 @@ function SessionsSidebar(props: {
         })}
       </div>
     </aside>
+  );
+}
+
+function ProjectHeaderRow(props: {
+  id: LCMSActiveProjectId;
+  title: string;
+  count: number;
+  activeProjectId: LCMSActiveProjectId;
+  expanded: boolean;
+  targetProjectId: string | null;
+  builtin?: boolean;
+  onToggle: () => void;
+  onSelectProject: () => void;
+  onDeleteProject?: () => void;
+  onDropSession: (event: DragEvent, projectId: string | null) => void;
+}) {
+  const isActiveProject = props.activeProjectId === props.id;
+  return (
+    <section
+      className="rounded-md"
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => props.onDropSession(event, props.targetProjectId)}
+    >
+      <div
+        className={clsx(
+          "flex items-center gap-1 rounded-md px-2 py-1 text-xs",
+          isActiveProject ? "bg-brand-500/10 text-brand-700" : "text-ink-600 hover:bg-ink-100",
+        )}
+      >
+        <button
+          type="button"
+          className="h-5 w-5 rounded text-[10px] hover:bg-ink-200/70"
+          onClick={props.onToggle}
+          aria-label={props.expanded ? "Collapse project" : "Expand project"}
+        >
+          {props.expanded ? "v" : ">"}
+        </button>
+        <button
+          type="button"
+          className="min-w-0 flex-1 truncate text-left font-semibold"
+          onClick={props.onSelectProject}
+          title={props.title}
+        >
+          {props.title}
+        </button>
+        <span className="font-mono text-[10px] text-ink-400">{props.count}</span>
+        {!props.builtin && props.onDeleteProject && (
+          <button
+            type="button"
+            className="rounded px-1 text-[10px] text-ink-400 hover:bg-ink-200 hover:text-ink-800"
+            onClick={props.onDeleteProject}
+            title="Delete project"
+          >
+            x
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ProjectSessionRows(props: {
+  sessions: LCMSSessionSummary[];
+  activeSid: string | null;
+  projects: LCMSProject[];
+  sessionProjectById: Record<string, string | null>;
+  onSelectSession: (sid: string) => void;
+  onRemoveSession: (sid: string) => void;
+  onMoveSession: (sessionId: string, projectId: string | null) => void;
+}) {
+  if (props.sessions.length === 0) {
+    return <div className="px-2 py-1 text-[11px] text-ink-400">No files</div>;
+  }
+
+  return (
+    <>
+      {props.sessions.map((session) => {
+        const isActive = session.session_id === props.activeSid;
+        const currentProject = props.sessionProjectById[session.session_id] ?? "__unassigned";
+        return (
+          <div
+            key={session.session_id}
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData("text/plain", session.session_id);
+              event.dataTransfer.effectAllowed = "move";
+            }}
+            className={clsx(
+              "group ml-3 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+              isActive ? "bg-surface shadow-card" : "hover:bg-ink-100",
+            )}
+            onClick={() => props.onSelectSession(session.session_id)}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{session.display_name}</div>
+              <div className="text-[11px] text-ink-500">
+                {session.ms1_count} MS1 - {formatRange(session.rt_min, session.rt_max)} min
+                {session.uv?.available && " - UV"}
+              </div>
+            </div>
+            <select
+              className="max-w-[5.5rem] rounded border border-ink-200 bg-surface px-1 py-0.5 text-[10px] text-ink-600 opacity-0 transition-opacity group-hover:opacity-100"
+              value={currentProject}
+              title="Move to project"
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => {
+                event.stopPropagation();
+                props.onMoveSession(
+                  session.session_id,
+                  event.target.value === "__unassigned" ? null : event.target.value,
+                );
+              }}
+            >
+              <option value="__unassigned">Unassigned</option>
+              {props.projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 hover:text-ink-900 group-hover:visible"
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onRemoveSession(session.session_id);
+              }}
+              title="Remove"
+            >
+              x
+            </button>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function ProjectSessionSection(props: {
+  id: LCMSActiveProjectId;
+  title: string;
+  sessions: LCMSSessionSummary[];
+  activeSid: string | null;
+  activeProjectId: LCMSActiveProjectId;
+  projects: LCMSProject[];
+  sessionProjectById: Record<string, string | null>;
+  expanded: boolean;
+  targetProjectId: string | null;
+  builtin?: boolean;
+  onToggle: () => void;
+  onSelectProject: () => void;
+  onDeleteProject?: () => void;
+  onSelectSession: (sid: string) => void;
+  onRemoveSession: (sid: string) => void;
+  onMoveSession: (sessionId: string, projectId: string | null) => void;
+  onDropSession: (event: DragEvent, projectId: string | null) => void;
+}) {
+  const isActiveProject = props.activeProjectId === props.id;
+  return (
+    <section
+      className="rounded-md"
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => props.onDropSession(event, props.targetProjectId)}
+    >
+      <div
+        className={clsx(
+          "flex items-center gap-1 rounded-md px-2 py-1 text-xs",
+          isActiveProject ? "bg-brand-500/10 text-brand-700" : "text-ink-600 hover:bg-ink-100",
+        )}
+      >
+        <button
+          type="button"
+          className="h-5 w-5 rounded text-[10px] hover:bg-ink-200/70"
+          onClick={props.onToggle}
+          aria-label={props.expanded ? "Collapse project" : "Expand project"}
+        >
+          {props.expanded ? "v" : ">"}
+        </button>
+        <button
+          type="button"
+          className="min-w-0 flex-1 truncate text-left font-semibold"
+          onClick={props.onSelectProject}
+          title={props.title}
+        >
+          {props.title}
+        </button>
+        <span className="font-mono text-[10px] text-ink-400">{props.sessions.length}</span>
+        {!props.builtin && props.onDeleteProject && (
+          <button
+            type="button"
+            className="rounded px-1 text-[10px] text-ink-400 hover:bg-ink-200 hover:text-ink-800"
+            onClick={props.onDeleteProject}
+            title="Delete project"
+          >
+            x
+          </button>
+        )}
+      </div>
+      {props.expanded && (
+        <div className="mt-1 flex flex-col gap-1 pl-3">
+          {props.sessions.length === 0 ? (
+            <div className="px-2 py-1 text-[11px] text-ink-400">No files</div>
+          ) : (
+            props.sessions.map((session) => {
+              const isActive = session.session_id === props.activeSid;
+              const currentProject = props.sessionProjectById[session.session_id] ?? "__unassigned";
+              return (
+                <div
+                  key={session.session_id}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("text/plain", session.session_id);
+                    event.dataTransfer.effectAllowed = "move";
+                  }}
+                  className={clsx(
+                    "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+                    isActive ? "bg-surface shadow-card" : "hover:bg-ink-100",
+                  )}
+                  onClick={() => props.onSelectSession(session.session_id)}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{session.display_name}</div>
+                    <div className="text-[11px] text-ink-500">
+                      {session.ms1_count} MS1 - {formatRange(session.rt_min, session.rt_max)} min
+                      {session.uv?.available && " - UV"}
+                    </div>
+                  </div>
+                  <select
+                    className="max-w-[5.5rem] rounded border border-ink-200 bg-surface px-1 py-0.5 text-[10px] text-ink-600 opacity-0 transition-opacity group-hover:opacity-100"
+                    value={currentProject}
+                    title="Move to project"
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => {
+                      event.stopPropagation();
+                      props.onMoveSession(
+                        session.session_id,
+                        event.target.value === "__unassigned" ? null : event.target.value,
+                      );
+                    }}
+                  >
+                    <option value="__unassigned">Unassigned</option>
+                    {props.projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 hover:text-ink-900 group-hover:visible"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      props.onRemoveSession(session.session_id);
+                    }}
+                    title="Remove"
+                  >
+                    x
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -2752,6 +3658,8 @@ interface ToolsPanelProps {
   setUvMinDistance: (v: number) => void;
   snapUvLabels: boolean;
   setSnapUvLabels: (v: boolean) => void;
+  uvBunchLabels: boolean;
+  setUvBunchLabels: (v: boolean) => void;
   uvLabelOrientation: UVLabelOrientation;
   setUvLabelOrientation: (v: UVLabelOrientation) => void;
   uvLabelStairXStep: number;
@@ -3358,7 +4266,7 @@ function AnnotateTab(p: ToolsPanelProps) {
         </div>
       </GroupBox>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <button
           className="rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
           disabled
@@ -3372,6 +4280,19 @@ function AnnotateTab(p: ToolsPanelProps) {
           disabled={p.uvLabelCount === 0}
         >
           Auto Arrange Labels
+        </button>
+        <button
+          className={clsx(
+            "rounded-md border px-2 py-1.5 text-xs transition-colors",
+            p.uvBunchLabels
+              ? "border-brand-500 bg-brand-500/10 text-brand-700 hover:bg-brand-500/15"
+              : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
+          )}
+          onClick={() => p.setUvBunchLabels(!p.uvBunchLabels)}
+          aria-pressed={p.uvBunchLabels}
+          title="Collapse repeated UV label text into one branched label"
+        >
+          Bunch same labels
         </button>
         <button
           className="rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -3827,6 +4748,7 @@ function UVChromatogramChart(props: {
   onDeleteLabel: (id: string) => void;
   onEditLabel: (label: UVTextLabel) => void;
   onMoveLabel: (id: string, patch: Partial<UVTextLabel>) => void;
+  bunchLabels: boolean;
   labelOrientation: UVLabelOrientation;
   settings: ChartSettings;
 }) {
@@ -3845,6 +4767,7 @@ function UVChromatogramChart(props: {
     onDeleteLabel,
     onEditLabel,
     onMoveLabel,
+    bunchLabels,
     labelOrientation,
     settings,
   } = props;
@@ -3912,8 +4835,64 @@ function UVChromatogramChart(props: {
       ),
     [connectorArrowColor, labelOrientation, overlayTraces, scale, settings.labels.fontSize, xOffset],
   );
+  const primaryLabelLayer = useMemo(() => {
+    const signalValues =
+      uv?.available === true && uv.signal.length > 0
+        ? uv.signal
+        : labels.map((label) => label.signal);
+    const signalMin = signalValues.length > 0 ? Math.min(...signalValues) : 0;
+    const signalMax = signalValues.length > 0 ? Math.max(...signalValues) : 1;
+    if (bunchLabels) {
+      return buildBunchedAnnotations(labels, {
+        xOffset,
+        scale,
+        labelOrientation,
+        connectorColor,
+        connectorArrowColor,
+        fontSize: settings.labels.fontSize,
+        fontColor: settings.labels.color,
+        signalMin,
+        signalMax,
+      });
+    }
+    return {
+      annotations: labels.map((label, index) => ({
+        x: (label.uv_rt_min + xOffset) * scale,
+        y: label.signal,
+        text: cleanLabelText(label.text),
+        textangle: labelOrientation === "vertical" ? ("-90" as const) : ("0" as const),
+        showarrow: true,
+        arrowhead: 0,
+        arrowcolor: connectorArrowColor,
+        ax: label.ax ?? 0,
+        axref: label.axRef === "x" ? ("x" as const) : ("pixel" as const),
+        ayref: label.ayRef === "y" ? ("y" as const) : ("pixel" as const),
+        ay:
+          label.ay ??
+          (labelOrientation === "vertical" ? -78 - index * 26 : -42 - index * 22),
+        font: {
+          size: settings.labels.fontSize,
+          color: settings.labels.color,
+        },
+      })),
+      shapes: [] as UvPlotShape[],
+    };
+  }, [
+    available,
+    bunchLabels,
+    connectorArrowColor,
+    connectorColor,
+    labelOrientation,
+    labels,
+    scale,
+    settings.labels.color,
+    settings.labels.fontSize,
+    uv,
+    xOffset,
+  ]);
   usePlotResizePulses([
     available,
+    bunchLabels,
     labelOrientation,
     labels.length,
     overlayLabelCount,
@@ -3948,6 +4927,7 @@ function UVChromatogramChart(props: {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [
+    bunchLabels,
     labelOrientation,
     labels.length,
     overlayLabelCount,
@@ -3983,6 +4963,7 @@ function UVChromatogramChart(props: {
     });
   };
   const handleRelayout = (event: Readonly<Record<string, unknown>>) => {
+    if (bunchLabels) return;
     labels.forEach((label, index) => {
       const patch: Partial<UVTextLabel> = {};
       const ax = event[`annotations[${index}].ax`];
@@ -3992,7 +4973,7 @@ function UVChromatogramChart(props: {
       if (Object.keys(patch).length > 0) onMoveLabel(label.id, patch);
     });
   };
-  const shapes =
+  const shapes: UvPlotShape[] =
     selectedUvRt != null
       ? [
           {
@@ -4007,6 +4988,7 @@ function UVChromatogramChart(props: {
           },
         ]
       : [];
+  const plotShapes = [...shapes, ...primaryLabelLayer.shapes];
 
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
@@ -4070,7 +5052,7 @@ function UVChromatogramChart(props: {
             disabled={busy}
             title="Attach a UV/DAD chromatogram exported from your LC"
           >
-            {busy ? "Working…" : available ? "Replace UV CSV…" : "Attach UV CSV…"}
+            {busy ? "Working…" : available ? "Replace UV CSV…" : "Attach UV CSV(s)…"}
           </button>
           {available && (
             <button
@@ -4100,7 +5082,7 @@ function UVChromatogramChart(props: {
             to view it alongside the TIC.
           </div>
           <button className="btn-primary mt-1" onClick={onPickFile} disabled={busy}>
-            Attach UV CSV…
+            Attach UV CSV(s)…
           </button>
         </div>
       ) : (
@@ -4157,33 +5139,12 @@ function UVChromatogramChart(props: {
                   ...axisFrame(settings),
                 },
                 hovermode: "x",
-                annotations: [
-                  ...labels.map((label, index) => ({
-                    x: (label.uv_rt_min + xOffset) * scale,
-                    y: label.signal,
-                    text: cleanLabelText(label.text),
-                    textangle: labelOrientation === "vertical" ? ("-90" as const) : ("0" as const),
-                    showarrow: true,
-                    arrowhead: 0,
-                    arrowcolor: connectorArrowColor,
-                    ax: label.ax ?? 0,
-                    axref: label.axRef === "x" ? ("x" as const) : ("pixel" as const),
-                    ayref: label.ayRef === "y" ? ("y" as const) : ("pixel" as const),
-                    ay:
-                      label.ay ??
-                      (labelOrientation === "vertical" ? -78 - index * 26 : -42 - index * 22),
-                    font: {
-                      size: settings.labels.fontSize,
-                      color: settings.labels.color,
-                    },
-                  })),
-                  ...overlayAnnotations,
-                ],
+                annotations: [...primaryLabelLayer.annotations, ...overlayAnnotations],
                 colorway: pt.colorway,
                 plot_bgcolor: pt.plot_bgcolor,
                 paper_bgcolor: pt.paper_bgcolor,
                 showlegend: overlayData.length > 0,
-                shapes,
+                shapes: plotShapes,
               }}
               config={{
                 responsive: true,

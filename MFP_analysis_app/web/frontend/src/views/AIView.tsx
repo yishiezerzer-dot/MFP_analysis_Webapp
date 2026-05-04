@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
+import { useLocation } from "react-router-dom";
 import {
   api,
   AIAssistantMessage,
@@ -12,6 +13,8 @@ import {
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
+import { HelpOpenButton, HelpShell } from "../help/HelpShell";
+import { getHelpModule } from "../help/registry";
 
 const MODULE_NAMES: AIModuleName[] = ["LCMS", "FTIR", "Plate Reader", "Data Studio"];
 
@@ -50,6 +53,10 @@ export function AIView() {
   const [error, setError] = useState<string | null>(null);
 
   const transcriptRef = useRef<HTMLDivElement>(null);
+
+  const location = useLocation();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
 
   useEffect(() => {
     api.ai
@@ -174,7 +181,12 @@ export function AIView() {
     <PageHeaderContent
       title="AI Assistant"
       subtitle="Ask about FTIR, LCMS, plate reader, data studio workflows, or general lab-analysis concepts. Read-only — the assistant cannot modify your data."
-      actions={<ProviderBadge status={status} provider={provider} />}
+      actions={
+        <>
+          <HelpOpenButton onClick={() => setHelpOpen(true)} />
+          <ProviderBadge status={status} provider={provider} />
+        </>
+      }
     />,
   );
 
@@ -297,6 +309,9 @@ export function AIView() {
           </div>
         </section>
       </div>
+      {helpModule ? (
+        <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
+      ) : null}
     </div>
   );
 }

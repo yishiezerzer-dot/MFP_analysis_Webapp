@@ -3,6 +3,7 @@ import Plot from "react-plotly.js";
 import Plotly from "plotly.js-dist-min";
 import type { Data, Layout } from "plotly.js";
 import clsx from "clsx";
+import { useLocation } from "react-router-dom";
 import {
   api,
   FTIRAssignment,
@@ -22,6 +23,8 @@ import {
   FTIRYMode,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
+import { HelpOpenButton, HelpShell } from "../help/HelpShell";
+import { getHelpModule } from "../help/registry";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
@@ -430,6 +433,7 @@ export function FTIRView() {
   const [overlayPeaksBySession, setOverlayPeaksBySession] = useState<Record<string, FTIRPeak[]>>({});
   const [manualPeakEdits, setManualPeakEdits] = useState<Record<string, ManualPeakEdits>>({});
   const [peakEditMode, setPeakEditMode] = useState<PeakEditMode>("none");
+  const [activePeakTableSid, setActivePeakTableSid] = useState<string | null>(null);
   const [labelEdits, setLabelEdits] = useState<FTIRLabelEdits>({});
   const [graphSettings, setGraphSettings] = useStoredState<GraphSettings>(
     `${FTIR_STORAGE_PREFIX}.graphSettings`,
@@ -474,6 +478,10 @@ export function FTIRView() {
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const workspaceFileRef = useRef<HTMLInputElement>(null);
+
+  const location = useLocation();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
 
   const active = useMemo(
     () => sessions.find((s) => s.session_id === activeSid) ?? null,
@@ -528,9 +536,6 @@ export function FTIRView() {
     if (!activeSid || !sessions.some((session) => session.session_id === activeSid)) {
       setSpectrum(null);
       setPeaks([]);
-      setAssignmentsBySession({});
-      setOverlayPeaksBySession({});
-      setManualPeakEdits({});
       setAssignments(null);
       return;
     }
@@ -544,12 +549,20 @@ export function FTIRView() {
 
   useEffect(() => {
     if (!activeSid) return;
-    const sessionPeaks = overlayPeaksBySession[activeSid];
-    if (sessionPeaks) {
-      setPeaks(sessionPeaks);
-      setAssignments(assignmentsBySession[activeSid] ?? null);
-    }
+    setPeaks(overlayPeaksBySession[activeSid] ?? []);
+    setAssignments(assignmentsBySession[activeSid] ?? null);
   }, [activeSid, overlayPeaksBySession, assignmentsBySession]);
+
+  useEffect(() => {
+    setActivePeakTableSid(activeSid);
+  }, [activeSid]);
+
+  useEffect(() => {
+    setActivePeakTableSid((sid) => {
+      if (sid && sessions.some((session) => session.session_id === sid)) return sid;
+      return activeSid;
+    });
+  }, [activeSid, sessions]);
 
   useEffect(() => {
     setManualPeakEdits((prev) => {
@@ -599,8 +612,6 @@ export function FTIRView() {
       setSessions((prev) => [...prev, s]);
       setActiveSid(s.session_id);
       setPeaks([]);
-      setAssignmentsBySession({});
-      setOverlayPeaksBySession({});
       setAssignments(null);
     } catch (err) {
       setError(String(err));
@@ -617,12 +628,21 @@ export function FTIRView() {
       delete next[sid];
       return next;
     });
+    setAssignmentsBySession((prev) => {
+      const next = { ...prev };
+      delete next[sid];
+      return next;
+    });
+    setOverlayPeaksBySession((prev) => {
+      const next = { ...prev };
+      delete next[sid];
+      return next;
+    });
+    setActivePeakTableSid((current) => (current === sid ? activeSid : current));
     if (activeSid === sid) {
       setActiveSid(null);
       setSpectrum(null);
       setPeaks([]);
-      setAssignmentsBySession({});
-      setOverlayPeaksBySession({});
       setAssignments(null);
     }
   };
@@ -649,8 +669,8 @@ export function FTIRView() {
         bySession[item.sid] = applyManualPeakEdits(item.result.peaks, manualPeakEdits[item.sid]);
       }
       for (const item of results) assignmentMap[item.sid] = item.result.assignments ?? null;
-      setAssignmentsBySession(assignmentMap);
-      setOverlayPeaksBySession(bySession);
+      setAssignmentsBySession((prev) => ({ ...prev, ...assignmentMap }));
+      setOverlayPeaksBySession((prev) => ({ ...prev, ...bySession }));
       const activeResult = results.find((item) => item.sid === activeSid)?.result;
       setPeaks(activeResult ? applyManualPeakEdits(activeResult.peaks, manualPeakEdits[activeSid]) : []);
       setAssignments(activeResult?.assignments ?? null);
@@ -876,10 +896,21 @@ export function FTIRView() {
           ...(loadedGraph?.traceColors ?? {}),
         },
       });
-      setPeaks(workspace.analysisState.peaks ?? []);
-      setAssignments(workspace.analysisState.assignments ?? null);
-      setAssignmentsBySession(workspace.analysisState.assignmentsBySession ?? {});
-      setOverlayPeaksBySession(workspace.analysisState.overlayPeaksBySession ?? {});
+      const loadedPeaks = workspace.analysisState.peaks ?? [];
+      const loadedAssignments = workspace.analysisState.assignments ?? null;
+      const loadedActiveSid = workspace.activeSessionId && availableIds.has(workspace.activeSessionId)
+        ? workspace.activeSessionId
+        : activeSid;
+      setPeaks(loadedPeaks);
+      setAssignments(loadedAssignments);
+      setAssignmentsBySession({
+        ...(loadedActiveSid && loadedAssignments ? { [loadedActiveSid]: loadedAssignments } : {}),
+        ...(workspace.analysisState.assignmentsBySession ?? {}),
+      });
+      setOverlayPeaksBySession({
+        ...(loadedActiveSid ? { [loadedActiveSid]: loadedPeaks } : {}),
+        ...(workspace.analysisState.overlayPeaksBySession ?? {}),
+      });
       setPickAcrossOverlay(Boolean(workspace.analysisState.pickAcrossOverlay));
       setLabelEdits(workspace.analysisState.labelEdits ?? {});
       setManualPeakEdits(workspace.analysisState.manualPeakEdits ?? {});
@@ -961,6 +992,40 @@ export function FTIRView() {
     downloadBlob(new Blob([html], { type: "text/html" }), `${safeFilename(active.display_name)}.ftir-report.html`);
   };
 
+  const peakTableSessions = useMemo(() => {
+    if (!active) return [];
+    const rows = [{ session_id: active.session_id, display_name: active.display_name }];
+    for (const overlay of overlaySpectra) {
+      if (overlay.session_id !== active.session_id && !rows.some((row) => row.session_id === overlay.session_id)) {
+        rows.push({ session_id: overlay.session_id, display_name: overlay.display_name });
+      }
+    }
+    return rows;
+  }, [active, overlaySpectra]);
+
+  const selectedPeakTableSid = useMemo(() => {
+    if (activePeakTableSid && peakTableSessions.some((session) => session.session_id === activePeakTableSid)) {
+      return activePeakTableSid;
+    }
+    return active?.session_id ?? null;
+  }, [active?.session_id, activePeakTableSid, peakTableSessions]);
+
+  const selectedPeakTableSession = useMemo(
+    () => peakTableSessions.find((session) => session.session_id === selectedPeakTableSid) ?? null,
+    [peakTableSessions, selectedPeakTableSid],
+  );
+
+  const selectedPeakTablePeaks = selectedPeakTableSid === active?.session_id
+    ? peaks
+    : selectedPeakTableSid
+      ? overlayPeaksBySession[selectedPeakTableSid] ?? []
+      : [];
+
+  const hasAnyPeakTable = peakTableSessions.some((session) => {
+    if (session.session_id === active?.session_id) return peaks.length > 0;
+    return (overlayPeaksBySession[session.session_id] ?? []).length > 0;
+  });
+
   usePageHeader(
     <PageHeaderContent
       title="FTIR"
@@ -972,6 +1037,7 @@ export function FTIRView() {
       }
       actions={
         <>
+          <HelpOpenButton onClick={() => setHelpOpen(true)} />
           <input
             ref={fileRef}
             type="file"
@@ -1222,19 +1288,33 @@ export function FTIRView() {
                 onChartPeakEdit={handleChartPeakEdit}
               />
 
-              {peaks.length > 0 && (
-                <PeaksTable
-                  sessionId={active.session_id}
-                  peaks={peaks}
-                  assignments={assignments}
-                  labelEdits={labelEdits}
-                  onLabelEdit={updateLabelEdit}
-                />
+              {hasAnyPeakTable && selectedPeakTableSid && selectedPeakTableSession && (
+                <PeakTablesTabs
+                  sessions={peakTableSessions}
+                  activeSid={selectedPeakTableSid}
+                  peaksBySession={{
+                    ...overlayPeaksBySession,
+                    [active.session_id]: peaks,
+                  }}
+                  onSelect={setActivePeakTableSid}
+                >
+                  <PeaksTable
+                    sessionId={selectedPeakTableSid}
+                    title={selectedPeakTableSession.display_name}
+                    peaks={selectedPeakTablePeaks}
+                    assignments={assignmentsBySession[selectedPeakTableSid] ?? (selectedPeakTableSid === active.session_id ? assignments : null)}
+                    labelEdits={labelEdits}
+                    onLabelEdit={updateLabelEdit}
+                  />
+                </PeakTablesTabs>
               )}
             </>
           )}
         </div>
       </div>
+      {helpModule ? (
+        <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
+      ) : null}
     </div>
   );
 }
@@ -2324,8 +2404,8 @@ function SpectrumChart(props: {
   const xRange: [number, number] | undefined =
     region === "custom" ? [customMin, customMax] : FTIR_REGIONS[region];
   const visibleOverlays = useMemo(
-    () => props.overlays.filter((overlay) => overlay.display_name !== props.title),
-    [props.overlays, props.title],
+    () => props.overlays.filter((overlay) => overlay.session_id !== props.activeSessionId),
+    [props.activeSessionId, props.overlays],
   );
   const colorRows = useMemo(
     () => [
@@ -2452,15 +2532,16 @@ function SpectrumChart(props: {
       name: "peaks",
     });
     }
-    for (const overlay of visibleOverlays) {
+    for (const [idx, overlay] of visibleOverlays.entries()) {
       const overlayPeaks = props.overlayPeaksBySession[overlay.session_id] ?? [];
       if (overlayPeaks.length === 0) continue;
-      const color = resolveTraceColor(`sid:${overlay.session_id}`, OVERLAY_PALETTE[0]);
+      const color = resolveTraceColor(`sid:${overlay.session_id}`, OVERLAY_PALETTE[idx % OVERLAY_PALETTE.length]);
       markerTraces.push({
         type: "scatter",
         mode: "markers",
         x: overlayPeaks.map((p) => p.wn),
-        y: overlayPeaks.map((p) => p.y),
+        y: overlayPeaks.map((p) => overlayMode === "offset" ? p.y + yOffset * (idx + 1) : p.y),
+        yaxis: overlayMode === "stacked" ? `y${idx + 2}` : "y",
         text: overlayPeaks.map((_, idx) => String(idx + 1)),
         textposition: "top center",
         textfont: { size: Math.max(6, props.graphSettings.peakLabelSize - 1), color },
@@ -2517,10 +2598,14 @@ function SpectrumChart(props: {
         },
       });
     }
-    for (const overlay of visibleOverlays) {
+    const overlayMode = props.graphSettings.overlayMode ?? "overlay";
+    const yOffset = overlayMode === "offset" && spectrum
+      ? estimateYOffset([spectrum, ...visibleOverlays.map((o) => o.spectrum)])
+      : 0;
+    for (const [idx, overlay] of visibleOverlays.entries()) {
       const overlayPeaks = props.overlayPeaksBySession[overlay.session_id] ?? [];
       const assignments = props.assignmentsBySession[overlay.session_id] ?? null;
-      const color = resolveTraceColor(`sid:${overlay.session_id}`, OVERLAY_PALETTE[0]);
+      const color = resolveTraceColor(`sid:${overlay.session_id}`, OVERLAY_PALETTE[idx % OVERLAY_PALETTE.length]);
       for (const peak of overlayPeaks) {
         const key = peakLabelKey(overlay.session_id, peak.wn);
         const text = resolvedPeakLabel(overlay.session_id, peak, assignments, props.labelEdits);
@@ -2530,7 +2615,8 @@ function SpectrumChart(props: {
           key,
           annotation: {
             x: peak.wn,
-            y: peak.y,
+            y: overlayMode === "offset" ? peak.y + yOffset * (idx + 1) : peak.y,
+            yref: overlayMode === "stacked" ? `y${idx + 2}` : "y",
             text,
             showarrow: true,
             arrowhead: 1,
@@ -2552,11 +2638,14 @@ function SpectrumChart(props: {
     props.activePeaks,
     props.activeSessionId,
     props.assignmentsBySession,
+    props.graphSettings.overlayMode,
     props.graphSettings.peakLabelColor,
     props.graphSettings.peakLabelSize,
     props.labelEdits,
     props.overlayPeaksBySession,
+    pt.legendBg,
     resolveTraceColor,
+    spectrum,
     visibleOverlays,
   ]);
 
@@ -2996,6 +3085,7 @@ function SpectrumChart(props: {
 
 function PeaksTable(props: {
   sessionId: string;
+  title?: string;
   peaks: FTIRPeak[];
   assignments: FTIRAssignment[] | null;
   labelEdits: FTIRLabelEdits;
@@ -3062,7 +3152,11 @@ function PeaksTable(props: {
   return (
     <div className="card shrink-0">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-200 px-4 py-2">
-        <h3 className="text-sm font-semibold">Peaks <span className="text-xs font-normal text-ink-400">({visiblePeaks.length}/{peaks.length})</span></h3>
+        <h3 className="text-sm font-semibold">
+          Peaks
+          {props.title ? <span className="ml-1 text-xs font-normal text-ink-500">{props.title}</span> : null}
+          <span className="ml-1 text-xs font-normal text-ink-400">({visiblePeaks.length}/{peaks.length})</span>
+        </h3>
         <div className="flex items-center gap-2">
           {assignments && (
             <input
@@ -3223,6 +3317,43 @@ function PeaksTable(props: {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function PeakTablesTabs(props: {
+  sessions: Array<{ session_id: string; display_name: string }>;
+  activeSid: string;
+  peaksBySession: Record<string, FTIRPeak[]>;
+  onSelect: (sid: string) => void;
+  children: ReactNode;
+}) {
+  if (props.sessions.length <= 1) return <>{props.children}</>;
+  return (
+    <div className="flex shrink-0 flex-col gap-2">
+      <div className="flex flex-wrap gap-1 border-b border-ink-200">
+        {props.sessions.map((session) => {
+          const active = session.session_id === props.activeSid;
+          const count = props.peaksBySession[session.session_id]?.length ?? 0;
+          return (
+            <button
+              key={session.session_id}
+              type="button"
+              className={clsx(
+                "rounded-t-md border border-b-0 px-3 py-1.5 text-xs font-medium",
+                active
+                  ? "border-ink-300 bg-surface text-ink-900"
+                  : "border-transparent text-ink-500 hover:bg-ink-50 hover:text-ink-800",
+              )}
+              onClick={() => props.onSelect(session.session_id)}
+            >
+              <span className="max-w-[16rem] truncate align-bottom">{session.display_name}</span>
+              <span className="ml-1 text-ink-400">({count})</span>
+            </button>
+          );
+        })}
+      </div>
+      {props.children}
     </div>
   );
 }

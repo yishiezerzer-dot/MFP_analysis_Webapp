@@ -61,6 +61,16 @@ class OverlayRequest(BaseModel):
     polarity: Optional[str] = None
 
 
+class LoadFromPathRequest(BaseModel):
+    path: str
+    display_name: Optional[str] = None
+    rt_unit: str = "minutes"
+
+
+class AttachUVFromPathRequest(BaseModel):
+    path: str
+
+
 def _csv_response(filename: str, rows: List[List[Any]]) -> Response:
     def esc(value: Any) -> str:
         text = "" if value is None else str(value)
@@ -84,6 +94,7 @@ def _uv_summary(state: LCMSSessionState) -> Dict[str, Any]:
     return {
         "available": True,
         "filename": uv.filename,
+        "path": str(uv.path),
         "n_points": int(uv.rt_min.size),
         "rt_min": float(uv.rt_range[0]),
         "rt_max": float(uv.rt_range[1]),
@@ -144,6 +155,24 @@ async def create_session(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"mzML parse failed: {exc}")
+    return _session_summary(state)
+
+
+@router.post("/sessions/from_path")
+def load_session_from_path(body: LoadFromPathRequest) -> Dict[str, Any]:
+    p = Path(body.path)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {body.path}")
+    try:
+        state = registry.add_from_path(
+            p,
+            display_name=body.display_name or p.name,
+            rt_unit=body.rt_unit,
+        )
+    except LCMSLoadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"mzML load failed: {exc}")
     return _session_summary(state)
 
 
@@ -393,6 +422,23 @@ async def attach_uv(sid: str, file: UploadFile = File(...)) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"UV CSV parse failed: {exc}")
+    return _session_summary(state)
+
+
+@router.post("/sessions/{sid}/uv/from_path")
+def attach_uv_from_path_endpoint(sid: str, body: AttachUVFromPathRequest) -> Dict[str, Any]:
+    state = registry.get(sid)
+    if state is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    p = Path(body.path)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"UV file not found: {body.path}")
+    try:
+        attach_uv_from_csv(state, p, filename=p.name)
+    except UVLoadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"UV CSV load failed: {exc}")
     return _session_summary(state)
 
 
