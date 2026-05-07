@@ -18,6 +18,7 @@ import { getHelpModule } from "../help/registry";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
+import { useStoredState } from "../hooks/useStoredState";
 
 type RowRole = "none" | "sample" | "control" | "blank";
 
@@ -44,6 +45,20 @@ const DEFAULT_MIC_CHART_SETTINGS: MICChartSettings = {
   showGrid: true,
   showLegend: true,
 };
+
+const PLATE_STORAGE_PREFIX = "mfp.plateReader";
+
+function mergeChartSettings(value: Partial<MICChartSettings> | null | undefined): MICChartSettings {
+  return { ...DEFAULT_MIC_CHART_SETTINGS, ...(value ?? {}) };
+}
+
+function isPlotType(value: unknown): value is MICPlotType {
+  return value === "bar" || value === "line" || value === "scatter";
+}
+
+function isControlStyle(value: unknown): value is MICControlStyle {
+  return value === "bars" || value === "line";
+}
 
 interface PlateWorkspaceEnvelope {
   version: 1;
@@ -116,31 +131,64 @@ function downloadCsv(rows: unknown[][], filename: string) {
 
 export function PlateReaderView() {
   const [sessions, setSessions] = useState<PlateSessionSummary[]>([]);
-  const [sessionNames, setSessionNames] = useState<Record<string, string>>({});
-  const [activeSid, setActiveSid] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<string | null>(null);
-  const [useHeader, setUseHeader] = useState(true);
+  const [sessionNames, setSessionNames] = useStoredState<Record<string, string>>(
+    `${PLATE_STORAGE_PREFIX}.sessionNames`,
+    {},
+    (value) => (value && typeof value === "object" ? value : {}),
+  );
+  const [activeSid, setActiveSid] = useStoredState<string | null>(
+    `${PLATE_STORAGE_PREFIX}.activeSessionId`,
+    null,
+    (value) => (typeof value === "string" ? value : null),
+  );
+  const [sheet, setSheet] = useStoredState<string | null>(
+    `${PLATE_STORAGE_PREFIX}.sheet`,
+    null,
+    (value) => (typeof value === "string" ? value : null),
+  );
+  const [useHeader, setUseHeader] = useStoredState(`${PLATE_STORAGE_PREFIX}.useHeader`, true);
   const [preview, setPreview] = useState<PlatePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Wizard state
-  const [rowRoles, setRowRoles] = useState<Record<number, RowRole>>({});
-  const [concCols, setConcCols] = useState<string[]>([]);
-  const [tickText, setTickText] = useState("");
-  const [autoPow2, setAutoPow2] = useState(true);
-  const [subtractBlank, setSubtractBlank] = useState(false);
-  const [title, setTitle] = useState("MIC");
-  const [xLabel, setXLabel] = useState("Concentration (µg/mL)");
-  const [yLabel, setYLabel] = useState("OD₆₀₀");
-  const [plotType, setPlotType] = useState<MICPlotType>("bar");
-  const [controlStyle, setControlStyle] = useState<MICControlStyle>("bars");
-  const [mic, setMic] = useState<MICResult | null>(null);
-  const [chartSettings, setChartSettings] = useState<MICChartSettings>(DEFAULT_MIC_CHART_SETTINGS);
+  const [rowRoles, setRowRoles] = useStoredState<Record<number, RowRole>>(
+    `${PLATE_STORAGE_PREFIX}.rowRoles`,
+    {},
+    (value) => (value && typeof value === "object" ? value : {}),
+  );
+  const [concCols, setConcCols] = useStoredState<string[]>(
+    `${PLATE_STORAGE_PREFIX}.concCols`,
+    [],
+    (value) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []),
+  );
+  const [tickText, setTickText] = useStoredState(`${PLATE_STORAGE_PREFIX}.tickText`, "");
+  const [autoPow2, setAutoPow2] = useStoredState(`${PLATE_STORAGE_PREFIX}.autoPow2`, true);
+  const [subtractBlank, setSubtractBlank] = useStoredState(`${PLATE_STORAGE_PREFIX}.subtractBlank`, false);
+  const [title, setTitle] = useStoredState(`${PLATE_STORAGE_PREFIX}.title`, "MIC");
+  const [xLabel, setXLabel] = useStoredState(`${PLATE_STORAGE_PREFIX}.xLabel`, "Concentration (µg/mL)");
+  const [yLabel, setYLabel] = useStoredState(`${PLATE_STORAGE_PREFIX}.yLabel`, "OD₆₀₀");
+  const [plotType, setPlotType] = useStoredState<MICPlotType>(
+    `${PLATE_STORAGE_PREFIX}.plotType`,
+    "bar",
+    (value) => (isPlotType(value) ? value : "bar"),
+  );
+  const [controlStyle, setControlStyle] = useStoredState<MICControlStyle>(
+    `${PLATE_STORAGE_PREFIX}.controlStyle`,
+    "bars",
+    (value) => (isControlStyle(value) ? value : "bars"),
+  );
+  const [mic, setMic] = useStoredState<MICResult | null>(`${PLATE_STORAGE_PREFIX}.mic`, null);
+  const [chartSettings, setChartSettings] = useStoredState<MICChartSettings>(
+    `${PLATE_STORAGE_PREFIX}.chartSettings`,
+    DEFAULT_MIC_CHART_SETTINGS,
+    mergeChartSettings,
+  );
 
   const fileRef = useRef<HTMLInputElement>(null);
   const workspaceFileRef = useRef<HTMLInputElement>(null);
   const plotRef = useRef<PlotlyHTMLElement | null>(null);
+  const previewKeyRef = useRef<string | null>(null);
 
   const location = useLocation();
   const [helpOpen, setHelpOpen] = useState(false);
@@ -164,18 +212,23 @@ export function PlateReaderView() {
           ...Object.fromEntries(list.map((session) => [session.session_id, session.display_name])),
           ...prev,
         }));
-        if (list.length && !activeSid) setActiveSid(list[0].session_id);
+        setActiveSid((current) =>
+          current && list.some((session) => session.session_id === current)
+            ? current
+            : list[0]?.session_id ?? null,
+        );
       })
       .catch((err) => setError(String(err)));
   }, []); // eslint-disable-line
 
   useEffect(() => {
     if (!active) return;
-    setSheet(active.sheets[0] ?? null);
+    setSheet((current) => (current && active.sheets.includes(current) ? current : active.sheets[0] ?? null));
   }, [active?.session_id]); // eslint-disable-line
 
   const loadPreview = useCallback(async () => {
     if (!activeSid) return;
+    const previewKey = `${activeSid}:${sheet ?? ""}:${useHeader ? "1" : "0"}`;
     setBusy(true);
     setError(null);
     try {
@@ -185,9 +238,12 @@ export function PlateReaderView() {
         max_rows: 500,
       });
       setPreview(p);
-      setMic(null);
-      setRowRoles({});
-      setConcCols([]);
+      if (previewKeyRef.current !== null && previewKeyRef.current !== previewKey) {
+        setMic(null);
+        setRowRoles({});
+        setConcCols([]);
+      }
+      previewKeyRef.current = previewKey;
     } catch (err) {
       setError(String(err));
     } finally {

@@ -30,6 +30,7 @@ import { getHelpModule } from "../help/registry";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
+import { useStoredState } from "../hooks/useStoredState";
 
 let pendingPlotResizeFrame: number | null = null;
 
@@ -345,6 +346,8 @@ interface LCMSWorkspaceEnvelope {
     uvMinDistance: number;
     snapUvLabels: boolean;
     uvBunchLabels?: boolean;
+    uvBunchOffsets?: Record<string, { ax: number; ay: number }>;
+    uvBunchHubOffset?: number;
     uvLabelOrientation: UVLabelOrientation;
     uvLabelStairXStep: number;
     uvLabelStairYStep: number;
@@ -429,6 +432,19 @@ const GRAPH_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.graphSettings.default";
 const POLYMER_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.polymerSettings.default";
 const POLYMER_MONOMER_PRESETS_STORAGE_KEY = "mfp.lcms.polymerMonomerPresets";
 const LCMS_PROJECTS_STORAGE_KEY = "mfp.lcms.projects";
+const LCMS_STORAGE_PREFIX = "mfp.lcms";
+
+function isPolarity(value: unknown): value is Polarity {
+  return value === "all" || value === "positive" || value === "negative";
+}
+
+function isRtUnit(value: unknown): value is RtUnit {
+  return value === "minutes" || value === "seconds";
+}
+
+function isTabId(value: unknown): value is TabId {
+  return value === "navigate" || value === "view" || value === "annotate" || value === "polymer";
+}
 const UV_PEAK_FETCH_LIMIT = 250;
 const UV_LABEL_STAIR_X_STEP_MIN = 0.5;
 const UV_LABEL_STAIR_Y_STEP_PX = 5;
@@ -683,6 +699,8 @@ interface UvBunchOptions {
   fontColor: string;
   signalMin: number;
   signalMax: number;
+  hubOffset: number;
+  bunchOffsets: Record<string, { ax: number; ay: number }>;
 }
 
 function buildBunchedAnnotations(
@@ -700,51 +718,64 @@ function buildBunchedAnnotations(
   const annotations: UvPlotAnnotation[] = [];
   const shapes: UvPlotShape[] = [];
 
-  [...groups.values()].forEach((group, groupIndex) => {
+  [...groups.entries()].forEach(([key, group], groupIndex) => {
     const xs = group.map((label) => (label.uv_rt_min + opts.xOffset) * opts.scale);
-    const anchorX = xs.reduce((sum, value) => sum + value, 0) / xs.length;
+    const convX = xs.reduce((sum, value) => sum + value, 0) / xs.length;
     const peakY = Math.max(...group.map((label) => label.signal));
-    const anchorY = peakY + signalRange * (0.08 + (groupIndex % 4) * 0.035);
     const isBunched = group.length > 1;
     const first = group[0];
 
-    annotations.push({
-      x: isBunched ? anchorX : (first.uv_rt_min + opts.xOffset) * opts.scale,
-      y: isBunched ? anchorY : first.signal,
-      text: cleanLabelText(first.text),
-      textangle: opts.labelOrientation === "vertical" ? "-90" : "0",
-      showarrow: !isBunched,
-      arrowhead: 0,
-      arrowcolor: opts.connectorArrowColor,
-      ax: isBunched ? 0 : first.ax ?? 0,
-      axref: isBunched ? "pixel" : first.axRef === "x" ? "x" : "pixel",
-      ayref: isBunched ? "pixel" : first.ayRef === "y" ? "y" : "pixel",
-      ay:
-        isBunched
-          ? 0
-          : first.ay ?? (opts.labelOrientation === "vertical" ? -78 : -42),
-      editable: false,
-      font: {
-        size: opts.fontSize,
-        color: opts.fontColor,
-      },
-      ...(isBunched
-        ? { bordercolor: opts.connectorArrowColor, borderpad: 2 }
-        : {}),
-    });
+    if (!isBunched) {
+      annotations.push({
+        x: (first.uv_rt_min + opts.xOffset) * opts.scale,
+        y: first.signal,
+        text: cleanLabelText(first.text),
+        textangle: opts.labelOrientation === "vertical" ? "-90" : "0",
+        showarrow: true,
+        arrowhead: 0,
+        arrowcolor: opts.connectorArrowColor,
+        ax: first.ax ?? 0,
+        axref: first.axRef === "x" ? "x" : "pixel",
+        ayref: first.ayRef === "y" ? "y" : "pixel",
+        ay: first.ay ?? (opts.labelOrientation === "vertical" ? -78 : -42),
+        editable: false,
+        font: { size: opts.fontSize, color: opts.fontColor },
+      });
+      return;
+    }
 
-    if (!isBunched) return;
+    // Hub sits just above the tallest peak — lines from each peak converge here.
+    const convY = peakY + signalRange * opts.hubOffset;
     group.forEach((label) => {
       shapes.push({
         type: "line",
         xref: "x",
         yref: "y",
-        x0: anchorX,
-        x1: (label.uv_rt_min + opts.xOffset) * opts.scale,
-        y0: anchorY,
-        y1: label.signal,
+        x0: (label.uv_rt_min + opts.xOffset) * opts.scale,
+        y0: label.signal,
+        x1: convX,
+        y1: convY,
         line: { color: opts.connectorColor, width: 1, dash: "solid" },
       });
+    });
+
+    // Arrow from hub to the floating label. ax/ay are stored in bunchOffsets.
+    const offset = opts.bunchOffsets[key];
+    const defaultLabelY = convY + signalRange * (0.08 + (groupIndex % 4) * 0.035);
+    annotations.push({
+      x: convX,
+      y: convY,
+      text: cleanLabelText(first.text),
+      textangle: opts.labelOrientation === "vertical" ? "-90" : "0",
+      showarrow: true,
+      arrowhead: 0,
+      arrowcolor: opts.connectorArrowColor,
+      ax: offset?.ax ?? convX,
+      axref: "x",
+      ay: offset?.ay ?? defaultLabelY,
+      ayref: "y",
+      editable: false,
+      font: { size: opts.fontSize, color: opts.fontColor },
     });
   });
 
@@ -1160,7 +1191,11 @@ export function LCMSView() {
   // Sessions / data
   const [sessions, setSessions] = useState<LCMSSessionSummary[]>([]);
   const [sessionsHydrated, setSessionsHydrated] = useState(false);
-  const [activeSid, setActiveSid] = useState<string | null>(null);
+  const [activeSid, setActiveSid] = useStoredState<string | null>(
+    `${LCMS_STORAGE_PREFIX}.activeSessionId`,
+    null,
+    (value) => (typeof value === "string" ? value : null),
+  );
   const [projects, setProjects] = useState<LCMSProject[]>(() => persistedProjectState.projects);
   const [sessionProjectById, setSessionProjectById] = useState<Record<string, string | null>>(
     () => persistedProjectState.sessionProjectById,
@@ -1175,58 +1210,88 @@ export function LCMSView() {
   const [ticOverlay, setTicOverlay] = useState<LCMSTICOverlayTrace[]>([]);
   const [uvOverlay, setUvOverlay] = useState<LCMSUVOverlayTrace[]>([]);
   const [spectrumOverlay, setSpectrumOverlay] = useState<LCMSSpectrumOverlayTrace[]>([]);
-  const [overlayTicEnabled, setOverlayTicEnabled] = useState(false);
-  const [overlayUvEnabled, setOverlayUvEnabled] = useState(false);
-  const [overlaySpectrumEnabled, setOverlaySpectrumEnabled] = useState(false);
-  const [overlaySessionIds, setOverlaySessionIds] = useState<string[]>([]);
+  const [overlayTicEnabled, setOverlayTicEnabled] = useStoredState(`${LCMS_STORAGE_PREFIX}.overlayTicEnabled`, false);
+  const [overlayUvEnabled, setOverlayUvEnabled] = useStoredState(`${LCMS_STORAGE_PREFIX}.overlayUvEnabled`, false);
+  const [overlaySpectrumEnabled, setOverlaySpectrumEnabled] = useStoredState(`${LCMS_STORAGE_PREFIX}.overlaySpectrumEnabled`, false);
+  const [overlaySessionIds, setOverlaySessionIds] = useStoredState<string[]>(
+    `${LCMS_STORAGE_PREFIX}.overlaySessionIds`,
+    [],
+    (value) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []),
+  );
 
   // Filters / display
-  const [polarity, setPolarity] = useState<Polarity>("all");
-  const [rtUnit, setRtUnit] = useState<RtUnit>("minutes");
+  const [polarity, setPolarity] = useStoredState<Polarity>(
+    `${LCMS_STORAGE_PREFIX}.polarity`,
+    "all",
+    (value) => (isPolarity(value) ? value : "all"),
+  );
+  const [rtUnit, setRtUnit] = useStoredState<RtUnit>(
+    `${LCMS_STORAGE_PREFIX}.rtUnit`,
+    "minutes",
+    (value) => (isRtUnit(value) ? value : "minutes"),
+  );
 
   // Right sidebar state
-  const [activeTab, setActiveTab] = useState<TabId>("navigate");
-  const [workflowHidden, setWorkflowHidden] = useState(false);
-  const [showPolymerControls, setShowPolymerControls] = useState(false);
-  const [showConfidenceControls, setShowConfidenceControls] = useState(false);
-  const [showAlignmentDiagnostics, setShowAlignmentDiagnostics] = useState(false);
+  const [activeTab, setActiveTab] = useStoredState<TabId>(
+    `${LCMS_STORAGE_PREFIX}.activeTab`,
+    "navigate",
+    (value) => (isTabId(value) ? value : "navigate"),
+  );
+  const [workflowHidden, setWorkflowHidden] = useStoredState(`${LCMS_STORAGE_PREFIX}.workflowHidden`, false);
+  const [showPolymerControls, setShowPolymerControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showPolymerControls`, false);
+  const [showConfidenceControls, setShowConfidenceControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showConfidenceControls`, false);
+  const [showAlignmentDiagnostics, setShowAlignmentDiagnostics] = useStoredState(`${LCMS_STORAGE_PREFIX}.showAlignmentDiagnostics`, false);
 
   // Panel visibility
-  const [showTIC, setShowTIC] = useState(true);
-  const [showSpectrum, setShowSpectrum] = useState(true);
-  const [showUV, setShowUV] = useState(true);
+  const [showTIC, setShowTIC] = useStoredState(`${LCMS_STORAGE_PREFIX}.showTIC`, true);
+  const [showSpectrum, setShowSpectrum] = useStoredState(`${LCMS_STORAGE_PREFIX}.showSpectrum`, true);
+  const [showUV, setShowUV] = useStoredState(`${LCMS_STORAGE_PREFIX}.showUV`, true);
 
   // UV↔MS alignment
-  const [uvOffsetText, setUvOffsetText] = useState("0.000");
-  const [uvOffset, setUvOffset] = useState(0);
-  const [autoAlignUv, setAutoAlignUv] = useState(false);
+  const [uvOffsetText, setUvOffsetText] = useStoredState(`${LCMS_STORAGE_PREFIX}.uvOffsetText`, "0.000");
+  const [uvOffset, setUvOffset] = useStoredState(`${LCMS_STORAGE_PREFIX}.uvOffset`, 0);
+  const [autoAlignUv, setAutoAlignUv] = useStoredState(`${LCMS_STORAGE_PREFIX}.autoAlignUv`, false);
 
   // Annotate – spectrum
-  const [annotateSpectrum, setAnnotateSpectrum] = useState(true);
-  const [spectrumTopN, setSpectrumTopN] = useState(10);
-  const [spectrumMinRel, setSpectrumMinRel] = useState(0.05);
-  const [enableDragLabels, setEnableDragLabels] = useState(true);
+  const [annotateSpectrum, setAnnotateSpectrum] = useStoredState(`${LCMS_STORAGE_PREFIX}.annotateSpectrum`, true);
+  const [spectrumTopN, setSpectrumTopN] = useStoredState(`${LCMS_STORAGE_PREFIX}.spectrumTopN`, 10);
+  const [spectrumMinRel, setSpectrumMinRel] = useStoredState(`${LCMS_STORAGE_PREFIX}.spectrumMinRel`, 0.05);
+  const [enableDragLabels, setEnableDragLabels] = useStoredState(`${LCMS_STORAGE_PREFIX}.enableDragLabels`, true);
 
   // Annotate – UV
-  const [transferMsToUv, setTransferMsToUv] = useState(false);
-  const [uvTransferCount, setUvTransferCount] = useState(3);
-  const [uvProminence, setUvProminence] = useState(0.05);
-  const [uvMinDistance, setUvMinDistance] = useState(0.2);
-  const [snapUvLabels, setSnapUvLabels] = useState(true);
-  const [uvBunchLabels, setUvBunchLabels] = useState(false);
+  const [transferMsToUv, setTransferMsToUv] = useStoredState(`${LCMS_STORAGE_PREFIX}.transferMsToUv`, false);
+  const [uvTransferCount, setUvTransferCount] = useStoredState(`${LCMS_STORAGE_PREFIX}.uvTransferCount`, 3);
+  const [uvProminence, setUvProminence] = useStoredState(`${LCMS_STORAGE_PREFIX}.uvProminence`, 0.05);
+  const [uvMinDistance, setUvMinDistance] = useStoredState(`${LCMS_STORAGE_PREFIX}.uvMinDistance`, 0.2);
+  const [snapUvLabels, setSnapUvLabels] = useStoredState(`${LCMS_STORAGE_PREFIX}.snapUvLabels`, true);
+  const [uvBunchLabels, setUvBunchLabels] = useStoredState(`${LCMS_STORAGE_PREFIX}.uvBunchLabels`, false);
+  const [uvBunchOffsets, setUvBunchOffsets] = useStoredState<Record<string, { ax: number; ay: number }>>(
+    `${LCMS_STORAGE_PREFIX}.uvBunchOffsets`,
+    {},
+    (value) => (value && typeof value === "object" ? value : {}),
+  );
+  const [uvBunchHubOffset, setUvBunchHubOffset] = useStoredState(`${LCMS_STORAGE_PREFIX}.uvBunchHubOffset`, 0.1);
   const [uvLabelOrientation, setUvLabelOrientation] =
-    useState<UVLabelOrientation>("vertical");
+    useStoredState<UVLabelOrientation>(
+      `${LCMS_STORAGE_PREFIX}.uvLabelOrientation`,
+      "vertical",
+      (value) => (value === "horizontal" || value === "vertical" ? value : "vertical"),
+    );
   const [uvLabelStairXStep, setUvLabelStairXStep] =
-    useState(UV_LABEL_STAIR_X_STEP_MIN);
+    useStoredState(`${LCMS_STORAGE_PREFIX}.uvLabelStairXStep`, UV_LABEL_STAIR_X_STEP_MIN);
   const [uvLabelStairYStep, setUvLabelStairYStep] =
-    useState(UV_LABEL_STAIR_Y_STEP_PX);
+    useStoredState(`${LCMS_STORAGE_PREFIX}.uvLabelStairYStep`, UV_LABEL_STAIR_Y_STEP_PX);
 
   // Annotate – overlay
-  const [showOverlayLabels, setShowOverlayLabels] = useState(false);
-  const [multiDragOverlay, setMultiDragOverlay] = useState(false);
+  const [showOverlayLabels, setShowOverlayLabels] = useStoredState(`${LCMS_STORAGE_PREFIX}.showOverlayLabels`, false);
+  const [multiDragOverlay, setMultiDragOverlay] = useStoredState(`${LCMS_STORAGE_PREFIX}.multiDragOverlay`, false);
   const [polymerSettings, setPolymerSettings] =
     useState<PolymerUiSettings>(() => loadPolymerUiSettings());
-  const [uvLabelsBySessionId, setUvLabelsBySessionId] = useState<Record<string, UVTextLabel[]>>({});
+  const [uvLabelsBySessionId, setUvLabelsBySessionId] = useStoredState<Record<string, UVTextLabel[]>>(
+    `${LCMS_STORAGE_PREFIX}.uvLabelsBySessionId`,
+    {},
+    (value) => (value && typeof value === "object" ? value : {}),
+  );
   const uvTextLabels = useMemo(
     () => (activeSid ? uvLabelsBySessionId[activeSid] ?? [] : []),
     [activeSid, uvLabelsBySessionId],
@@ -1256,8 +1321,16 @@ export function LCMSView() {
   const [regionSelect, setRegionSelect] = useState(false);
 
   // RT navigation
-  const [selectedRt, setSelectedRt] = useState<number | null>(null);
-  const [selectedUvRt, setSelectedUvRt] = useState<number | null>(null);
+  const [selectedRt, setSelectedRt] = useStoredState<number | null>(
+    `${LCMS_STORAGE_PREFIX}.selectedRt`,
+    null,
+    (value) => (typeof value === "number" && Number.isFinite(value) ? value : null),
+  );
+  const [selectedUvRt, setSelectedUvRt] = useStoredState<number | null>(
+    `${LCMS_STORAGE_PREFIX}.selectedUvRt`,
+    null,
+    (value) => (typeof value === "number" && Number.isFinite(value) ? value : null),
+  );
   const [rtJumpText, setRtJumpText] = useState("");
 
   // IO state
@@ -1366,7 +1439,11 @@ export function LCMSView() {
       .then((list) => {
         setSessions(list);
         setSessionsHydrated(true);
-        if (list.length && !activeSid) setActiveSid(list[0].session_id);
+        setActiveSid((current) =>
+          current && list.some((session) => session.session_id === current)
+            ? current
+            : list[0]?.session_id ?? null,
+        );
       })
       .catch((err) => setError(String(err)));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1851,9 +1928,6 @@ export function LCMSView() {
       setInfo("There are no UV labels to arrange.");
       return;
     }
-    const sortedIds = [...uvTextLabels]
-      .sort((a, b) => a.uv_rt_min - b.uv_rt_min)
-      .map((label) => label.id);
     const uvRtMin = uv?.available === true ? uv.rt_min : uvTextLabels.map((label) => label.uv_rt_min);
     const uvSignals = uv?.available === true ? uv.signal : uvTextLabels.map((label) => label.signal);
     const finiteSignals = uvSignals.filter((value) => Number.isFinite(value));
@@ -1871,11 +1945,78 @@ export function LCMSView() {
         .map((value) => value.trim().toUpperCase())
         .filter(Boolean),
     );
+    const rtScale = rtUnit === "seconds" ? 60 : 1;
+    const signalRange = Math.max(1, signalMax - signalMin);
+
+    if (uvBunchLabels) {
+      // Build one synthetic label per group (keyed by normalized text).
+      // Multi-peak groups use a hub position as the arrow tail; single-peak
+      // groups are treated as regular labels whose ax/ay update on uvTextLabels.
+      const groups = new Map<string, UVTextLabel[]>();
+      for (const label of uvTextLabels) {
+        const key = normalizeUvBunchText(label.text);
+        if (!key) continue;
+        groups.set(key, [...(groups.get(key) ?? []), label]);
+      }
+      const bunchedSynthetic: UVTextLabel[] = [];
+      const singleLabels: UVTextLabel[] = [];
+      groups.forEach((group, key) => {
+        if (group.length > 1) {
+          const avgRt = group.reduce((s, l) => s + l.uv_rt_min, 0) / group.length;
+          const peakY = Math.max(...group.map((l) => l.signal));
+          const convY = peakY + signalRange * uvBunchHubOffset;
+          bunchedSynthetic.push({
+            id: key,
+            kind: group[0].kind,
+            uv_rt_min: avgRt,
+            signal: convY,
+            text: group[0].text,
+          });
+        } else {
+          singleLabels.push(group[0]);
+        }
+      });
+      const allSynthetic = [...bunchedSynthetic, ...singleLabels];
+      const arranged = new Map<string, UVLabelLayoutOffset>();
+      arrangeUvLabelsAsSeriesStairs(
+        allSynthetic,
+        uvOffset,
+        rtScale,
+        Math.max(0, uvLabelStairXStep),
+        Math.max(0, uvLabelStairYStep),
+        yUnitsPerPx,
+        uvRtMin,
+        uvSignals,
+        hydroxyAbbreviations,
+      ).forEach((offset) => arranged.set(offset.id, offset));
+
+      // Multi-peak groups → update bunchOffsets; single-peak → update uvTextLabels.
+      const nextBunchOffsets: Record<string, { ax: number; ay: number }> = { ...uvBunchOffsets };
+      bunchedSynthetic.forEach(({ id }) => {
+        const o = arranged.get(id);
+        if (o) nextBunchOffsets[id] = { ax: o.ax, ay: o.ay };
+      });
+      setUvBunchOffsets(nextBunchOffsets);
+      if (singleLabels.length > 0) {
+        setUvTextLabels((prev) =>
+          prev.map((label) => {
+            const o = arranged.get(label.id);
+            return o ? { ...label, ...o } : label;
+          }),
+        );
+      }
+      setInfo(`Arranged ${groups.size} bunched UV label group${groups.size !== 1 ? "s" : ""}.`);
+      return;
+    }
+
+    const sortedIds = [...uvTextLabels]
+      .sort((a, b) => a.uv_rt_min - b.uv_rt_min)
+      .map((label) => label.id);
     const arranged = new Map<string, UVLabelLayoutOffset>();
     arrangeUvLabelsAsSeriesStairs(
       uvTextLabels,
       uvOffset,
-      rtUnit === "seconds" ? 60 : 1,
+      rtScale,
       Math.max(0, uvLabelStairXStep),
       Math.max(0, uvLabelStairYStep),
       yUnitsPerPx,
@@ -1899,11 +2040,28 @@ export function LCMSView() {
     rtUnit,
     setUvTextLabels,
     uv,
+    uvBunchHubOffset,
+    uvBunchLabels,
+    uvBunchOffsets,
     uvLabelStairXStep,
     uvLabelStairYStep,
     uvOffset,
     uvTextLabels,
   ]);
+
+  // Keep a ref to the latest autoArrangeUvLabels so the effect below never
+  // captures a stale closure while also avoiding it as an effect dependency.
+  const autoArrangeUvLabelsRef = useRef(autoArrangeUvLabels);
+  useEffect(() => { autoArrangeUvLabelsRef.current = autoArrangeUvLabels; });
+
+  const prevUvBunchLabelsRef = useRef(uvBunchLabels);
+  useEffect(() => {
+    if (prevUvBunchLabelsRef.current && !uvBunchLabels) {
+      // Switched bunch OFF — re-arrange labels individually so they don't stack.
+      autoArrangeUvLabelsRef.current();
+    }
+    prevUvBunchLabelsRef.current = uvBunchLabels;
+  }, [uvBunchLabels]);
 
   const onUpload = async (files: File[]) => {
     if (files.length === 0) return;
@@ -2358,6 +2516,8 @@ export function LCMSView() {
         uvMinDistance,
         snapUvLabels,
         uvBunchLabels,
+        uvBunchOffsets,
+        uvBunchHubOffset,
         uvLabelOrientation,
         uvLabelStairXStep,
         uvLabelStairYStep,
@@ -2476,6 +2636,8 @@ export function LCMSView() {
       setUvMinDistance(analysis.uvMinDistance ?? 0.2);
       setSnapUvLabels(Boolean(analysis.snapUvLabels));
       setUvBunchLabels(Boolean(analysis.uvBunchLabels));
+      setUvBunchOffsets(analysis.uvBunchOffsets ?? {});
+      setUvBunchHubOffset(analysis.uvBunchHubOffset ?? 0.1);
       setUvLabelOrientation(analysis.uvLabelOrientation ?? "vertical");
       setUvLabelStairXStep(analysis.uvLabelStairXStep ?? UV_LABEL_STAIR_X_STEP_MIN);
       setUvLabelStairYStep(analysis.uvLabelStairYStep ?? UV_LABEL_STAIR_Y_STEP_PX);
@@ -2683,6 +2845,8 @@ export function LCMSView() {
                   onEditLabel={editUvLabel}
                   onMoveLabel={moveUvLabel}
                   bunchLabels={uvBunchLabels}
+                  bunchOffsets={uvBunchOffsets}
+                  bunchHubOffset={uvBunchHubOffset}
                   labelOrientation={uvLabelOrientation}
                   settings={graphSettings.uv}
                 />
@@ -2804,6 +2968,8 @@ export function LCMSView() {
           setSnapUvLabels={setSnapUvLabels}
           uvBunchLabels={uvBunchLabels}
           setUvBunchLabels={setUvBunchLabels}
+          uvBunchHubOffset={uvBunchHubOffset}
+          setUvBunchHubOffset={setUvBunchHubOffset}
           uvLabelOrientation={uvLabelOrientation}
           setUvLabelOrientation={setUvLabelOrientation}
           uvLabelStairXStep={uvLabelStairXStep}
@@ -3660,6 +3826,8 @@ interface ToolsPanelProps {
   setSnapUvLabels: (v: boolean) => void;
   uvBunchLabels: boolean;
   setUvBunchLabels: (v: boolean) => void;
+  uvBunchHubOffset: number;
+  setUvBunchHubOffset: (v: number) => void;
   uvLabelOrientation: UVLabelOrientation;
   setUvLabelOrientation: (v: UVLabelOrientation) => void;
   uvLabelStairXStep: number;
@@ -4294,6 +4462,23 @@ function AnnotateTab(p: ToolsPanelProps) {
         >
           Bunch same labels
         </button>
+        {p.uvBunchLabels && (
+          <label className="col-span-2 flex items-center gap-2 text-xs text-ink-600">
+            <span className="shrink-0">Hub height</span>
+            <input
+              type="number"
+              step="0.01"
+              min={0}
+              max={1}
+              className="input w-20"
+              value={p.uvBunchHubOffset}
+              onChange={(e) =>
+                p.setUvBunchHubOffset(Math.max(0, parseFloat(e.target.value || "0") || 0))
+              }
+            />
+            <span className="text-ink-400">× signal range</span>
+          </label>
+        )}
         <button
           className="rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!p.canAddCustomUvLabel}
@@ -4749,6 +4934,8 @@ function UVChromatogramChart(props: {
   onEditLabel: (label: UVTextLabel) => void;
   onMoveLabel: (id: string, patch: Partial<UVTextLabel>) => void;
   bunchLabels: boolean;
+  bunchOffsets: Record<string, { ax: number; ay: number }>;
+  bunchHubOffset: number;
   labelOrientation: UVLabelOrientation;
   settings: ChartSettings;
 }) {
@@ -4768,6 +4955,8 @@ function UVChromatogramChart(props: {
     onEditLabel,
     onMoveLabel,
     bunchLabels,
+    bunchOffsets,
+    bunchHubOffset,
     labelOrientation,
     settings,
   } = props;
@@ -4853,6 +5042,8 @@ function UVChromatogramChart(props: {
         fontColor: settings.labels.color,
         signalMin,
         signalMax,
+        hubOffset: bunchHubOffset,
+        bunchOffsets,
       });
     }
     return {
@@ -4879,7 +5070,9 @@ function UVChromatogramChart(props: {
     };
   }, [
     available,
+    bunchHubOffset,
     bunchLabels,
+    bunchOffsets,
     connectorArrowColor,
     connectorColor,
     labelOrientation,

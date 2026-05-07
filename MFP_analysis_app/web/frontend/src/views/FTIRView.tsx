@@ -431,10 +431,18 @@ export function FTIRView() {
   const [peaks, setPeaks] = useState<FTIRPeak[]>([]);
   const [assignmentsBySession, setAssignmentsBySession] = useState<Record<string, FTIRAssignment[] | null>>({});
   const [overlayPeaksBySession, setOverlayPeaksBySession] = useState<Record<string, FTIRPeak[]>>({});
-  const [manualPeakEdits, setManualPeakEdits] = useState<Record<string, ManualPeakEdits>>({});
+  const [manualPeakEdits, setManualPeakEdits] = useStoredState<Record<string, ManualPeakEdits>>(
+    `${FTIR_STORAGE_PREFIX}.manualPeakEdits`,
+    {},
+    (value) => (value && typeof value === "object" ? value as Record<string, ManualPeakEdits> : {}),
+  );
   const [peakEditMode, setPeakEditMode] = useState<PeakEditMode>("none");
   const [activePeakTableSid, setActivePeakTableSid] = useState<string | null>(null);
-  const [labelEdits, setLabelEdits] = useState<FTIRLabelEdits>({});
+  const [labelEdits, setLabelEdits] = useStoredState<FTIRLabelEdits>(
+    `${FTIR_STORAGE_PREFIX}.labelEdits`,
+    {},
+    (value) => (value && typeof value === "object" ? value as FTIRLabelEdits : {}),
+  );
   const [graphSettings, setGraphSettings] = useStoredState<GraphSettings>(
     `${FTIR_STORAGE_PREFIX}.graphSettings`,
     DEFAULT_GRAPH_SETTINGS,
@@ -489,7 +497,17 @@ export function FTIRView() {
   );
 
   useEffect(() => {
-    api.ftir.list().then(setSessions).catch((e) => setError(String(e)));
+    api.ftir
+      .list()
+      .then((list) => {
+        setSessions(list);
+        setActiveSid((current) =>
+          current && list.some((session) => session.session_id === current)
+            ? current
+            : list[0]?.session_id ?? null,
+        );
+      })
+      .catch((e) => setError(String(e)));
     api.ftir.library().then(setLibMeta).catch(() => undefined);
     api.ftir.libraryCategories().then(setLibraryCategories).catch(() => undefined);
   }, []);

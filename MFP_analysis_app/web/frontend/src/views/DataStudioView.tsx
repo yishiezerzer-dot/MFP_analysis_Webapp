@@ -23,6 +23,7 @@ import { EmptyState } from "../components/EmptyState";
 import { Spinner } from "../components/Spinner";
 import { IconButton } from "../components/ui/IconButton";
 import { Tooltip } from "../components/Tooltip";
+import { useStoredState } from "../hooks/useStoredState";
 
 type PlotKind = "Line" | "Scatter" | "Line+markers" | "Bar" | "Bar stacked" | "Area" | "Step" | "Histogram";
 
@@ -48,12 +49,30 @@ const PLOT_KINDS: PlotKind[] = [
   "Histogram",
 ];
 
+const DATA_STUDIO_STORAGE_PREFIX = "mfp.dataStudio";
+
+function isPlotKind(value: unknown): value is PlotKind {
+  return typeof value === "string" && PLOT_KINDS.includes(value as PlotKind);
+}
+
+function isNormMode(value: unknown): value is DSNormMode {
+  return value === "none" || value === "minmax" || value === "zscore";
+}
+
 export function DataStudioView() {
   const [sessions, setSessions] = useState<DSSessionSummary[]>([]);
-  const [activeSid, setActiveSid] = useState<string | null>(null);
+  const [activeSid, setActiveSid] = useStoredState<string | null>(
+    `${DATA_STUDIO_STORAGE_PREFIX}.activeSessionId`,
+    null,
+    (value) => (typeof value === "string" ? value : null),
+  );
   const [schema, setSchema] = useState<DSSchema | null>(null);
   const [preview, setPreview] = useState<DSPreview | null>(null);
-  const [transforms, setTransformsRaw] = useState<DSTransformStep[]>([]);
+  const [transforms, setTransformsRaw] = useStoredState<DSTransformStep[]>(
+    `${DATA_STUDIO_STORAGE_PREFIX}.transforms`,
+    [],
+    (value) => (Array.isArray(value) ? value : []),
+  );
   const transformHistory = useRef<DSTransformStep[][]>([]);
 
   const setTransforms = (next: DSTransformStep[]) => {
@@ -65,14 +84,34 @@ export function DataStudioView() {
     const prev = transformHistory.current.pop();
     if (prev !== undefined) setTransformsRaw(prev);
   };
-  const [plotKind, setPlotKind] = useState<PlotKind>("Line");
-  const [xCol, setXCol] = useState<string | null>(null);
-  const [yCols, setYCols] = useState<string[]>([]);
-  const [yNorm, setYNorm] = useState<DSNormMode>("none");
-  const [xNorm, setXNorm] = useState<DSNormMode>("none");
-  const [logX, setLogX] = useState(false);
-  const [logY, setLogY] = useState(false);
-  const [bins, setBins] = useState(30);
+  const [plotKind, setPlotKind] = useStoredState<PlotKind>(
+    `${DATA_STUDIO_STORAGE_PREFIX}.plotKind`,
+    "Line",
+    (value) => (isPlotKind(value) ? value : "Line"),
+  );
+  const [xCol, setXCol] = useStoredState<string | null>(
+    `${DATA_STUDIO_STORAGE_PREFIX}.xCol`,
+    null,
+    (value) => (typeof value === "string" ? value : null),
+  );
+  const [yCols, setYCols] = useStoredState<string[]>(
+    `${DATA_STUDIO_STORAGE_PREFIX}.yCols`,
+    [],
+    (value) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []),
+  );
+  const [yNorm, setYNorm] = useStoredState<DSNormMode>(
+    `${DATA_STUDIO_STORAGE_PREFIX}.yNorm`,
+    "none",
+    (value) => (isNormMode(value) ? value : "none"),
+  );
+  const [xNorm, setXNorm] = useStoredState<DSNormMode>(
+    `${DATA_STUDIO_STORAGE_PREFIX}.xNorm`,
+    "none",
+    (value) => (isNormMode(value) ? value : "none"),
+  );
+  const [logX, setLogX] = useStoredState(`${DATA_STUDIO_STORAGE_PREFIX}.logX`, false);
+  const [logY, setLogY] = useStoredState(`${DATA_STUDIO_STORAGE_PREFIX}.logY`, false);
+  const [bins, setBins] = useStoredState(`${DATA_STUDIO_STORAGE_PREFIX}.bins`, 30);
   const [plotData, setPlotData] = useState<DSPlotResponse | null>(null);
   const [histData, setHistData] = useState<DSHistResponse | null>(null);
   const [busy, setBusy] = useState(false);
@@ -89,7 +128,17 @@ export function DataStudioView() {
   );
 
   useEffect(() => {
-    api.dataStudio.list().then(setSessions).catch((e) => setError(String(e)));
+    api.dataStudio
+      .list()
+      .then((list) => {
+        setSessions(list);
+        setActiveSid((current) =>
+          current && list.some((session) => session.session_id === current)
+            ? current
+            : list[0]?.session_id ?? null,
+        );
+      })
+      .catch((e) => setError(String(e)));
   }, []);
 
   // When a session is activated, fetch its schema + a preview.
@@ -108,13 +157,13 @@ export function DataStudioView() {
       .then((sc) => {
         setSchema(sc);
         // smart defaults: first numeric col → X; rest numeric → Y
-        if (sc.numeric_columns.length > 0) {
-          setXCol(sc.numeric_columns[0] ?? null);
-          setYCols(sc.numeric_columns.slice(1, Math.min(sc.numeric_columns.length, 4)));
-        } else {
-          setXCol(null);
-          setYCols([]);
-        }
+        setXCol((current) =>
+          current && sc.columns.includes(current) ? current : sc.numeric_columns[0] ?? null,
+        );
+        setYCols((current) => {
+          const kept = current.filter((col) => sc.columns.includes(col));
+          return kept.length > 0 ? kept : sc.numeric_columns.slice(1, Math.min(sc.numeric_columns.length, 4));
+        });
       })
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(false));

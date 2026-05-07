@@ -1,4 +1,5 @@
 {
+    "typescript.tsdk": "web/frontend/node_modules/typescript/lib",
     "chat.agent.maxRequests": 100,
     "files.exclude": {
         "**/__pycache__/**": true,
