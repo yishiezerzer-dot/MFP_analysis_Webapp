@@ -1,0 +1,17 @@
+# Full-stack MFP Analysis App — Python dependencies (backend).
+# From this folder (repo root), after cloning:
+#
+#   python -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements.txt
+#
+# Start API (from MFP_analysis_app/web/backend):
+#   uvicorn app.main:app --reload --port 8000
+#
+# Frontend (Node 18+): cd MFP_analysis_app\web\frontend
+#   npm install
+#   npm run dev
+#
+# Ensure MFP_analysis_app/lab_gui exists in your tree; the API imports it.
+
+-r MFP_analysis_app/web/backend/requirements.txt

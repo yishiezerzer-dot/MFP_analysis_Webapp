@@ -1,3 +1,23 @@
+# MFP Analysis Web — FastAPI backend
+# Python 3.10+ recommended.
+#
+# The server imports shared analysis code from MFP_analysis_app/lab_gui/
+# (that folder must be present next to web/ in the same checkout).
+
+# --- Web API ---
 fastapi>=0.115
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9
+
+# --- Analysis stack (LCMS, FTIR, Plate Reader, Data Studio) ---
+numpy>=1.26
+pandas>=2.0
+pyteomics>=4.7
+scipy>=1.11
+openpyxl>=3.1
+xlrd>=2.0
+lxml>=5.0
+
+# --- AI assistant (OpenAI + HTTP client for Ollama) ---
+httpx>=0.27
+openai>=1.40
