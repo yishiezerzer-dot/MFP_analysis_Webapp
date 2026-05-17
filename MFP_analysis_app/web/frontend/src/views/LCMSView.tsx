@@ -252,6 +252,8 @@ interface LCMSSpectrumOverlayTrace {
 
 interface LCMSEICMetadata {
   source: "manual" | "spectrum" | "expected";
+  sourceSessionId?: string | null;
+  sourceFile?: string;
   label?: string;
   expectedProduct?: string;
   annotation?: string;
@@ -283,6 +285,20 @@ interface LCMSFeatureRow {
   expectedProduct?: string | undefined;
   annotation?: string | undefined;
   createdAt: string;
+}
+
+type FeatureMatrixMetric = "area" | "height";
+type FeatureMatrixGroupMode = "evidence" | "mz";
+
+interface FeatureMatrixGroup {
+  id: string;
+  label: string;
+  annotation: string;
+  polarity: string | null;
+  mz: number;
+  rtApex: number;
+  rows: LCMSFeatureRow[];
+  cells: Record<string, LCMSFeatureRow>;
 }
 
 interface CustomUvLabelDraft {
@@ -995,6 +1011,14 @@ function integrateEICPeak(
     baseline,
     nPoints: end - start + 1,
   };
+}
+
+function eicSourceSessionId(plot: LCMSEICPlot): string | null {
+  return plot.metadata?.sourceSessionId ?? null;
+}
+
+function eicSourceFile(plot: LCMSEICPlot): string {
+  return plot.metadata?.sourceFile || "LCMS session";
 }
 
 function buildKendrickPoints(
@@ -1950,6 +1974,7 @@ export function LCMSView() {
   const [expectedProductsOpen, setExpectedProductsOpen] = useState(false);
   const [kendrickOpen, setKendrickOpen] = useState(false);
   const [featureTableOpen, setFeatureTableOpen] = useState(false);
+  const [comparisonMatrixOpen, setComparisonMatrixOpen] = useState(false);
   const [highlightedEicPlotId, setHighlightedEicPlotId] = useState<string | null>(null);
   const eicPlotRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [customUvLabelDraft, setCustomUvLabelDraft] =
@@ -1967,6 +1992,16 @@ export function LCMSView() {
   const active = useMemo(
     () => sessions.find((s) => s.session_id === activeSid) ?? null,
     [sessions, activeSid],
+  );
+  const visibleEicPlots = useMemo(
+    () =>
+      activeSid
+        ? eicPlots.filter((plot) => {
+            const sourceSid = eicSourceSessionId(plot);
+            return sourceSid == null || sourceSid === activeSid;
+          })
+        : [],
+    [activeSid, eicPlots],
   );
   const projectSessions = useMemo(
     () => sessionsForProject(sessions, sessionProjectById, activeProjectId),
@@ -2717,6 +2752,7 @@ export function LCMSView() {
     });
     clearUvLabelsForSession(sid);
     setFeatureRows((prev) => prev.filter((row) => row.session_id !== sid));
+    setEicPlots((prev) => prev.filter((plot) => eicSourceSessionId(plot) !== sid));
     if (activeSid === sid) {
       setActiveSid(null);
       setSpectrum(null);
@@ -2891,10 +2927,12 @@ export function LCMSView() {
         return;
       }
       const tolerance = Math.max(0.000001, toleranceOverride ?? eicTol);
+      const sourceSid = activeSid;
+      const sourceFile = active?.display_name ?? "LCMS session";
       setBusy(true);
       setError(null);
       try {
-        const result = await api.lcms.eic(activeSid, {
+        const result = await api.lcms.eic(sourceSid, {
           mz: target,
           tolerance,
           polarity: pol,
@@ -2907,6 +2945,8 @@ export function LCMSView() {
             eic: result,
             metadata: {
               source: source === "dialog" ? "manual" : source,
+              sourceSessionId: sourceSid,
+              sourceFile,
               label: metadata?.label,
               expectedProduct: metadata?.expectedProduct,
               annotation: metadata?.annotation,
@@ -2916,7 +2956,7 @@ export function LCMSView() {
         if (source === "dialog") setEicOpen(false);
         if (source === "dialog" && result.best.rt_min != null) loadSpectrum(result.best.rt_min);
         setInfo(
-          `Generated EIC for m/z ${target.toFixed(4)} +/- ${tolerance.toFixed(4)} across ${result.n_scans} scans.`,
+          `Generated EIC for ${sourceFile}: m/z ${target.toFixed(4)} +/- ${tolerance.toFixed(4)} across ${result.n_scans} scans.`,
         );
       } catch (err) {
         setError(String(err));
@@ -2924,7 +2964,7 @@ export function LCMSView() {
         setBusy(false);
       }
     },
-    [activeSid, eicTol, loadSpectrum, pol],
+    [active?.display_name, activeSid, eicTol, loadSpectrum, pol],
   );
 
   const runEIC = async () => {
@@ -2948,11 +2988,13 @@ export function LCMSView() {
         setInfo("No valid EIC points were available to integrate.");
         return;
       }
+      const sourceSid = eicSourceSessionId(plot) ?? activeSid;
+      const sourceFile = eicSourceFile(plot);
       const row: LCMSFeatureRow = {
         id: `feature-${plot.id}`,
         eicPlotId: plot.id,
-        session_id: activeSid,
-        sourceFile: active?.display_name ?? "LCMS session",
+        session_id: sourceSid,
+        sourceFile,
         mz: plot.eic.target_mz,
         tolerance: plot.eic.tolerance,
         polarity: plot.eic.best.polarity ?? pol ?? null,
@@ -2970,10 +3012,10 @@ export function LCMSView() {
         return [...withoutExisting, row].sort((a, b) => a.rtApex - b.rtApex || a.mz - b.mz);
       });
       setInfo(
-        `${wasUpdate ? "Updated existing" : "Added new"} feature m/z ${row.mz.toFixed(4)} at RT ${row.rtApex.toFixed(3)} min; area ${row.area.toExponential(3)}.`,
+        `${wasUpdate ? "Updated existing" : "Added new"} feature for ${sourceFile}: m/z ${row.mz.toFixed(4)} at RT ${row.rtApex.toFixed(3)} min; area ${row.area.toExponential(3)}.`,
       );
     },
-    [active?.display_name, activeSid, pol, selectedRt],
+    [activeSid, pol, selectedRt],
   );
 
   const autoAlignNow = () => {
@@ -3389,7 +3431,15 @@ export function LCMSView() {
       if (analysis.polymerSettings) setPolymerSettings(analysis.polymerSettings);
       setEicPlots(
         Array.isArray(analysis.eics)
-          ? analysis.eics
+          ? analysis.eics.map((plot) => ({
+              ...plot,
+              metadata: plot.metadata
+                ? {
+                    ...plot.metadata,
+                    sourceSessionId: remapId(plot.metadata.sourceSessionId ?? null),
+                  }
+                : plot.metadata,
+            }))
           : analysis.eic
             ? [{ id: `workspace-${Date.now()}`, eic: analysis.eic }]
             : [],
@@ -3581,20 +3631,27 @@ export function LCMSView() {
                   settings={graphSettings.tic}
                 />
               )}
-              {eicPlots.length > 0 && overlayEicEnabled ? (
+              {visibleEicPlots.length > 0 && overlayEicEnabled ? (
                 <EICChart
-                  eics={eicPlots}
+                  eics={visibleEicPlots}
                   selectedRt={selectedRt}
                   rtUnit={rtUnit}
                   onClick={onTICClick}
-                  onClear={() => setEicPlots([])}
+                  onClear={() =>
+                    setEicPlots((prev) =>
+                      prev.filter((plot) => {
+                        const sourceSid = eicSourceSessionId(plot);
+                        return sourceSid != null && sourceSid !== activeSid;
+                      }),
+                    )
+                  }
                   onIntegrate={integrateEicPlot}
-                  clearLabel="Clear all"
+                  clearLabel="Clear file"
                   settings={graphSettings.eic}
                   overlaySettings={graphSettings.eicOverlay}
                 />
               ) : (
-                eicPlots.map((plot) => (
+                visibleEicPlots.map((plot) => (
                   <div
                     key={plot.id}
                     ref={(el) => {
@@ -3692,6 +3749,7 @@ export function LCMSView() {
           onExportTICOverlay={exportTICOverlay}
           onSumRegionSpectrum={loadSummedRegionSpectrum}
           onFeatureTable={() => setFeatureTableOpen(true)}
+          onComparisonMatrix={() => setComparisonMatrixOpen(true)}
           featureCount={featureRows.length}
           busy={busy}
           activeLoaded={!!active}
@@ -3887,6 +3945,13 @@ export function LCMSView() {
               window.setTimeout(() => setHighlightedEicPlotId((curr) => (curr === eicPlotId ? null : curr)), 2200);
             }
           }}
+        />
+      )}
+      {comparisonMatrixOpen && (
+        <ComparisonMatrixDialog
+          rows={featureRows}
+          sessions={sessions}
+          onClose={() => setComparisonMatrixOpen(false)}
         />
       )}
       {customUvLabelDraft && (
@@ -4602,6 +4667,7 @@ interface ToolsPanelProps {
   onExportTICOverlay: () => void;
   onSumRegionSpectrum: () => void;
   onFeatureTable: () => void;
+  onComparisonMatrix: () => void;
   featureCount: number;
   busy: boolean;
   activeLoaded: boolean;
@@ -4745,6 +4811,7 @@ function ToolsPanel(p: ToolsPanelProps) {
             onExportTICOverlay={p.onExportTICOverlay}
             onSumRegionSpectrum={p.onSumRegionSpectrum}
             onFeatureTable={p.onFeatureTable}
+            onComparisonMatrix={p.onComparisonMatrix}
             featureCount={p.featureCount}
             busy={p.busy}
             activeLoaded={p.activeLoaded}
@@ -4795,6 +4862,7 @@ function PrimaryActions({
   onExportTICOverlay,
   onSumRegionSpectrum,
   onFeatureTable,
+  onComparisonMatrix,
   featureCount,
   busy,
   activeLoaded,
@@ -4808,6 +4876,7 @@ function PrimaryActions({
   onExportTICOverlay: () => void;
   onSumRegionSpectrum: () => void;
   onFeatureTable: () => void;
+  onComparisonMatrix: () => void;
   featureCount: number;
   busy: boolean;
   activeLoaded: boolean;
@@ -4856,6 +4925,13 @@ function PrimaryActions({
             onClick={onFeatureTable}
           >
             Feature table{featureCount > 0 ? ` (${featureCount})` : ""}...
+          </button>
+          <button
+            className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+            disabled={!activeLoaded}
+            onClick={onComparisonMatrix}
+          >
+            Comparison matrix...
           </button>
           <button
             className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
@@ -5807,6 +5883,8 @@ function EICChart(props: {
   const scale = props.rtUnit === "seconds" ? 60 : 1;
   const unit = props.rtUnit === "seconds" ? "s" : "min";
   const isOverlay = props.eics.length > 1;
+  const sourceFiles = Array.from(new Set(props.eics.map(eicSourceFile)));
+  const sourceLabel = sourceFiles.length === 1 ? sourceFiles[0] : `${sourceFiles.length} files`;
   const eicRevisionKey = props.eics
     .map((plot) => `${plot.id}:${plot.eic.rt_min.length}:${plot.eic.intensity.length}`)
     .join("|");
@@ -5839,8 +5917,8 @@ function EICChart(props: {
           color: isOverlay ? (pt.colorway[index % pt.colorway.length] ?? props.settings.color) : props.settings.color,
           width: props.settings.lineWidth,
         },
-        hovertemplate: `m/z ${plot.eic.target_mz.toFixed(4)}<br>RT: %{x:.3f} ${unit}<br>Intensity: %{customdata:.3e}<extra></extra>`,
-        name: `m/z ${plot.eic.target_mz.toFixed(4)}`,
+        hovertemplate: `${eicSourceFile(plot)}<br>m/z ${plot.eic.target_mz.toFixed(4)}<br>RT: %{x:.3f} ${unit}<br>Intensity: %{customdata:.3e}<extra></extra>`,
+        name: `${isOverlay ? `${eicSourceFile(plot)} ` : ""}m/z ${plot.eic.target_mz.toFixed(4)}`,
       };
       });
     },
@@ -5894,6 +5972,9 @@ function EICChart(props: {
             : `EIC overlay (${props.eics.length} traces)`}
         </h3>
         <div className="flex items-center gap-2 text-xs text-ink-500">
+          <span className="max-w-[220px] truncate rounded-full bg-ink-50 px-2 py-0.5 font-medium text-ink-700" title={sourceFiles.join(", ")}>
+            {sourceLabel}
+          </span>
           {primary && (
             <span>
               {props.eics.length === 1
@@ -7233,6 +7314,245 @@ function FeatureTableDialog({
                           </button>
                         </div>
                       </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function ComparisonMatrixDialog({
+  rows,
+  sessions,
+  onClose,
+}: {
+  rows: LCMSFeatureRow[];
+  sessions: LCMSSessionSummary[];
+  onClose: () => void;
+}) {
+  const [metric, setMetric] = useState<FeatureMatrixMetric>("area");
+  const [groupMode, setGroupMode] = useState<FeatureMatrixGroupMode>("evidence");
+  const [mzTolerance, setMzTolerance] = useState(0.05);
+  const [normalizeRows, setNormalizeRows] = useState(false);
+  const sessionById = useMemo(
+    () => new Map(sessions.map((session) => [session.session_id, session])),
+    [sessions],
+  );
+  const columnIds = useMemo(() => {
+    const ids = new Set<string>();
+    sessions.forEach((session) => ids.add(session.session_id));
+    rows.forEach((row) => {
+      ids.add(row.session_id && sessionById.has(row.session_id) ? row.session_id : `file:${row.sourceFile}`);
+    });
+    return Array.from(ids);
+  }, [rows, sessionById, sessions]);
+  const columnLabel = (id: string) => {
+    if (id.startsWith("file:")) return id.slice(5);
+    return sessionById.get(id)?.display_name ?? id;
+  };
+  const valueFor = (row: LCMSFeatureRow) => (metric === "area" ? row.area : row.height);
+  const evidenceKeyFor = (row: LCMSFeatureRow) => {
+    const evidence = row.expectedProduct?.trim() || row.label?.trim();
+    if (!evidence) return null;
+    return [
+      "ev",
+      evidence.toLowerCase(),
+      (row.annotation ?? "").trim().toLowerCase(),
+      row.polarity ?? "",
+    ].join("|");
+  };
+  const groups = useMemo(() => {
+    const built: FeatureMatrixGroup[] = [];
+    for (const row of rows) {
+      const columnId = row.session_id && sessionById.has(row.session_id) ? row.session_id : `file:${row.sourceFile}`;
+      const evidenceKey = groupMode === "evidence" ? evidenceKeyFor(row) : null;
+      let group = evidenceKey ? built.find((item) => item.id === evidenceKey) : undefined;
+      if (!group) {
+        group = built.find((item) => {
+          if (item.id.startsWith("ev|")) return false;
+          if ((item.polarity ?? "") !== (row.polarity ?? "")) return false;
+          return Math.abs(item.mz - row.mz) <= Math.max(0.000001, mzTolerance);
+        });
+      }
+      if (!group) {
+        const label = row.expectedProduct || row.label || `m/z ${row.mz.toFixed(4)}`;
+        group = {
+          id: evidenceKey ?? `mz-${built.length}-${row.mz.toFixed(4)}-${row.polarity ?? "unk"}`,
+          label,
+          annotation: row.annotation ?? "",
+          polarity: row.polarity,
+          mz: row.mz,
+          rtApex: row.rtApex,
+          rows: [],
+          cells: {},
+        };
+        built.push(group);
+      }
+      group.rows.push(row);
+      group.mz = group.rows.reduce((sum, item) => sum + item.mz, 0) / group.rows.length;
+      group.rtApex = group.rows.reduce((sum, item) => sum + item.rtApex, 0) / group.rows.length;
+      if (!group.annotation && row.annotation) group.annotation = row.annotation;
+      const previous = group.cells[columnId];
+      if (!previous || valueFor(row) > valueFor(previous)) group.cells[columnId] = row;
+    }
+    return built.sort((a, b) => a.mz - b.mz || a.label.localeCompare(b.label));
+  }, [groupMode, metric, mzTolerance, rows, sessionById]);
+  const formatValue = (row: LCMSFeatureRow | undefined, maxValue: number) => {
+    if (!row) return "";
+    const value = valueFor(row);
+    if (normalizeRows && maxValue > 0) return `${((value / maxValue) * 100).toFixed(1)}%`;
+    return value >= 1000 || value < 0.01 ? value.toExponential(2) : value.toFixed(2);
+  };
+  const exportCsv = () => {
+    const header = [
+      "Feature",
+      "Annotation",
+      "MeanMz",
+      "MeanRTApexMin",
+      "Polarity",
+      "Metric",
+      "Normalized",
+      ...columnIds.map(columnLabel),
+    ];
+    const esc = (value: string | number | null | undefined) => {
+      if (value == null) return "";
+      const text = String(value);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const csv = [
+      header.map(esc).join(","),
+      ...groups.map((group) => {
+        const maxValue = Math.max(...Object.values(group.cells).map(valueFor), 0);
+        return [
+          group.label,
+          group.annotation,
+          group.mz.toFixed(6),
+          group.rtApex.toFixed(5),
+          group.polarity,
+          metric,
+          normalizeRows ? "yes" : "no",
+          ...columnIds.map((id) => formatValue(group.cells[id], maxValue)),
+        ].map(esc).join(",");
+      }),
+    ].join("\n");
+    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), "lcms_comparison_matrix.csv");
+  };
+
+  return (
+    <Modal
+      title="Comparison Matrix"
+      onClose={onClose}
+      width="max-w-7xl"
+      footer={
+        <div className="flex w-full items-center justify-between gap-2">
+          <span className="text-xs text-ink-500">
+            {groups.length} feature group{groups.length === 1 ? "" : "s"} across {columnIds.length} sample{columnIds.length === 1 ? "" : "s"}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+              disabled={groups.length === 0}
+              onClick={exportCsv}
+            >
+              Export CSV
+            </button>
+            <button className="btn-primary" onClick={onClose}>Done</button>
+          </div>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4 text-sm">
+        <div className="grid grid-cols-4 gap-3">
+          <SelectSetting
+            label="Value"
+            value={metric}
+            options={[
+              { value: "area", label: "Peak area" },
+              { value: "height", label: "Peak height" },
+            ]}
+            onChange={(value) => setMetric(value as FeatureMatrixMetric)}
+          />
+          <SelectSetting
+            label="Group rows by"
+            value={groupMode}
+            options={[
+              { value: "evidence", label: "Evidence/label first" },
+              { value: "mz", label: "m/z tolerance only" },
+            ]}
+            onChange={(value) => setGroupMode(value as FeatureMatrixGroupMode)}
+          />
+          <NumberSetting
+            label="m/z grouping tolerance"
+            value={mzTolerance}
+            min={0.0001}
+            max={2}
+            step={0.001}
+            onChange={(value) => setMzTolerance(Math.max(0.0001, value ?? 0.05))}
+          />
+          <label className="flex items-end gap-2 pb-2 text-xs text-ink-600">
+            <input
+              type="checkbox"
+              checked={normalizeRows}
+              onChange={(event) => setNormalizeRows(event.target.checked)}
+            />
+            Normalize each row to 100%
+          </label>
+        </div>
+        <div className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2 text-xs text-ink-600">
+          This matrix uses integrated EIC features. Integrate matching EICs in each sample, then compare area or height here.
+        </div>
+        {rows.length === 0 ? (
+          <div className="rounded-md border border-dashed border-ink-200 p-6 text-center text-sm text-ink-500">
+            No integrated features yet. Generate and integrate EICs in one or more samples first.
+          </div>
+        ) : (
+          <div className="max-h-[560px] overflow-auto rounded-md border border-ink-200">
+            <table className="min-w-full divide-y divide-ink-200 text-xs">
+              <thead className="sticky top-0 z-10 bg-ink-50 text-left text-ink-600">
+                <tr>
+                  <th className="sticky left-0 z-20 min-w-[220px] bg-ink-50 px-2 py-2 font-medium">Feature</th>
+                  <th className="px-2 py-2 font-medium">m/z</th>
+                  <th className="px-2 py-2 font-medium">RT</th>
+                  <th className="px-2 py-2 font-medium">Polarity</th>
+                  {columnIds.map((id) => (
+                    <th key={id} className="min-w-[120px] px-2 py-2 font-medium">
+                      <div className="max-w-[150px] truncate" title={columnLabel(id)}>
+                        {columnLabel(id)}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-100 bg-surface">
+                {groups.map((group) => {
+                  const maxValue = Math.max(...Object.values(group.cells).map(valueFor), 0);
+                  return (
+                    <tr key={group.id}>
+                      <td className="sticky left-0 z-10 max-w-[260px] bg-surface px-2 py-1.5">
+                        <div className="truncate font-medium text-ink-800" title={group.label}>{group.label}</div>
+                        {group.annotation ? <div className="truncate text-[11px] text-ink-500">{group.annotation}</div> : null}
+                      </td>
+                      <td className="px-2 py-1.5 font-mono">{group.mz.toFixed(4)}</td>
+                      <td className="px-2 py-1.5 font-mono">{group.rtApex.toFixed(3)}</td>
+                      <td className="px-2 py-1.5">{group.polarity ?? "unknown"}</td>
+                      {columnIds.map((id) => {
+                        const row = group.cells[id];
+                        return (
+                          <td key={id} className="px-2 py-1.5 font-mono">
+                            {formatValue(row, maxValue) || "-"}
+                            {row && normalizeRows ? (
+                              <div className="text-[11px] text-ink-400">
+                                {valueFor(row).toExponential(2)}
+                              </div>
+                            ) : null}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })}
