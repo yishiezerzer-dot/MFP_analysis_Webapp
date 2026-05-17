@@ -38,7 +38,16 @@
       "PowerShell(Get-Command uvicorn -ErrorAction SilentlyContinue)",
       "PowerShell(python -m uvicorn --version 2>&1)",
       "PowerShell(py -m uvicorn --version 2>&1)",
-      "PowerShell(python -m pip install pyteomics 2>&1)"
+      "PowerShell(python -m pip install pyteomics 2>&1)",
+      "WebFetch(domain:mzmine.github.io)",
+      "PowerShell($root = $PWD.Path; Set-Location -LiteralPath \\(Join-Path $root 'MFP_analysis_app\\\\web\\\\frontend'\\); & .\\\\node_modules\\\\.bin\\\\tsc.cmd --noEmit 2>&1 | Select-Object -First 40)",
+      "PowerShell($PWD.Path)",
+      "PowerShell(& .\\\\node_modules\\\\.bin\\\\tsc.cmd --noEmit 2>&1)",
+      "PowerShell($frontend = 'C:\\\\Users\\\\owner\\\\OneDrive - huji.ac.il\\\\שולחן העבודה\\\\yishi - moran''s lab''\\\\github copilot folder\\\\Yishi''s app\\\\MFP_analysis_app\\\\web\\\\frontend'; & \\(Join-Path $frontend 'node_modules\\\\.bin\\\\tsc.cmd'\\) --noEmit 2>&1)",
+      "PowerShell($frontend = 'C:\\\\Users\\\\owner\\\\OneDrive - huji.ac.il\\\\שולחן העבודה\\\\yishi - moran''s lab''\\\\github copilot folder\\\\Yishi''s app\\\\MFP_analysis_app\\\\web\\\\frontend'; & \\(Join-Path $frontend 'node_modules\\\\.bin\\\\tsc.cmd'\\) -p \\(Join-Path $frontend 'tsconfig.json'\\) --noEmit 2>&1)",
+      "PowerShell($frontend = \"c:\\\\Users\\\\owner\\\\OneDrive - huji.ac.il\\\\שולחן העבודה\\\\yishi - moran's lab'\\\\github copilot folder\\\\Yishi's app\\\\MFP_analysis_app\\\\web\\\\frontend\"; & \"$frontend\\\\node_modules\\\\.bin\\\\tsc.cmd\" -p \"$frontend\\\\tsconfig.json\" --noEmit 2>&1)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://127.0.0.1:8000/docs\" -UseBasicParsing -TimeoutSec 5; \"Backend OK: $\\($r.StatusCode\\)\" } catch { \"Backend down: $\\($_.Exception.Message\\)\" })",
+      "PowerShell($backend = \"c:\\\\Users\\\\owner\\\\OneDrive - huji.ac.il\\\\שולחן העבודה\\\\yishi - moran's lab'\\\\github copilot folder\\\\Yishi's app\\\\MFP_analysis_app\\\\web\\\\backend\"; Set-Location $backend; $env:PYTHONIOENCODING='utf-8'; & \"C:\\\\Python314\\\\python.exe\" \"_test3.py\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\owner\\.claude"

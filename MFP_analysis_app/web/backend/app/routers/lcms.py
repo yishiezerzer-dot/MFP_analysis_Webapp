@@ -14,11 +14,12 @@ Endpoints:
 from __future__ import annotations
 
 import json
-import tempfile
+import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+import numpy as np
 from pydantic import BaseModel, Field
 
 from ..services.lcms_service import (
@@ -39,6 +40,10 @@ from lab_gui.lcms_io import LCMSLoadError, UVLoadError
 from lab_gui.lcms_polymer_match import PolymerSearchTooLarge
 
 router = APIRouter()
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_UPLOAD_ROOT = _PROJECT_ROOT / ".mfp_uploads" / "lcms"
+_MZML_UPLOAD_DIR = _UPLOAD_ROOT / "mzml"
+_UV_UPLOAD_DIR = _UPLOAD_ROOT / "uv"
 
 
 class EICRequest(BaseModel):
@@ -54,6 +59,7 @@ class RegionSpectrumRequest(BaseModel):
     bin_width: float = Field(default=0.01, gt=0)
     min_rel: float = Field(default=0.0, ge=0)
     max_bins: int = Field(default=25000, ge=100, le=200000)
+    polymer_settings: Optional[Dict[str, Any]] = None
 
 
 class OverlayRequest(BaseModel):
@@ -69,6 +75,20 @@ class LoadFromPathRequest(BaseModel):
 
 class AttachUVFromPathRequest(BaseModel):
     path: str
+
+
+def _safe_upload_name(filename: str, default: str) -> str:
+    name = Path(filename or default).name
+    return name or default
+
+
+def _persistent_upload_path(upload_dir: Path, filename: str, data: bytes) -> Path:
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = _safe_upload_name(filename, "upload")
+    stem = Path(safe_name).stem or "upload"
+    suffix = "".join(Path(safe_name).suffixes)
+    digest = hashlib.sha256(data).hexdigest()[:12]
+    return upload_dir / f"{stem}.{digest}{suffix}"
 
 
 def _csv_response(filename: str, rows: List[List[Any]]) -> Response:
@@ -145,9 +165,8 @@ async def create_session(
     name = file.filename or "upload.mzML"
     if not name.lower().endswith((".mzml", ".mzml.gz")):
         raise HTTPException(status_code=400, detail="Expected a .mzML file.")
-    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_lcms_"))
-    dest = tmp_dir / name
     data = await file.read()
+    dest = _persistent_upload_path(_MZML_UPLOAD_DIR, name, data)
     dest.write_bytes(data)
     try:
         state = registry.add_from_path(dest, display_name=name, rt_unit=rt_unit)
@@ -293,7 +312,7 @@ def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]
     if state is None:
         raise HTTPException(status_code=404, detail="session not found")
     try:
-        return summed_spectrum_in_rt_range(
+        payload = summed_spectrum_in_rt_range(
             state,
             rt_min=float(body.rt_min),
             rt_max=float(body.rt_max),
@@ -302,8 +321,22 @@ def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]
             min_rel=float(body.min_rel),
             max_bins=int(body.max_bins),
         )
+        polymer_labels: List[Dict[str, Any]] = []
+        if body.polymer_settings:
+            polymer_labels = polymer_match_labels(
+                np.asarray(payload["mz"], dtype=float),
+                np.asarray(payload["intensity"], dtype=float),
+                polarity=body.polarity,
+                settings=body.polymer_settings,
+            )
+        payload["polymer_labels"] = polymer_labels
+        return payload
     except LCMSLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except PolymerSearchTooLarge as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Polymer matching failed: {exc}")
 
 
 @router.post("/overlays/tic")
@@ -412,9 +445,8 @@ async def attach_uv(sid: str, file: UploadFile = File(...)) -> Dict[str, Any]:
     name = file.filename or "upload.csv"
     if not name.lower().endswith((".csv", ".tsv", ".txt")):
         raise HTTPException(status_code=400, detail="Expected a .csv/.tsv/.txt UV chromatogram file.")
-    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_lcms_uv_"))
-    dest = tmp_dir / name
     data = await file.read()
+    dest = _persistent_upload_path(_UV_UPLOAD_DIR, name, data)
     dest.write_bytes(data)
     try:
         attach_uv_from_csv(state, dest, filename=name)

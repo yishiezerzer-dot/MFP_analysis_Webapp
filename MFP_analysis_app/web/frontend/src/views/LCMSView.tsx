@@ -10,12 +10,13 @@ import {
   useState,
 } from "react";
 import Plot from "react-plotly.js";
-import type { PlotMouseEvent, PlotlyHTMLElement } from "plotly.js";
+import type { PlotMouseEvent, PlotSelectionEvent, PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
 import { useLocation } from "react-router-dom";
 import {
   api,
   LCMSEICData,
+  LCMSRegionSpectrumData,
   LCMSTICOverlayTrace,
   LCMSSessionSummary,
   PolymerSettings,
@@ -157,9 +158,10 @@ function queuePlotlyElementResize(graphDiv: PlotlyHTMLElement | null) {
 type Polarity = "all" | "positive" | "negative";
 type RtUnit = "minutes" | "seconds";
 type TabId = "navigate" | "view" | "annotate" | "polymer";
-type GraphId = "tic" | "uv" | "spectrum";
+type GraphId = "tic" | "uv" | "spectrum" | "eic";
 type FrameMode = "none" | "half" | "full";
 type UVLabelOrientation = "horizontal" | "vertical";
+type ExpectedProductResolutionMode = "normal" | "low";
 
 interface AxisLimits {
   xMin: number | null;
@@ -194,10 +196,20 @@ interface ChartSettings {
   labels: LabelSettings;
 }
 
+interface EICOverlaySettings {
+  normalize: boolean;
+  stack: boolean;
+  stackGap: number;
+  opacity: number;
+  showLegend: boolean;
+}
+
 interface GraphSettings {
   tic: ChartSettings;
   uv: ChartSettings;
   spectrum: ChartSettings;
+  eic: ChartSettings;
+  eicOverlay: EICOverlaySettings;
 }
 
 interface UVTextLabel {
@@ -238,6 +250,41 @@ interface LCMSSpectrumOverlayTrace {
   spectrum: SpectrumData;
 }
 
+interface LCMSEICMetadata {
+  source: "manual" | "spectrum" | "expected";
+  label?: string;
+  expectedProduct?: string;
+  annotation?: string;
+}
+
+interface LCMSEICPlot {
+  id: string;
+  eic: LCMSEICData;
+  metadata?: LCMSEICMetadata;
+}
+
+interface LCMSFeatureRow {
+  id: string;
+  eicPlotId: string;
+  session_id: string | null;
+  sourceFile: string;
+  mz: number;
+  tolerance: number;
+  polarity: string | null;
+  rtStart: number;
+  rtApex: number;
+  rtEnd: number;
+  height: number;
+  area: number;
+  baseline: number;
+  nPoints: number;
+  source: LCMSEICMetadata["source"];
+  label?: string | undefined;
+  expectedProduct?: string | undefined;
+  annotation?: string | undefined;
+  createdAt: string;
+}
+
 interface CustomUvLabelDraft {
   id?: string;
   text: string;
@@ -261,6 +308,7 @@ interface PolymerSharedSettings {
   charges: string;
   decarb: boolean;
   oxid: boolean;
+  h2o_loss: boolean;
   cluster: boolean;
   max_dp: number;
   tol_value: number;
@@ -295,6 +343,38 @@ interface PolymerUiSettings {
   positive: PolymerModeSettings;
   negative: PolymerModeSettings;
   monomers: PolymerMonomerPreset[];
+}
+
+interface ExpectedProductHit {
+  id: string;
+  composition: string;
+  neutralMass: number;
+  variant: string;
+  ion: string;
+  expectedMz: number;
+  toleranceDa: number;
+  observedMz: number | null;
+  intensity: number | null;
+  absErr: number | null;
+  ppmErr: number | null;
+}
+
+interface KendrickPoint {
+  id: string;
+  mz: number;
+  intensity: number;
+  relIntensity: number;
+  kendrickMass: number;
+  kendrickNominalMass: number;
+  kmd: number;
+  seriesId: number | null;
+}
+
+interface KendrickSeries {
+  id: number;
+  center: number;
+  count: number;
+  maxIntensity: number;
 }
 
 interface LCMSProject {
@@ -334,6 +414,7 @@ interface LCMSWorkspaceEnvelope {
     overlayTicEnabled: boolean;
     overlayUvEnabled: boolean;
     overlaySpectrumEnabled: boolean;
+    overlayEicEnabled?: boolean;
     overlaySessionIds: string[];
   };
   analysisState: {
@@ -354,7 +435,9 @@ interface LCMSWorkspaceEnvelope {
     uvTextLabels: UVTextLabel[];
     uvTextLabelsBySessionId?: Record<string, UVTextLabel[]>;
     polymerSettings: PolymerUiSettings;
-    eic: LCMSEICData | null;
+    eic?: LCMSEICData | null;
+    eics?: LCMSEICPlot[];
+    features?: LCMSFeatureRow[];
   };
 }
 
@@ -426,12 +509,49 @@ const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
     axis: { ...DEFAULT_AXIS_LIMITS },
     labels: { enabled: true, fontSize: 10, color: "#46536a" },
   },
+  eic: {
+    title: "",
+    xTitle: "RT",
+    yTitle: "EIC intensity",
+    height: 300,
+    color: "#7c3aed",
+    lineWidth: 1.5,
+    barWidth: 0.5,
+    titleSize: 14,
+    axisTitleSize: 13,
+    tickSize: 12,
+    showGrid: true,
+    frameMode: "half",
+    showScaleBars: true,
+    axis: { ...DEFAULT_AXIS_LIMITS },
+    labels: { enabled: false, fontSize: 10, color: "#46536a" },
+  },
+  eicOverlay: {
+    normalize: false,
+    stack: false,
+    stackGap: 110,
+    opacity: 0.9,
+    showLegend: true,
+  },
 };
 
 const GRAPH_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.graphSettings.default";
 const POLYMER_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.polymerSettings.default";
 const POLYMER_MONOMER_PRESETS_STORAGE_KEY = "mfp.lcms.polymerMonomerPresets";
+const PROTON_MASS = 1.007276;
+const NA_MASS = 22.989218;
+const K_MASS = 38.963158;
+const CL_MASS = 34.968853;
+const FORMATE_MASS = 44.997655;
+const ACETATE_MASS = 59.013851;
+const H2O_LOSS_MASS = 18.010565;
+const CO2_LOSS_MASS = 43.989829;
+const OXIDATION_MASS = 15.994915;
+const EXPECTED_PRODUCT_MAX_DP = 20;
+const EXPECTED_PRODUCT_COMPOSITION_LIMIT = 50000;
+const KENDRICK_POINT_LIMIT = 8000;
 const LCMS_PROJECTS_STORAGE_KEY = "mfp.lcms.projects";
+const KENDRICK_SETTINGS_STORAGE_KEY = "mfp.lcms.kendrickSettings";
 const LCMS_STORAGE_PREFIX = "mfp.lcms";
 
 function isPolarity(value: unknown): value is Polarity {
@@ -499,6 +619,7 @@ const DEFAULT_POLYMER_SHARED_SETTINGS: PolymerSharedSettings = {
   charges: "1",
   decarb: false,
   oxid: false,
+  h2o_loss: false,
   cluster: false,
   max_dp: 12,
   tol_value: 0.02,
@@ -624,6 +745,445 @@ function polymerMonomerText(settings: PolymerUiSettings): string {
     .map((line) => line.trim())
     .filter(Boolean);
   return [...presetLines, ...otherLines].join("\n");
+}
+
+function parseExpectedProductMonomers(text: string): Array<{ name: string; mass: number }> {
+  return text
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const clean = line.trim();
+      if (!clean) return null;
+      const parts = clean
+        .replace(/,/g, " ")
+        .split(/\s+/)
+        .filter(Boolean);
+      const massText = parts.at(-1) ?? "";
+      const mass = Number.parseFloat(massText);
+      if (!Number.isFinite(mass)) return null;
+      const name = parts.slice(0, -1).join(" ") || `M${index + 1}`;
+      return { name, mass };
+    })
+    .filter((item): item is { name: string; mass: number } => item != null);
+}
+
+function parsePositiveCharges(text: string): number[] {
+  const charges = text
+    .replace(/;/g, ",")
+    .split(",")
+    .map((part) => Number.parseInt(part.trim(), 10))
+    .filter((charge) => Number.isFinite(charge) && charge > 0);
+  return charges.length > 0 ? charges : [1];
+}
+
+function autoSignedProtonLike(value: number, polarity: Exclude<Polarity, "all">): number {
+  if (Math.abs(Math.abs(value) - PROTON_MASS) <= 0.01) {
+    return polarity === "positive" ? Math.abs(value) : -Math.abs(value);
+  }
+  return value;
+}
+
+const SUPERSCRIPT_DIGITS: Record<string, string> = {
+  "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
+  "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+};
+
+function toSuperscript(n: number): string {
+  return String(n).split("").map((c) => SUPERSCRIPT_DIGITS[c] ?? c).join("");
+}
+
+function ionLabel(core: "M" | "2M", adductLabel: string, adductMass: number, charge: number, polarity: Exclude<Polarity, "all">): string {
+  const sign = polarity === "negative" ? "⁻" : "⁺";
+  const suffix = charge > 1 ? `${toSuperscript(charge)}${sign}` : sign;
+  const label = adductLabel.replace(/-/g, "−");
+  if (label) return `[${core}${label}]${suffix}`;
+  const proton =
+    Math.abs(adductMass - PROTON_MASS) <= 0.002
+      ? "+H"
+      : Math.abs(adductMass + PROTON_MASS) <= 0.002
+        ? "−H"
+        : `${adductMass >= 0 ? "+" : "−"}${Math.abs(adductMass).toFixed(4)}`;
+  return `[${core}${proton}]${suffix}`;
+}
+
+function generateCompositions(
+  monomers: Array<{ name: string; mass: number }>,
+  maxDp: number,
+  limit = EXPECTED_PRODUCT_COMPOSITION_LIMIT,
+): Array<{ label: string; mass: number; dp: number }> {
+  const out: Array<{ label: string; mass: number; dp: number }> = [];
+  const n = monomers.length;
+  const walk = (index: number, remaining: number, counts: number[]) => {
+    if (out.length >= limit) return;
+    if (index === n - 1) {
+      const next = [...counts, remaining];
+      const dp = next.reduce((sum, value) => sum + value, 0);
+      if (dp <= 0) return;
+      const parts: string[] = [];
+      let mass = 0;
+      next.forEach((count, monomerIndex) => {
+        if (count <= 0) return;
+        mass += count * monomers[monomerIndex].mass;
+        parts.push(`${count}-${monomers[monomerIndex].name}`);
+      });
+      out.push({ label: parts.join(" + "), mass, dp });
+      return;
+    }
+    for (let count = 0; count <= remaining; count += 1) {
+      if (out.length >= limit) break;
+      walk(index + 1, remaining - count, [...counts, count]);
+    }
+  };
+  for (let total = 1; total <= maxDp && out.length < limit; total += 1) walk(0, total, []);
+  return out;
+}
+
+interface SpectrumIndex {
+  mz: Float64Array;
+  intensity: Float64Array;
+  order: Int32Array;
+}
+
+function buildSpectrumIndex(spectrum: SpectrumData): SpectrumIndex {
+  const n = spectrum.mz.length;
+  const order = new Int32Array(n);
+  for (let i = 0; i < n; i += 1) order[i] = i;
+  order.sort((a, b) => spectrum.mz[a] - spectrum.mz[b]);
+  const mz = new Float64Array(n);
+  const intensity = new Float64Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const j = order[i];
+    mz[i] = spectrum.mz[j];
+    intensity[i] = spectrum.intensity[j] ?? 0;
+  }
+  return { mz, intensity, order };
+}
+
+function lowerBound(arr: Float64Array, target: number): number {
+  let lo = 0;
+  let hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (arr[mid] < target) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function findMostIntenseSpectrumPeak(
+  index: SpectrumIndex,
+  expectedMz: number,
+  tolDa: number,
+): { mz: number; intensity: number; absErr: number; ppmErr: number } | null {
+  const start = lowerBound(index.mz, expectedMz - tolDa);
+  const end = lowerBound(index.mz, expectedMz + tolDa);
+  let best: { mz: number; intensity: number; absErr: number; ppmErr: number } | null = null;
+  for (let i = start; i < end; i += 1) {
+    const absErr = Math.abs(index.mz[i] - expectedMz);
+    if (absErr > tolDa) continue;
+    const intensity = index.intensity[i];
+    const ppmErr = expectedMz === 0 ? 0 : (absErr / Math.abs(expectedMz)) * 1e6;
+    if (
+      best == null ||
+      intensity > best.intensity ||
+      (intensity === best.intensity && absErr < best.absErr)
+    ) {
+      best = { mz: index.mz[i], intensity, absErr, ppmErr };
+    }
+  }
+  return best;
+}
+
+function integrateEICPeak(
+  eic: LCMSEICData,
+  referenceRt?: number | null,
+): {
+  rtStart: number;
+  rtApex: number;
+  rtEnd: number;
+  height: number;
+  area: number;
+  baseline: number;
+  nPoints: number;
+} | null {
+  const points = eic.rt_min
+    .map((rt, index) => ({ rt, intensity: eic.intensity[index] ?? 0 }))
+    .filter((point) => Number.isFinite(point.rt) && Number.isFinite(point.intensity))
+    .sort((a, b) => a.rt - b.rt);
+  if (points.length === 0) return null;
+
+  // Pick apex: nearest local maximum to referenceRt if provided, else global max.
+  let apexIndex = 0;
+  if (referenceRt != null && Number.isFinite(referenceRt)) {
+    const localMaxes: number[] = [];
+    for (let i = 0; i < points.length; i += 1) {
+      const cur = points[i].intensity;
+      if (cur <= 0) continue;
+      const prev = i > 0 ? points[i - 1].intensity : -Infinity;
+      const next = i < points.length - 1 ? points[i + 1].intensity : -Infinity;
+      if (cur >= prev && cur >= next) localMaxes.push(i);
+    }
+    if (localMaxes.length > 0) {
+      apexIndex = localMaxes.reduce(
+        (best, idx) =>
+          Math.abs(points[idx].rt - referenceRt) < Math.abs(points[best].rt - referenceRt) ? idx : best,
+        localMaxes[0],
+      );
+    } else {
+      for (let i = 1; i < points.length; i += 1) {
+        if (points[i].intensity > points[apexIndex].intensity) apexIndex = i;
+      }
+    }
+  } else {
+    for (let i = 1; i < points.length; i += 1) {
+      if (points[i].intensity > points[apexIndex].intensity) apexIndex = i;
+    }
+  }
+
+  const height = points[apexIndex].intensity;
+
+  // Expand outward from the apex until the slope reverses (valley between peaks)
+  // so we don't swallow shoulder peaks that stay above a static threshold.
+  let start = apexIndex;
+  while (start > 0 && points[start - 1].intensity <= points[start].intensity) start -= 1;
+  let end = apexIndex;
+  while (end < points.length - 1 && points[end + 1].intensity <= points[end].intensity) end += 1;
+
+  // Baseline from points OUTSIDE the slope-bounded window (median of remainder).
+  // Falls back to the edge minima when too few outside points exist.
+  let baseline = 0;
+  const outside: number[] = [];
+  for (let i = 0; i < start; i += 1) outside.push(points[i].intensity);
+  for (let i = end + 1; i < points.length; i += 1) outside.push(points[i].intensity);
+  if (outside.length >= 5) {
+    outside.sort((a, b) => a - b);
+    baseline = outside[Math.floor(outside.length / 2)];
+  } else {
+    let edgeMin = Infinity;
+    const edgeCandidates = [points[start].intensity, points[end].intensity];
+    if (start > 0) edgeCandidates.push(points[start - 1].intensity);
+    if (end < points.length - 1) edgeCandidates.push(points[end + 1].intensity);
+    for (const v of edgeCandidates) if (v < edgeMin) edgeMin = v;
+    baseline = Number.isFinite(edgeMin) ? edgeMin : 0;
+  }
+  baseline = Math.max(0, baseline);
+
+  // Shrink the window if either tail dips below baseline + 5% of peak signal —
+  // keeps the integration tight when noise tails sit inside the slope bounds.
+  const peakSignal = Math.max(0, height - baseline);
+  const threshold = baseline + peakSignal * 0.05;
+  while (start < apexIndex && points[start].intensity < threshold) start += 1;
+  while (end > apexIndex && points[end].intensity < threshold) end -= 1;
+
+  if (start === end) {
+    start = Math.max(0, start - 1);
+    end = Math.min(points.length - 1, end + 1);
+  }
+
+  let area = 0;
+  for (let i = start; i < end; i += 1) {
+    const y0 = Math.max(0, points[i].intensity - baseline);
+    const y1 = Math.max(0, points[i + 1].intensity - baseline);
+    const dx = Math.max(0, points[i + 1].rt - points[i].rt);
+    area += ((y0 + y1) / 2) * dx;
+  }
+  return {
+    rtStart: points[start].rt,
+    rtApex: points[apexIndex].rt,
+    rtEnd: points[end].rt,
+    height,
+    area,
+    baseline,
+    nPoints: end - start + 1,
+  };
+}
+
+function buildKendrickPoints(
+  spectrum: SpectrumData,
+  repeatMass: number,
+  minRelIntensity: number,
+  toleranceValue: number,
+  toleranceUnit: "kmd" | "ppm",
+  minSeriesPoints: number,
+): { points: KendrickPoint[]; series: KendrickSeries[]; truncated: boolean } {
+  if (!Number.isFinite(repeatMass) || repeatMass <= 0) {
+    return { points: [], series: [], truncated: false };
+  }
+  let maxIntensity = 0;
+  for (let i = 0; i < spectrum.intensity.length; i += 1) {
+    const v = spectrum.intensity[i];
+    if (Number.isFinite(v) && v > maxIntensity) maxIntensity = v;
+  }
+  if (maxIntensity <= 0) return { points: [], series: [], truncated: false };
+  const threshold = maxIntensity * (Math.max(0, minRelIntensity) / 100);
+  const nominalRepeatMass = Math.max(1, Math.round(repeatMass));
+  const scale = nominalRepeatMass / repeatMass;
+  const rawPoints: KendrickPoint[] = [];
+  for (let i = 0; i < spectrum.mz.length; i += 1) {
+    const mz = spectrum.mz[i];
+    const intensity = spectrum.intensity[i] ?? 0;
+    if (!Number.isFinite(mz) || !Number.isFinite(intensity) || intensity < threshold) continue;
+    const kendrickMass = mz * scale;
+    const kendrickNominalMass = Math.round(kendrickMass);
+    rawPoints.push({
+      id: `${i}-${mz.toFixed(6)}`,
+      mz,
+      intensity,
+      relIntensity: (intensity / maxIntensity) * 100,
+      kendrickMass,
+      kendrickNominalMass,
+      kmd: kendrickNominalMass - kendrickMass,
+      seriesId: null,
+    });
+  }
+
+  const truncated = rawPoints.length > KENDRICK_POINT_LIMIT;
+  const points = rawPoints
+    .sort((a, b) => b.intensity - a.intensity)
+    .slice(0, KENDRICK_POINT_LIMIT)
+    .sort((a, b) => a.kmd - b.kmd);
+
+  const tolForPoint = (point: KendrickPoint): number =>
+    toleranceUnit === "ppm"
+      ? Math.max(1e-9, (toleranceValue * 1e-6) * point.mz * scale)
+      : Math.max(1e-9, toleranceValue);
+
+  // Anchor clusters on the running mean (NOT the previous point) so a chain of
+  // points each within tolerance of the prior point can't transitively merge
+  // into a series that spans more than the tolerance overall.
+  const clusters: KendrickPoint[][] = [];
+  let runningSum = 0;
+  let runningCount = 0;
+  for (const point of points) {
+    const mean = runningCount > 0 ? runningSum / runningCount : point.kmd;
+    if (runningCount === 0 || Math.abs(point.kmd - mean) > tolForPoint(point)) {
+      clusters.push([point]);
+      runningSum = point.kmd;
+      runningCount = 1;
+    } else {
+      clusters[clusters.length - 1].push(point);
+      runningSum += point.kmd;
+      runningCount += 1;
+    }
+  }
+
+  const series: KendrickSeries[] = [];
+  clusters.forEach((cluster) => {
+    if (cluster.length < minSeriesPoints) return;
+    const id = series.length + 1;
+    const count = cluster.length;
+    let sumKmd = 0;
+    let maxClusterIntensity = 0;
+    for (const point of cluster) {
+      sumKmd += point.kmd;
+      if (point.intensity > maxClusterIntensity) maxClusterIntensity = point.intensity;
+    }
+    const center = sumKmd / count;
+    cluster.forEach((point) => {
+      point.seriesId = id;
+    });
+    series.push({ id, center, count, maxIntensity: maxClusterIntensity });
+  });
+
+  return { points: points.sort((a, b) => a.mz - b.mz), series, truncated };
+}
+
+function buildExpectedProductHits(
+  settings: PolymerUiSettings,
+  polarity: Exclude<Polarity, "all">,
+  index: SpectrumIndex,
+  maxDp: number,
+  resolutionMode: ExpectedProductResolutionMode,
+  lowResolutionTolerance: number,
+): ExpectedProductHit[] {
+  const monomers = parseExpectedProductMonomers(polymerMonomerText(settings));
+  if (monomers.length === 0) return [];
+  const profile = settings[polarity];
+  const shared = settings.shared;
+  const charges = parsePositiveCharges(shared.charges);
+  const dpMax = Math.max(1, Math.min(EXPECTED_PRODUCT_MAX_DP, Math.round(maxDp)));
+  const baseAdduct = autoSignedProtonLike(profile.adduct_mass, polarity);
+  const clusterAdduct = autoSignedProtonLike(profile.cluster_adduct_mass, polarity);
+  const adducts: Array<{ label: string; mass: number }> = [{ label: "", mass: baseAdduct }];
+  if (polarity === "positive") {
+    if (profile.adduct_na) adducts.push({ label: "+Na", mass: NA_MASS });
+    if (profile.adduct_k) adducts.push({ label: "+K", mass: K_MASS });
+  } else {
+    if (profile.adduct_cl) adducts.push({ label: "+Cl", mass: CL_MASS });
+    if (profile.adduct_formate) adducts.push({ label: "+HCOO", mass: FORMATE_MASS });
+    if (profile.adduct_acetate) adducts.push({ label: "+Ac", mass: ACETATE_MASS });
+  }
+  const variants: Array<{ label: string; delta: number }> = [{ label: "", delta: 0 }];
+  if (shared.h2o_loss) variants.push({ label: "-H2O", delta: -H2O_LOSS_MASS });
+  if (shared.decarb) variants.push({ label: "-CO2", delta: -CO2_LOSS_MASS });
+  if (shared.oxid) variants.push({ label: "+O", delta: OXIDATION_MASS });
+  const tolDaFor = (mz: number) => {
+    const configuredTolerance =
+      shared.tol_unit === "ppm" ? (Math.abs(mz) * Math.max(0, shared.tol_value)) / 1e6 : Math.max(0, shared.tol_value);
+    return resolutionMode === "low"
+      ? Math.max(configuredTolerance, Math.max(0.01, lowResolutionTolerance))
+      : configuredTolerance;
+  };
+  const CLUSTER_MONOMER_MIN_RATIO_VS_DIMER = 1.0;
+  const rows: ExpectedProductHit[] = [];
+  const seen = new Set<string>();
+  const addHit = (
+    composition: string,
+    neutralMass: number,
+    variant: string,
+    ion: string,
+    expectedMz: number,
+  ) => {
+    const key = `${composition}|${variant}|${ion}|${expectedMz.toFixed(6)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const toleranceDa = tolDaFor(expectedMz);
+    const match = findMostIntenseSpectrumPeak(index, expectedMz, toleranceDa);
+    rows.push({
+      id: key,
+      composition,
+      neutralMass,
+      variant,
+      ion,
+      expectedMz,
+      toleranceDa,
+      observedMz: match?.mz ?? null,
+      intensity: match?.intensity ?? null,
+      absErr: match?.absErr ?? null,
+      ppmErr: match?.ppmErr ?? null,
+    });
+  };
+  for (const composition of generateCompositions(monomers, dpMax)) {
+    const neutralBase = composition.mass + (composition.dp - 1) * shared.bond_delta + shared.extra_delta;
+    for (const variant of variants) {
+      const neutralMass = neutralBase + variant.delta;
+      for (const charge of charges) {
+        for (const adduct of adducts) {
+          const expectedMz = (neutralMass + adduct.mass) / charge;
+          addHit(composition.label, neutralMass, variant.label, ionLabel("M", adduct.label, adduct.mass, charge, polarity), expectedMz);
+        }
+      }
+    }
+    if (shared.cluster) {
+      for (const charge of charges) {
+        const expectedMz = (2 * neutralBase + clusterAdduct) / charge;
+        // Require monomer [M+X]+ (z=1, same adduct) to be at least as intense as the candidate [2M+X]+.
+        // In ESI the monomer is essentially always more abundant than the dimer.
+        const dimerMatch = findMostIntenseSpectrumPeak(index, expectedMz, tolDaFor(expectedMz));
+        if (dimerMatch == null) continue;
+        const mzMono = neutralBase + clusterAdduct;
+        const monoMatch = findMostIntenseSpectrumPeak(index, mzMono, tolDaFor(mzMono));
+        const monoInten = monoMatch != null ? monoMatch.intensity : 0;
+        if (monoInten < CLUSTER_MONOMER_MIN_RATIO_VS_DIMER * dimerMatch.intensity) continue;
+        addHit(composition.label, 2 * neutralBase, "2M", ionLabel("2M", "", clusterAdduct, charge, polarity), expectedMz);
+      }
+    }
+  }
+  return rows.sort((a, b) => {
+    const aMatched = a.observedMz != null ? 0 : 1;
+    const bMatched = b.observedMz != null ? 0 : 1;
+    if (aMatched !== bMatched) return aMatched - bMatched;
+    return (b.intensity ?? 0) - (a.intensity ?? 0);
+  });
 }
 
 function toApiPolymerSettings(
@@ -1056,15 +1616,36 @@ function cloneGraphSettings(settings: GraphSettings): GraphSettings {
   return JSON.parse(JSON.stringify(settings)) as GraphSettings;
 }
 
+function mergeChartSettings(base: ChartSettings, saved?: Partial<ChartSettings>): ChartSettings {
+  return {
+    ...base,
+    ...(saved ?? {}),
+    axis: { ...base.axis, ...(saved?.axis ?? {}) },
+    labels: { ...base.labels, ...(saved?.labels ?? {}) },
+  };
+}
+
+function mergeGraphSettings(saved?: Partial<GraphSettings>): GraphSettings {
+  const base = cloneGraphSettings(DEFAULT_GRAPH_SETTINGS);
+  if (!saved) return base;
+  return {
+    tic: mergeChartSettings(base.tic, saved.tic),
+    uv: mergeChartSettings(base.uv, saved.uv),
+    spectrum: mergeChartSettings(base.spectrum, saved.spectrum),
+    eic: mergeChartSettings(base.eic, saved.eic),
+    eicOverlay: { ...base.eicOverlay, ...(saved.eicOverlay ?? {}) },
+  };
+}
+
 function loadGraphSettingsDefault(): GraphSettings {
-  if (typeof window === "undefined") return cloneGraphSettings(DEFAULT_GRAPH_SETTINGS);
+  if (typeof window === "undefined") return mergeGraphSettings();
   try {
     const stored = window.localStorage.getItem(GRAPH_SETTINGS_DEFAULT_STORAGE_KEY);
     return stored
-      ? (JSON.parse(stored) as GraphSettings)
-      : cloneGraphSettings(DEFAULT_GRAPH_SETTINGS);
+      ? mergeGraphSettings(JSON.parse(stored) as Partial<GraphSettings>)
+      : mergeGraphSettings();
   } catch {
-    return cloneGraphSettings(DEFAULT_GRAPH_SETTINGS);
+    return mergeGraphSettings();
   }
 }
 
@@ -1124,8 +1705,24 @@ function formatRt(rtMin: number, unit: RtUnit): string {
   return unit === "seconds" ? `${(rtMin * 60).toFixed(2)} s` : `${rtMin.toFixed(3)} min`;
 }
 
+function formatScanId(spectrumId: string): string {
+  const m = /scan=(\d+)/i.exec(spectrumId);
+  if (m) return m[1];
+  const m2 = /scan\s+(\d+)/i.exec(spectrumId);
+  if (m2) return m2[1];
+  return spectrumId;
+}
+
 function axisRange(min: number | null, max: number | null): [number, number] | undefined {
   return min != null && max != null ? [min, max] : undefined;
+}
+
+function maxFinite(values: number[], fallback = 0): number {
+  let max = -Infinity;
+  for (const value of values) {
+    if (Number.isFinite(value) && value > max) max = value;
+  }
+  return max === -Infinity ? fallback : max;
 }
 
 function axisTitle(text: string, size: number) {
@@ -1206,13 +1803,15 @@ export function LCMSView() {
   const [tic, setTic] = useState<TICData | null>(null);
   const [spectrum, setSpectrum] = useState<SpectrumData | null>(null);
   const [uv, setUv] = useState<UVChromatogramResponse | null>(null);
-  const [eic, setEic] = useState<LCMSEICData | null>(null);
+  const [eicPlots, setEicPlots] = useState<LCMSEICPlot[]>([]);
+  const [featureRows, setFeatureRows] = useState<LCMSFeatureRow[]>([]);
   const [ticOverlay, setTicOverlay] = useState<LCMSTICOverlayTrace[]>([]);
   const [uvOverlay, setUvOverlay] = useState<LCMSUVOverlayTrace[]>([]);
   const [spectrumOverlay, setSpectrumOverlay] = useState<LCMSSpectrumOverlayTrace[]>([]);
   const [overlayTicEnabled, setOverlayTicEnabled] = useStoredState(`${LCMS_STORAGE_PREFIX}.overlayTicEnabled`, false);
   const [overlayUvEnabled, setOverlayUvEnabled] = useStoredState(`${LCMS_STORAGE_PREFIX}.overlayUvEnabled`, false);
   const [overlaySpectrumEnabled, setOverlaySpectrumEnabled] = useStoredState(`${LCMS_STORAGE_PREFIX}.overlaySpectrumEnabled`, false);
+  const [overlayEicEnabled, setOverlayEicEnabled] = useStoredState(`${LCMS_STORAGE_PREFIX}.overlayEicEnabled`, false);
   const [overlaySessionIds, setOverlaySessionIds] = useStoredState<string[]>(
     `${LCMS_STORAGE_PREFIX}.overlaySessionIds`,
     [],
@@ -1319,6 +1918,7 @@ export function LCMSView() {
 
   // View – region select
   const [regionSelect, setRegionSelect] = useState(false);
+  const [selectedRegion, setSelectedRegion] = useState<{ rtMin: number; rtMax: number } | null>(null);
 
   // RT navigation
   const [selectedRt, setSelectedRt] = useStoredState<number | null>(
@@ -1347,12 +1947,18 @@ export function LCMSView() {
     loadGraphSettingsDefault(),
   );
   const [polymerDialogOpen, setPolymerDialogOpen] = useState(false);
+  const [expectedProductsOpen, setExpectedProductsOpen] = useState(false);
+  const [kendrickOpen, setKendrickOpen] = useState(false);
+  const [featureTableOpen, setFeatureTableOpen] = useState(false);
+  const [highlightedEicPlotId, setHighlightedEicPlotId] = useState<string | null>(null);
+  const eicPlotRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [customUvLabelDraft, setCustomUvLabelDraft] =
     useState<CustomUvLabelDraft | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const uvFileRef = useRef<HTMLInputElement>(null);
   const workspaceFileRef = useRef<HTMLInputElement>(null);
+  const eicPlotCounterRef = useRef(0);
 
   const location = useLocation();
   const [helpOpen, setHelpOpen] = useState(false);
@@ -2110,6 +2716,7 @@ export function LCMSView() {
       return next;
     });
     clearUvLabelsForSession(sid);
+    setFeatureRows((prev) => prev.filter((row) => row.session_id !== sid));
     if (activeSid === sid) {
       setActiveSid(null);
       setSpectrum(null);
@@ -2271,33 +2878,103 @@ export function LCMSView() {
   };
 
   // Auto-align UV↔MS: peak-correlation between UV signal and TIC
+  const createEICForMz = useCallback(
+    async (
+      target: number,
+      source: "dialog" | "spectrum" | "expected" = "dialog",
+      toleranceOverride?: number,
+      metadata?: Partial<LCMSEICMetadata>,
+    ) => {
+      if (!activeSid) return;
+      if (!Number.isFinite(target)) {
+        setInfo("Enter a valid m/z before generating an EIC.");
+        return;
+      }
+      const tolerance = Math.max(0.000001, toleranceOverride ?? eicTol);
+      setBusy(true);
+      setError(null);
+      try {
+        const result = await api.lcms.eic(activeSid, {
+          mz: target,
+          tolerance,
+          polarity: pol,
+        });
+        eicPlotCounterRef.current += 1;
+        setEicPlots((prev) => [
+          ...prev,
+          {
+            id: `${Date.now()}-${eicPlotCounterRef.current}`,
+            eic: result,
+            metadata: {
+              source: source === "dialog" ? "manual" : source,
+              label: metadata?.label,
+              expectedProduct: metadata?.expectedProduct,
+              annotation: metadata?.annotation,
+            },
+          },
+        ]);
+        if (source === "dialog") setEicOpen(false);
+        if (source === "dialog" && result.best.rt_min != null) loadSpectrum(result.best.rt_min);
+        setInfo(
+          `Generated EIC for m/z ${target.toFixed(4)} +/- ${tolerance.toFixed(4)} across ${result.n_scans} scans.`,
+        );
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [activeSid, eicTol, loadSpectrum, pol],
+  );
+
   const runEIC = async () => {
-    if (!activeSid) return;
-    const target = parseFloat(eicInput);
-    if (!Number.isFinite(target)) {
-      setInfo("Enter a valid m/z before generating an EIC.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await api.lcms.eic(activeSid, {
-        mz: target,
-        tolerance: Math.max(0.000001, eicTol),
-        polarity: pol,
-      });
-      setEic(result);
-      setEicOpen(false);
-      if (result.best.rt_min != null) loadSpectrum(result.best.rt_min);
-      setInfo(
-        `Generated EIC for m/z ${target.toFixed(4)} +/- ${eicTol.toFixed(3)} across ${result.n_scans} scans.`,
-      );
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
-    }
+    await createEICForMz(parseFloat(eicInput), "dialog");
   };
+
+  const onSpectrumPeakClick = useCallback(
+    (mz: number) => {
+      setEicInput(mz.toFixed(4));
+      void createEICForMz(mz, "spectrum", undefined, {
+        label: `MS1 peak ${mz.toFixed(4)}`,
+      });
+    },
+    [createEICForMz],
+  );
+
+  const integrateEicPlot = useCallback(
+    (plot: LCMSEICPlot) => {
+      const integrated = integrateEICPeak(plot.eic, selectedRt);
+      if (!integrated) {
+        setInfo("No valid EIC points were available to integrate.");
+        return;
+      }
+      const row: LCMSFeatureRow = {
+        id: `feature-${plot.id}`,
+        eicPlotId: plot.id,
+        session_id: activeSid,
+        sourceFile: active?.display_name ?? "LCMS session",
+        mz: plot.eic.target_mz,
+        tolerance: plot.eic.tolerance,
+        polarity: plot.eic.best.polarity ?? pol ?? null,
+        ...integrated,
+        source: plot.metadata?.source ?? "manual",
+        label: plot.metadata?.label,
+        expectedProduct: plot.metadata?.expectedProduct,
+        annotation: plot.metadata?.annotation,
+        createdAt: new Date().toISOString(),
+      };
+      let wasUpdate = false;
+      setFeatureRows((prev) => {
+        wasUpdate = prev.some((item) => item.eicPlotId === plot.id);
+        const withoutExisting = prev.filter((item) => item.eicPlotId !== plot.id);
+        return [...withoutExisting, row].sort((a, b) => a.rtApex - b.rtApex || a.mz - b.mz);
+      });
+      setInfo(
+        `${wasUpdate ? "Updated existing" : "Added new"} feature m/z ${row.mz.toFixed(4)} at RT ${row.rtApex.toFixed(3)} min; area ${row.area.toExponential(3)}.`,
+      );
+    },
+    [active?.display_name, activeSid, pol, selectedRt],
+  );
 
   const autoAlignNow = () => {
     if (!tic || !uv || !uv.available) {
@@ -2421,43 +3098,66 @@ export function LCMSView() {
     }
   };
 
-  const loadSummedRegionSpectrum = async () => {
-    if (!activeSid || selectedRt == null) {
-      setInfo("Select an RT before summing a region spectrum.");
-      return;
-    }
-    const halfWindow = 0.05;
-    setBusy(true);
-    setError(null);
-    try {
-      const data = await api.lcms.regionSpectrum(activeSid, {
-        rt_min: selectedRt - halfWindow,
-        rt_max: selectedRt + halfWindow,
-        polarity: pol,
-        bin_width: 0.01,
-        min_rel: 0.0,
-      });
+  const spectrumFromRegionData = useCallback(
+    (data: LCMSRegionSpectrumData, rtMin: number, rtMax: number): SpectrumData => {
+      const lo = Math.min(rtMin, rtMax);
+      const hi = Math.max(rtMin, rtMax);
       const maxIntensity = Math.max(...data.intensity, 0);
       const labels = data.mz
         .map((mz, index) => ({ mz, intensity: data.intensity[index] }))
         .filter((point) => maxIntensity > 0 && point.intensity >= spectrumMinRel * maxIntensity)
         .sort((a, b) => b.intensity - a.intensity)
         .slice(0, Math.max(1, spectrumTopN));
-      setSpectrum({
+      const polymerLabels = data.polymer_labels ?? [];
+      return {
         meta: {
-          spectrum_id: `summed:${data.rt_min.toFixed(4)}-${data.rt_max.toFixed(4)}`,
-          rt_min: selectedRt,
+          spectrum_id: `summed:${lo.toFixed(4)}-${hi.toFixed(4)}`,
+          rt_min: (lo + hi) / 2,
+          rt_max: hi,
+          rt_start: lo,
+          rt_end: hi,
           tic: data.intensity.reduce((sum, value) => sum + value, 0),
           polarity: pol ?? null,
           n_peaks: data.mz.length,
+          n_scans: data.n_scans,
+          bin_width: data.bin_width,
+          merge_mode: "sum",
         },
         mz: data.mz,
         intensity: data.intensity,
-        labels,
-        polymer_labels: [],
+        labels: [...labels, ...polymerLabels],
+        polymer_labels: polymerLabels,
+      };
+    },
+    [pol, spectrumMinRel, spectrumTopN],
+  );
+
+  const loadSummedRegionSpectrum = async () => {
+    if (!activeSid || selectedRegion == null) {
+      setInfo("Enable Region Select and drag an RT region on the TIC first.");
+      return;
+    }
+    const rtMin = Math.min(selectedRegion.rtMin, selectedRegion.rtMax);
+    const rtMax = Math.max(selectedRegion.rtMin, selectedRegion.rtMax);
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await api.lcms.regionSpectrum(activeSid, {
+        rt_min: rtMin,
+        rt_max: rtMax,
+        polarity: pol,
+        bin_width: 0.01,
+        min_rel: 0.0,
+        polymer: activePolymerSettings,
       });
+      const nextSpectrum = spectrumFromRegionData(data, rtMin, rtMax);
+      setSpectrum(nextSpectrum);
+      setSelectedRt(nextSpectrum.meta.rt_min);
+      setShowSpectrum(true);
       setInfo(
-        `Loaded summed spectrum from ${data.n_scans} scans (${data.rt_min.toFixed(3)}-${data.rt_max.toFixed(3)} min).`,
+        data.n_scans > 0
+          ? `Loaded summed MS1 from ${data.n_scans} scans (${data.rt_min.toFixed(3)}-${data.rt_max.toFixed(3)} min).`
+          : `No MS1 scans found in ${data.rt_min.toFixed(3)}-${data.rt_max.toFixed(3)} min.`,
       );
     } catch (err) {
       setError(String(err));
@@ -2465,6 +3165,46 @@ export function LCMSView() {
       setBusy(false);
     }
   };
+
+  const handleSetRegionSelect = useCallback((v: boolean) => {
+    setRegionSelect(v);
+    setSelectedRegion(null);
+  }, []);
+
+  const onRegionSelected = useCallback(
+    async (rtMin: number, rtMax: number) => {
+      if (!activeSid) return;
+      const lo = Math.min(rtMin, rtMax);
+      const hi = Math.max(rtMin, rtMax);
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return;
+      setSelectedRegion({ rtMin: lo, rtMax: hi });
+      setSelectedRt((lo + hi) / 2);
+      setBusy(true);
+      setError(null);
+      try {
+        const data = await api.lcms.regionSpectrum(activeSid, {
+          rt_min: lo,
+          rt_max: hi,
+          polarity: pol,
+          bin_width: 0.01,
+          min_rel: 0.0,
+          polymer: activePolymerSettings,
+        });
+        setSpectrum(spectrumFromRegionData(data, lo, hi));
+        setShowSpectrum(true);
+        setInfo(
+          data.n_scans > 0
+            ? `Loaded summed MS1 from ${data.n_scans} scans (${lo.toFixed(3)}-${hi.toFixed(3)} min).`
+            : `No MS1 scans found in ${lo.toFixed(3)}-${hi.toFixed(3)} min.`,
+        );
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [activeSid, pol, activePolymerSettings, spectrumFromRegionData],
+  );
 
   const saveWorkspace = () => {
     const uvTextLabelsBySessionId = Object.fromEntries(
@@ -2504,6 +3244,7 @@ export function LCMSView() {
         overlayTicEnabled,
         overlayUvEnabled,
         overlaySpectrumEnabled,
+        overlayEicEnabled,
         overlaySessionIds,
       },
       analysisState: {
@@ -2524,7 +3265,9 @@ export function LCMSView() {
         uvTextLabels,
         uvTextLabelsBySessionId,
         polymerSettings,
-        eic,
+        eic: eicPlots.at(-1)?.eic ?? null,
+        eics: eicPlots,
+        features: featureRows,
       },
     };
     downloadJson(workspace, "lcms.workspace.json");
@@ -2622,10 +3365,11 @@ export function LCMSView() {
       setSelectedUvRt(view.selectedUvRt ?? null);
       setUvOffset(Number.isFinite(view.uvOffset) ? view.uvOffset : 0);
       setUvOffsetText(view.uvOffsetText ?? "0.000");
-      setGraphSettings(view.graphSettings ?? loadGraphSettingsDefault());
+      setGraphSettings(mergeGraphSettings(view.graphSettings));
       setOverlayTicEnabled(Boolean(view.overlayTicEnabled));
       setOverlayUvEnabled(Boolean(view.overlayUvEnabled));
       setOverlaySpectrumEnabled(Boolean(view.overlaySpectrumEnabled));
+      setOverlayEicEnabled(Boolean(view.overlayEicEnabled));
       setOverlaySessionIds(remapIds(view.overlaySessionIds ?? []));
       setAnnotateSpectrum(Boolean(analysis.annotateSpectrum));
       setSpectrumTopN(analysis.spectrumTopN ?? 10);
@@ -2643,7 +3387,21 @@ export function LCMSView() {
       setUvLabelStairYStep(analysis.uvLabelStairYStep ?? UV_LABEL_STAIR_Y_STEP_PX);
       setUvLabelsBySessionId(nextUvLabelsBySessionId);
       if (analysis.polymerSettings) setPolymerSettings(analysis.polymerSettings);
-      setEic(analysis.eic ?? null);
+      setEicPlots(
+        Array.isArray(analysis.eics)
+          ? analysis.eics
+          : analysis.eic
+            ? [{ id: `workspace-${Date.now()}`, eic: analysis.eic }]
+            : [],
+      );
+      setFeatureRows(
+        Array.isArray(analysis.features)
+          ? analysis.features.map((row) => ({
+              ...row,
+              session_id: remapId(row.session_id),
+            }))
+          : [],
+      );
       setProjects(restoredProjects);
       setSessionProjectById(nextSessionProjectById);
       setActiveProjectId(
@@ -2810,21 +3568,58 @@ export function LCMSView() {
                   tic={tic}
                   overlayTraces={ticOverlay}
                   onClick={onTICClick}
+                  onRegionSelected={onRegionSelected}
                   selectedRt={selectedRt}
+                  selectedRegion={selectedRegion}
+                  selectedScanId={
+                    spectrum?.meta.spectrum_id && !spectrum.meta.spectrum_id.startsWith("summed:")
+                      ? spectrum.meta.spectrum_id
+                      : null
+                  }
                   rtUnit={rtUnit}
                   regionSelect={regionSelect}
                   settings={graphSettings.tic}
                 />
               )}
-              {eic && (
+              {eicPlots.length > 0 && overlayEicEnabled ? (
                 <EICChart
-                  eic={eic}
+                  eics={eicPlots}
                   selectedRt={selectedRt}
                   rtUnit={rtUnit}
                   onClick={onTICClick}
-                  onClear={() => setEic(null)}
-                  settings={graphSettings.tic}
+                  onClear={() => setEicPlots([])}
+                  onIntegrate={integrateEicPlot}
+                  clearLabel="Clear all"
+                  settings={graphSettings.eic}
+                  overlaySettings={graphSettings.eicOverlay}
                 />
+              ) : (
+                eicPlots.map((plot) => (
+                  <div
+                    key={plot.id}
+                    ref={(el) => {
+                      eicPlotRefs.current[plot.id] = el;
+                    }}
+                    className={clsx(
+                      "transition-shadow",
+                      highlightedEicPlotId === plot.id &&
+                        "rounded-md ring-2 ring-brand-500 ring-offset-2 ring-offset-canvas",
+                    )}
+                  >
+                    <EICChart
+                      eics={[plot]}
+                      selectedRt={selectedRt}
+                      rtUnit={rtUnit}
+                      onClick={onTICClick}
+                      onClear={() =>
+                        setEicPlots((prev) => prev.filter((item) => item.id !== plot.id))
+                      }
+                      onIntegrate={integrateEicPlot}
+                      settings={graphSettings.eic}
+                      overlaySettings={graphSettings.eicOverlay}
+                    />
+                  </div>
+                ))
               )}
               {showUV && (
                 <UVChromatogramChart
@@ -2834,6 +3629,11 @@ export function LCMSView() {
                   xOffset={uvOffset}
                   selectedUvRt={
                     selectedUvRt ?? (selectedRt != null ? selectedRt - uvOffset : null)
+                  }
+                  selectedScanId={
+                    spectrum?.meta.spectrum_id && !spectrum.meta.spectrum_id.startsWith("summed:")
+                      ? spectrum.meta.spectrum_id
+                      : null
                   }
                   labels={uvTextLabels}
                   rtUnit={rtUnit}
@@ -2862,6 +3662,7 @@ export function LCMSView() {
                   rtUnit={rtUnit}
                   settings={graphSettings.spectrum}
                   polymerEnabled={Boolean(activePolymerSettings)}
+                  onPeakClick={onSpectrumPeakClick}
                 />
               )}
             </>
@@ -2890,6 +3691,8 @@ export function LCMSView() {
           onExportUV={exportUV}
           onExportTICOverlay={exportTICOverlay}
           onSumRegionSpectrum={loadSummedRegionSpectrum}
+          onFeatureTable={() => setFeatureTableOpen(true)}
+          featureCount={featureRows.length}
           busy={busy}
           activeLoaded={!!active}
           // Workflow chrome
@@ -2936,13 +3739,15 @@ export function LCMSView() {
           showUV={showUV}
           setShowUV={setShowUV}
           regionSelect={regionSelect}
-          setRegionSelect={setRegionSelect}
+          setRegionSelect={handleSetRegionSelect}
           overlayTicEnabled={overlayTicEnabled}
           setOverlayTicEnabled={setOverlayTicEnabled}
           overlayUvEnabled={overlayUvEnabled}
           setOverlayUvEnabled={setOverlayUvEnabled}
           overlaySpectrumEnabled={overlaySpectrumEnabled}
           setOverlaySpectrumEnabled={setOverlaySpectrumEnabled}
+          overlayEicEnabled={overlayEicEnabled}
+          setOverlayEicEnabled={setOverlayEicEnabled}
           overlaySessionIds={overlaySessionIds}
           setOverlaySessionIds={setOverlaySessionIds}
           sessions={projectSessions}
@@ -2991,6 +3796,10 @@ export function LCMSView() {
           polymerSettings={polymerSettings}
           setPolymerSettings={setPolymerSettings}
           onPolymerDialog={() => setPolymerDialogOpen(true)}
+          onExpectedProducts={() => setExpectedProductsOpen(true)}
+          onKendrick={() => setKendrickOpen(true)}
+          canOpenExpectedProducts={Boolean(spectrum && polarity !== "all" && polymerMonomerText(polymerSettings))}
+          canOpenKendrick={Boolean(spectrum)}
           onSavePolymerDefaults={savePolymerDefaults}
         />
       </div>
@@ -3023,6 +3832,8 @@ export function LCMSView() {
         <GraphSettingsDialog
           settings={graphSettings}
           onChange={setGraphSettings}
+          overlayEicEnabled={overlayEicEnabled}
+          setOverlayEicEnabled={setOverlayEicEnabled}
           onSetDefault={() => {
             saveGraphSettingsDefault(graphSettings);
             setInfo("Saved current graph settings as the default.");
@@ -3037,6 +3848,45 @@ export function LCMSView() {
           settings={polymerSettings}
           onChange={setPolymerSettings}
           onClose={() => setPolymerDialogOpen(false)}
+        />
+      )}
+      {expectedProductsOpen && polarity !== "all" && (
+        <ExpectedProductsDialog
+          polarity={polarity}
+          settings={polymerSettings}
+          spectrum={spectrum}
+          tic={tic}
+          activeSid={activeSid}
+          onCreateEic={(mz, tolerance, metadata) => void createEICForMz(mz, "expected", tolerance, metadata)}
+          onClose={() => setExpectedProductsOpen(false)}
+        />
+      )}
+      {kendrickOpen && (
+        <KendrickDialog
+          spectrum={spectrum}
+          settings={polymerSettings}
+          onCreateEic={(mz, tolerance) => void createEICForMz(mz, "spectrum", tolerance)}
+          onClose={() => setKendrickOpen(false)}
+        />
+      )}
+      {featureTableOpen && (
+        <FeatureTableDialog
+          rows={featureRows}
+          onDelete={(id) => setFeatureRows((prev) => prev.filter((row) => row.id !== id))}
+          onClear={() => setFeatureRows([])}
+          onClose={() => setFeatureTableOpen(false)}
+          onUpdate={(id, patch) =>
+            setFeatureRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)))
+          }
+          onLocate={(eicPlotId) => {
+            setFeatureTableOpen(false);
+            const el = eicPlotRefs.current[eicPlotId];
+            if (el) {
+              el.scrollIntoView({ behavior: "smooth", block: "center" });
+              setHighlightedEicPlotId(eicPlotId);
+              window.setTimeout(() => setHighlightedEicPlotId((curr) => (curr === eicPlotId ? null : curr)), 2200);
+            }
+          }}
         />
       )}
       {customUvLabelDraft && (
@@ -3751,6 +4601,8 @@ interface ToolsPanelProps {
   onExportUV: () => void;
   onExportTICOverlay: () => void;
   onSumRegionSpectrum: () => void;
+  onFeatureTable: () => void;
+  featureCount: number;
   busy: boolean;
   activeLoaded: boolean;
   // chrome
@@ -3801,6 +4653,8 @@ interface ToolsPanelProps {
   setOverlayUvEnabled: (v: boolean) => void;
   overlaySpectrumEnabled: boolean;
   setOverlaySpectrumEnabled: (v: boolean) => void;
+  overlayEicEnabled: boolean;
+  setOverlayEicEnabled: (v: boolean) => void;
   overlaySessionIds: string[];
   setOverlaySessionIds: (ids: string[]) => void;
   sessions: LCMSSessionSummary[];
@@ -3849,6 +4703,10 @@ interface ToolsPanelProps {
   polymerSettings: PolymerUiSettings;
   setPolymerSettings: (v: PolymerUiSettings) => void;
   onPolymerDialog: () => void;
+  onExpectedProducts: () => void;
+  onKendrick: () => void;
+  canOpenExpectedProducts: boolean;
+  canOpenKendrick: boolean;
   onSavePolymerDefaults: () => void;
 }
 
@@ -3886,6 +4744,8 @@ function ToolsPanel(p: ToolsPanelProps) {
             onExportUV={p.onExportUV}
             onExportTICOverlay={p.onExportTICOverlay}
             onSumRegionSpectrum={p.onSumRegionSpectrum}
+            onFeatureTable={p.onFeatureTable}
+            featureCount={p.featureCount}
             busy={p.busy}
             activeLoaded={p.activeLoaded}
             onCollapse={() => setCollapsed(true)}
@@ -3912,6 +4772,10 @@ function ToolsPanel(p: ToolsPanelProps) {
                 settings={p.polymerSettings}
                 onChange={p.setPolymerSettings}
                 onOpen={p.onPolymerDialog}
+                onExpectedProducts={p.onExpectedProducts}
+                onKendrick={p.onKendrick}
+                canOpenExpectedProducts={p.canOpenExpectedProducts}
+                canOpenKendrick={p.canOpenKendrick}
                 onSaveDefaults={p.onSavePolymerDefaults}
               />
             )}
@@ -3930,6 +4794,8 @@ function PrimaryActions({
   onExportUV,
   onExportTICOverlay,
   onSumRegionSpectrum,
+  onFeatureTable,
+  featureCount,
   busy,
   activeLoaded,
   onCollapse,
@@ -3941,6 +4807,8 @@ function PrimaryActions({
   onExportUV: () => void;
   onExportTICOverlay: () => void;
   onSumRegionSpectrum: () => void;
+  onFeatureTable: () => void;
+  featureCount: number;
   busy: boolean;
   activeLoaded: boolean;
   onCollapse?: () => void;
@@ -3981,6 +4849,13 @@ function PrimaryActions({
             onClick={onJumpMz}
           >
             Jump to m/z…
+          </button>
+          <button
+            className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+            disabled={!activeLoaded}
+            onClick={onFeatureTable}
+          >
+            Feature table{featureCount > 0 ? ` (${featureCount})` : ""}...
           </button>
           <button
             className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
@@ -4222,6 +5097,21 @@ function ViewTab(p: ToolsPanelProps) {
           checked={p.overlaySpectrumEnabled}
           onChange={p.setOverlaySpectrumEnabled}
         />
+        <Check
+          label="Overlay generated EICs"
+          checked={p.overlayEicEnabled}
+          onChange={p.setOverlayEicEnabled}
+        />
+        <div>
+          <button
+            type="button"
+            className="w-full rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+            disabled={p.overlaySessionIds.length === 0}
+            onClick={() => p.setOverlaySessionIds([])}
+          >
+            Clear TIC/UV selection
+          </button>
+        </div>
         <div className="max-h-28 overflow-auto rounded-md border border-ink-200 bg-surface p-2">
           {p.sessions.map((session) => (
             <label key={session.session_id} className="flex items-center gap-2 py-0.5 text-xs">
@@ -4514,12 +5404,20 @@ function PolymerTab({
   settings,
   onChange,
   onOpen,
+  onExpectedProducts,
+  onKendrick,
+  canOpenExpectedProducts,
+  canOpenKendrick,
   onSaveDefaults,
 }: {
   polarity: Polarity;
   settings: PolymerUiSettings;
   onChange: (settings: PolymerUiSettings) => void;
   onOpen: () => void;
+  onExpectedProducts: () => void;
+  onKendrick: () => void;
+  canOpenExpectedProducts: boolean;
+  canOpenKendrick: boolean;
   onSaveDefaults: () => void;
 }) {
   const disabled = polarity === "all";
@@ -4555,6 +5453,32 @@ function PolymerTab({
         <NavyButton className="mt-2 w-full" onClick={onOpen}>
           Polymer Match…
         </NavyButton>
+        <button
+          type="button"
+          className="w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+          onClick={onExpectedProducts}
+          disabled={!canOpenExpectedProducts}
+          title={
+            canOpenExpectedProducts
+              ? "Match expected monomer/dimer/trimer products against the current MS1 spectrum"
+              : "Select polarity, monomers, and load an MS1 spectrum first"
+          }
+        >
+          Expected Products...
+        </button>
+        <button
+          type="button"
+          className="w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+          onClick={onKendrick}
+          disabled={!canOpenKendrick}
+          title={
+            canOpenKendrick
+              ? "Open a Kendrick mass defect plot for the current MS1 spectrum"
+              : "Load an MS1 spectrum first"
+          }
+        >
+          Kendrick Plot...
+        </button>
         <button
           type="button"
           className="w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
@@ -4646,7 +5570,10 @@ function TICChart(props: {
   tic: TICData | null;
   overlayTraces: LCMSTICOverlayTrace[];
   onClick: (e: Readonly<PlotMouseEvent>) => void;
+  onRegionSelected?: (rtMin: number, rtMax: number) => void;
   selectedRt: number | null;
+  selectedRegion?: { rtMin: number; rtMax: number } | null;
+  selectedScanId?: string | null;
   rtUnit: RtUnit;
   regionSelect: boolean;
   settings: ChartSettings;
@@ -4657,6 +5584,8 @@ function TICChart(props: {
   usePlotResizePulses([
     props.regionSelect,
     props.selectedRt,
+    props.selectedRegion?.rtMin,
+    props.selectedRegion?.rtMax,
     props.settings.axis.xMax,
     props.settings.axis.xMin,
     props.settings.axis.yMax,
@@ -4694,31 +5623,86 @@ function TICChart(props: {
       })),
     [props.overlayTraces, props.settings.lineWidth, scale, unit],
   );
-  const shapes =
-    props.selectedRt != null
-      ? [
-          {
-            type: "line" as const,
-            xref: "x" as const,
-            yref: "paper" as const,
-            x0: props.selectedRt * scale,
-            x1: props.selectedRt * scale,
-            y0: 0,
-            y1: 1,
-            line: { color: "#5573b9", width: 1, dash: "dot" as const },
-          },
-        ]
-      : [];
+
+  const emitSelectedRtRegion = useCallback(
+    (x0: unknown, x1: unknown) => {
+      if (!props.onRegionSelected) return;
+      const start = Number(x0);
+      const end = Number(x1);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start === end) return;
+      const toMin = 1 / scale;
+      props.onRegionSelected(Math.min(start, end) * toMin, Math.max(start, end) * toMin);
+    },
+    [props.onRegionSelected, scale],
+  );
+
+  const handleSelected = (event: Readonly<PlotSelectionEvent>) => {
+    const xRange = event.range?.x;
+    if (xRange && xRange.length >= 2) {
+      emitSelectedRtRegion(xRange[0], xRange[1]);
+      return;
+    }
+    const pointXs = event.points
+      ?.map((point) => Number(point.x))
+      .filter((value) => Number.isFinite(value));
+    if (pointXs && pointXs.length >= 2) {
+      emitSelectedRtRegion(Math.min(...pointXs), Math.max(...pointXs));
+    }
+  };
+
+  const handleRelayout = (event: Readonly<Record<string, unknown>>) => {
+    if (!props.regionSelect) return;
+    const selections = event.selections;
+    const lastSelection =
+      Array.isArray(selections) && selections.length > 0
+        ? (selections[selections.length - 1] as Record<string, unknown>)
+        : null;
+    emitSelectedRtRegion(
+      lastSelection?.x0 ?? event["selections[0].x0"],
+      lastSelection?.x1 ?? event["selections[0].x1"],
+    );
+  };
+  const shapes: object[] = [];
+  if (props.selectedRt != null) {
+    shapes.push({
+      type: "line",
+      xref: "x",
+      yref: "paper",
+      x0: props.selectedRt * scale,
+      x1: props.selectedRt * scale,
+      y0: 0,
+      y1: 1,
+      line: { color: "#5573b9", width: 1, dash: "dot" },
+    });
+  }
+  if (props.regionSelect && props.selectedRegion != null) {
+    shapes.push({
+      type: "rect",
+      xref: "x",
+      yref: "paper",
+      x0: props.selectedRegion.rtMin * scale,
+      x1: props.selectedRegion.rtMax * scale,
+      y0: 0,
+      y1: 1,
+      fillcolor: "rgba(85,115,185,0.12)",
+      line: { color: "rgba(85,115,185,0.45)", width: 1 },
+    });
+  }
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       <div className="flex items-baseline justify-between px-1 pb-1">
         <h3 className="text-sm font-semibold">Total Ion Chromatogram</h3>
         <div className="flex items-center gap-2 text-xs text-ink-500">
-          {props.selectedRt != null && (
+          {props.regionSelect && props.selectedRegion != null ? (
             <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
-              Selected RT {formatRt(props.selectedRt, props.rtUnit)}
+              Region {formatRt(props.selectedRegion.rtMin, props.rtUnit)} - {formatRt(props.selectedRegion.rtMax, props.rtUnit)}
             </span>
-          )}
+          ) : props.selectedRt != null ? (
+            <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
+              RT {formatRt(props.selectedRt, props.rtUnit)}
+              {props.selectedScanId ? ` · Scan ${formatScanId(props.selectedScanId)}` : ""}
+            </span>
+          ) : null}
           <span>
             {props.regionSelect
               ? "Drag on the plot to select an RT region"
@@ -4740,7 +5724,7 @@ function TICChart(props: {
             revision={plotSize.revision}
             data={[
               {
-                type: "scattergl",
+                type: props.regionSelect ? "scatter" : "scattergl",
                 mode: "lines",
                 x: xs,
                 y: props.tic.tic,
@@ -4782,11 +5766,14 @@ function TICChart(props: {
               showlegend: overlayData.length > 0,
               shapes,
               dragmode: props.regionSelect ? "select" : "zoom",
+              selectdirection: props.regionSelect ? "h" : undefined,
             }}
             config={{ responsive: true, displaylogo: false }}
             style={{ width: "100%", height: "100%", minWidth: 0 }}
             useResizeHandler
-            onClick={props.onClick}
+            onClick={props.regionSelect ? undefined : props.onClick}
+            onSelected={handleSelected}
+            onRelayout={(event) => handleRelayout(event as Readonly<Record<string, unknown>>)}
             onInitialized={(_figure, graphDiv) => {
               plotRef.current = graphDiv as PlotlyHTMLElement;
               schedulePlotResize();
@@ -4803,12 +5790,15 @@ function TICChart(props: {
 }
 
 function EICChart(props: {
-  eic: LCMSEICData;
+  eics: LCMSEICPlot[];
   onClick: (e: Readonly<PlotMouseEvent>) => void;
   onClear: () => void;
+  onIntegrate: (plot: LCMSEICPlot) => void;
+  clearLabel?: string;
   selectedRt: number | null;
   rtUnit: RtUnit;
   settings: ChartSettings;
+  overlaySettings: EICOverlaySettings;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<PlotlyHTMLElement | null>(null);
@@ -4816,14 +5806,69 @@ function EICChart(props: {
   const pt = usePlotlyTheme();
   const scale = props.rtUnit === "seconds" ? 60 : 1;
   const unit = props.rtUnit === "seconds" ? "s" : "min";
-  const xs = props.eic.rt_min.map((v) => v * scale);
+  const isOverlay = props.eics.length > 1;
+  const eicRevisionKey = props.eics
+    .map((plot) => `${plot.id}:${plot.eic.rt_min.length}:${plot.eic.intensity.length}`)
+    .join("|");
+  const traces = useMemo(
+    () => {
+      const globalMax = props.eics.reduce(
+        (max, plot) => Math.max(max, maxFinite(plot.eic.intensity, 0)),
+        0,
+      );
+      const stackStep =
+        props.overlaySettings.normalize || globalMax <= 0
+          ? props.overlaySettings.stackGap
+          : (globalMax * props.overlaySettings.stackGap) / 100;
+      return props.eics.map((plot, index) => {
+        const localMax = maxFinite(plot.eic.intensity, 0);
+        const baseY =
+          props.overlaySettings.normalize && localMax > 0
+            ? plot.eic.intensity.map((value) => (value / localMax) * 100)
+            : plot.eic.intensity;
+        const stackOffset = isOverlay && props.overlaySettings.stack ? index * stackStep : 0;
+        const y = stackOffset === 0 ? baseY : baseY.map((value) => value + stackOffset);
+        return {
+        type: "scattergl" as const,
+        mode: "lines" as const,
+        x: plot.eic.rt_min.map((v) => v * scale),
+        y,
+        customdata: plot.eic.intensity,
+        opacity: isOverlay ? props.overlaySettings.opacity : 1,
+        line: {
+          color: isOverlay ? (pt.colorway[index % pt.colorway.length] ?? props.settings.color) : props.settings.color,
+          width: props.settings.lineWidth,
+        },
+        hovertemplate: `m/z ${plot.eic.target_mz.toFixed(4)}<br>RT: %{x:.3f} ${unit}<br>Intensity: %{customdata:.3e}<extra></extra>`,
+        name: `m/z ${plot.eic.target_mz.toFixed(4)}`,
+      };
+      });
+    },
+    [isOverlay, props.eics, props.overlaySettings, props.settings.lineWidth, pt.colorway, scale, unit],
+  );
+  const primary = props.eics[0]?.eic ?? null;
   usePlotResizePulses([
-    props.eic.rt_min.length,
-    props.eic.intensity.length,
+    eicRevisionKey,
+    props.eics.length,
+    props.overlaySettings.normalize,
+    props.overlaySettings.opacity,
+    props.overlaySettings.showLegend,
+    props.overlaySettings.stack,
+    props.overlaySettings.stackGap,
     props.selectedRt,
     props.rtUnit,
+    props.settings.axis.xMax,
+    props.settings.axis.xMin,
+    props.settings.axis.yMax,
+    props.settings.axis.yMin,
+    props.settings.color,
+    props.settings.height,
+    props.settings.lineWidth,
     props.settings.showGrid,
     props.settings.tickSize,
+    props.settings.title,
+    props.settings.xTitle,
+    props.settings.yTitle,
   ], plotRef);
   const shapes =
     props.selectedRt != null
@@ -4844,15 +5889,29 @@ function EICChart(props: {
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
         <h3 className="text-sm font-semibold">
-          EIC m/z {props.eic.target_mz.toFixed(4)} +/- {props.eic.tolerance.toFixed(4)}
+          {props.eics.length === 1 && primary
+            ? `EIC m/z ${primary.target_mz.toFixed(4)} +/- ${primary.tolerance.toFixed(4)}`
+            : `EIC overlay (${props.eics.length} traces)`}
         </h3>
         <div className="flex items-center gap-2 text-xs text-ink-500">
-          <span>{props.eic.n_scans} scans</span>
+          {primary && (
+            <span>
+              {props.eics.length === 1
+                ? `${primary.n_scans} scans`
+                : `${props.eics.length} EICs${props.overlaySettings.normalize ? ", normalized" : ""}${props.overlaySettings.stack ? ", stacked" : ""}`}
+            </span>
+          )}
+          <button
+            className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
+            onClick={() => props.eics.forEach((plot) => props.onIntegrate(plot))}
+          >
+            {props.eics.length > 1 ? "Integrate all" : "Integrate"}
+          </button>
           <button
             className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
             onClick={props.onClear}
           >
-            Clear
+            {props.clearLabel ?? "Clear"}
           </button>
         </div>
       </div>
@@ -4863,34 +5922,32 @@ function EICChart(props: {
       >
         <Plot
           revision={plotSize.revision}
-          data={[
-            {
-              type: "scattergl",
-              mode: "lines",
-              x: xs,
-              y: props.eic.intensity,
-              line: { color: "#7c3aed", width: props.settings.lineWidth },
-              hovertemplate: `RT: %{x:.3f} ${unit}<br>Intensity: %{y:.3e}<extra></extra>`,
-              name: "EIC",
-            },
-          ]}
+          data={traces}
           layout={{
             height: plotSize.height,
             width: plotSize.width,
             margin: { l: 60, r: 20, t: 10, b: 40 },
+            title: props.settings.title
+              ? { text: props.settings.title, font: { size: props.settings.titleSize } }
+              : undefined,
             font: { size: props.settings.tickSize },
             xaxis: {
-              title: axisTitle(`RT (${unit})`, props.settings.axisTitleSize),
+              title: axisTitle(`${props.settings.xTitle} (${unit})`, props.settings.axisTitleSize),
               zeroline: false,
               showgrid: props.settings.showGrid,
+              range: axisRange(props.settings.axis.xMin, props.settings.axis.xMax),
               tickfont: { size: props.settings.tickSize },
               ...axisFrame(props.settings),
             },
             yaxis: {
-              title: axisTitle("EIC intensity", props.settings.axisTitleSize),
+              title: axisTitle(
+                props.overlaySettings.normalize ? "Normalized EIC (%)" : props.settings.yTitle,
+                props.settings.axisTitleSize,
+              ),
               zeroline: false,
               exponentformat: "e",
               showgrid: props.settings.showGrid,
+              range: axisRange(props.settings.axis.yMin, props.settings.axis.yMax),
               tickfont: { size: props.settings.tickSize },
               ...axisFrame(props.settings),
             },
@@ -4898,7 +5955,7 @@ function EICChart(props: {
             colorway: pt.colorway,
             plot_bgcolor: pt.plot_bgcolor,
             paper_bgcolor: pt.paper_bgcolor,
-            showlegend: false,
+            showlegend: isOverlay && props.overlaySettings.showLegend,
             shapes,
           }}
           config={{ responsive: true, displaylogo: false }}
@@ -4924,6 +5981,7 @@ function UVChromatogramChart(props: {
   busy: boolean;
   xOffset: number;
   selectedUvRt: number | null;
+  selectedScanId?: string | null;
   labels: UVTextLabel[];
   rtUnit: RtUnit;
   onPickFile: () => void;
@@ -5200,6 +6258,7 @@ function UVChromatogramChart(props: {
           {selectedUvRt != null && (
             <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
               UV RT {formatRt(selectedUvRt, rtUnit)}
+              {props.selectedScanId ? ` · Scan ${formatScanId(props.selectedScanId)}` : ""}
             </span>
           )}
           {available && (
@@ -5412,6 +6471,7 @@ function SpectrumChart(props: {
   rtUnit: RtUnit;
   settings: ChartSettings;
   polymerEnabled: boolean;
+  onPeakClick?: (mz: number) => void;
 }) {
   const s = props.spectrum;
   const specContainerRef = useRef<HTMLDivElement>(null);
@@ -5451,6 +6511,12 @@ function SpectrumChart(props: {
   const visibleLabels = s
     ? s.labels.filter((label) => props.settings.labels.enabled || label.source === "polymer")
     : [];
+  const handleSpectrumClick = (event: Readonly<PlotMouseEvent>) => {
+    const point = event.points?.[0];
+    const mz = Number(point?.x);
+    if (!Number.isFinite(mz) || !props.onPeakClick) return;
+    props.onPeakClick(mz);
+  };
   const overlayData = useMemo(
     () =>
       props.overlayTraces.map((trace, index) => ({
@@ -5495,11 +6561,15 @@ function SpectrumChart(props: {
         <h3 className="text-sm font-semibold">MS1 Spectrum</h3>
         {(s || props.selectedRt != null) && (
           <div className="flex items-center gap-2 text-xs text-ink-500">
-            {props.selectedRt != null && (
+            {s?.meta.rt_start != null && s.meta.rt_end != null ? (
+              <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
+                Region {formatRt(s.meta.rt_start, props.rtUnit)} - {formatRt(s.meta.rt_end, props.rtUnit)}
+              </span>
+            ) : props.selectedRt != null ? (
               <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
                 Selected RT {formatRt(props.selectedRt, props.rtUnit)}
               </span>
-            )}
+            ) : null}
             {s && (
               <span>
                 {s.meta.polarity ?? "unk"} · {s.meta.n_peaks.toLocaleString()} peaks
@@ -5509,6 +6579,13 @@ function SpectrumChart(props: {
                 {props.showDragHint && s.labels.length > 0
                   ? " · drag labels to reposition"
                   : ""}
+              </span>
+            )}
+            {s && props.onPeakClick ? <span>Click a peak to create an EIC</span> : null}
+            {s?.meta.n_scans != null && (
+              <span>
+                {s.meta.n_scans.toLocaleString()} scans, {s.meta.merge_mode ?? "sum"} merge
+                {s.meta.bin_width != null ? `, ${s.meta.bin_width} m/z bins` : ""}
               </span>
             )}
           </div>
@@ -5614,6 +6691,7 @@ function SpectrumChart(props: {
             }}
             style={{ width: "100%", height: "100%", minWidth: 0 }}
             useResizeHandler
+            onClick={handleSpectrumClick}
             onInitialized={(_figure, graphDiv) => {
               specPlotRef.current = graphDiv as PlotlyHTMLElement;
               queuePlotlyElementResize(specPlotRef.current);
@@ -5928,15 +7006,910 @@ function EICDialog({
   );
 }
 
+type FeatureSortKey = "rtApex" | "mz" | "height" | "area" | "sn";
+type FeatureSortDir = "asc" | "desc";
+
+function FeatureTableDialog({
+  rows,
+  onDelete,
+  onClear,
+  onClose,
+  onUpdate,
+  onLocate,
+}: {
+  rows: LCMSFeatureRow[];
+  onDelete: (id: string) => void;
+  onClear: () => void;
+  onClose: () => void;
+  onUpdate: (id: string, patch: Partial<LCMSFeatureRow>) => void;
+  onLocate: (eicPlotId: string) => void;
+}) {
+  const [sortKey, setSortKey] = useState<FeatureSortKey>("rtApex");
+  const [sortDir, setSortDir] = useState<FeatureSortDir>("asc");
+  const snFor = (row: LCMSFeatureRow): number => (row.baseline > 0 ? row.height / row.baseline : Infinity);
+  const sortedRows = useMemo(() => {
+    const factor = sortDir === "asc" ? 1 : -1;
+    const getter: (r: LCMSFeatureRow) => number =
+      sortKey === "rtApex"
+        ? (r) => r.rtApex
+        : sortKey === "mz"
+          ? (r) => r.mz
+          : sortKey === "height"
+            ? (r) => r.height
+            : sortKey === "area"
+              ? (r) => r.area
+              : snFor;
+    return [...rows].sort((a, b) => {
+      const va = getter(a);
+      const vb = getter(b);
+      if (!Number.isFinite(va) && !Number.isFinite(vb)) return 0;
+      if (!Number.isFinite(va)) return 1;
+      if (!Number.isFinite(vb)) return -1;
+      return (va - vb) * factor;
+    });
+  }, [rows, sortKey, sortDir]);
+  const toggleSort = (key: FeatureSortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir(key === "rtApex" || key === "mz" ? "asc" : "desc");
+    }
+  };
+  const sortIndicator = (key: FeatureSortKey) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
+
+  const exportCsv = () => {
+    const header = [
+      "FeatureID",
+      "SourceFile",
+      "mz",
+      "ToleranceDa",
+      "Polarity",
+      "RTApexMin",
+      "RTStartMin",
+      "RTEndMin",
+      "Height",
+      "Area",
+      "Baseline",
+      "SN",
+      "NPoints",
+      "Source",
+      "Label",
+      "ExpectedProduct",
+      "Annotation",
+      "CreatedAt",
+    ];
+    const esc = (value: string | number | null | undefined) => {
+      if (value == null) return "";
+      const text = String(value);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const csv = [
+      header.join(","),
+      ...sortedRows.map((row) => {
+        const sn = snFor(row);
+        return [
+          row.id,
+          row.sourceFile,
+          row.mz.toFixed(6),
+          row.tolerance.toFixed(6),
+          row.polarity,
+          row.rtApex.toFixed(5),
+          row.rtStart.toFixed(5),
+          row.rtEnd.toFixed(5),
+          row.height.toExponential(6),
+          row.area.toExponential(6),
+          row.baseline.toExponential(6),
+          Number.isFinite(sn) ? sn.toFixed(2) : "",
+          row.nPoints,
+          row.source,
+          row.label,
+          row.expectedProduct,
+          row.annotation,
+          row.createdAt,
+        ].map(esc).join(",");
+      }),
+    ].join("\n");
+    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), "lcms_feature_table.csv");
+  };
+
+  return (
+    <Modal
+      title="Feature Table"
+      onClose={onClose}
+      width="max-w-6xl"
+      footer={
+        <div className="flex w-full items-center justify-between gap-2">
+          <button
+            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+            disabled={rows.length === 0}
+            onClick={onClear}
+          >
+            Clear table
+          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+              disabled={rows.length === 0}
+              onClick={exportCsv}
+            >
+              Export CSV
+            </button>
+            <button className="btn-primary" onClick={onClose}>Done</button>
+          </div>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4 text-sm">
+        <div className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2 text-xs text-ink-600">
+          Integrate generated EICs to add rows here. Area is baseline-corrected trapezoid integration around the strongest EIC apex.
+        </div>
+        {rows.length === 0 ? (
+          <div className="rounded-md border border-dashed border-ink-200 p-6 text-center text-sm text-ink-500">
+            No features yet. Generate an EIC, then press Integrate on the EIC plot.
+          </div>
+        ) : (
+          <div className="max-h-[560px] overflow-auto rounded-md border border-ink-200">
+            <table className="min-w-full divide-y divide-ink-200 text-xs">
+              <thead className="sticky top-0 bg-ink-50 text-left text-ink-600">
+                <tr>
+                  <th className="px-2 py-2 font-medium">Feature</th>
+                  <th className="cursor-pointer select-none px-2 py-2 font-medium hover:text-ink-900" onClick={() => toggleSort("mz")}>
+                    m/z{sortIndicator("mz")}
+                  </th>
+                  <th className="cursor-pointer select-none px-2 py-2 font-medium hover:text-ink-900" onClick={() => toggleSort("rtApex")}>
+                    RT apex{sortIndicator("rtApex")}
+                  </th>
+                  <th className="px-2 py-2 font-medium">RT window</th>
+                  <th className="cursor-pointer select-none px-2 py-2 font-medium hover:text-ink-900" onClick={() => toggleSort("height")}>
+                    Height{sortIndicator("height")}
+                  </th>
+                  <th className="cursor-pointer select-none px-2 py-2 font-medium hover:text-ink-900" onClick={() => toggleSort("area")}>
+                    Area{sortIndicator("area")}
+                  </th>
+                  <th className="px-2 py-2 font-medium">Baseline</th>
+                  <th className="cursor-pointer select-none px-2 py-2 font-medium hover:text-ink-900" onClick={() => toggleSort("sn")}>
+                    S/N{sortIndicator("sn")}
+                  </th>
+                  <th className="px-2 py-2 font-medium">Evidence</th>
+                  <th className="px-2 py-2 font-medium">Source</th>
+                  <th className="px-2 py-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-100 bg-surface">
+                {sortedRows.map((row, index) => {
+                  const sn = snFor(row);
+                  return (
+                    <tr key={row.id}>
+                      <td className="max-w-[240px] px-2 py-1.5">
+                        <div className="font-medium text-ink-800">F{index + 1}</div>
+                        <input
+                          type="text"
+                          className="mt-0.5 w-full rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-[11px] text-ink-700 focus:border-brand-500 focus:outline-none"
+                          placeholder="Label…"
+                          value={row.label ?? ""}
+                          onChange={(e) => onUpdate(row.id, { label: e.target.value || undefined })}
+                        />
+                      </td>
+                      <td className="px-2 py-1.5 font-mono">
+                        {row.mz.toFixed(4)}
+                        <div className="text-[11px] text-ink-400">+/- {row.tolerance.toFixed(4)}</div>
+                      </td>
+                      <td className="px-2 py-1.5 font-mono">{row.rtApex.toFixed(3)}</td>
+                      <td className="px-2 py-1.5 font-mono">
+                        {row.rtStart.toFixed(3)}-{row.rtEnd.toFixed(3)}
+                      </td>
+                      <td className="px-2 py-1.5 font-mono">{row.height.toExponential(2)}</td>
+                      <td className="px-2 py-1.5 font-mono">{row.area.toExponential(2)}</td>
+                      <td className="px-2 py-1.5 font-mono">{row.baseline.toExponential(2)}</td>
+                      <td className="px-2 py-1.5 font-mono">{Number.isFinite(sn) ? sn.toFixed(1) : "—"}</td>
+                      <td className="max-w-[240px] px-2 py-1.5">
+                        <div className="truncate">{row.expectedProduct || row.source}</div>
+                        <input
+                          type="text"
+                          className="mt-0.5 w-full rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-[11px] text-ink-700 focus:border-brand-500 focus:outline-none"
+                          placeholder="Annotation…"
+                          value={row.annotation ?? ""}
+                          onChange={(e) => onUpdate(row.id, { annotation: e.target.value || undefined })}
+                        />
+                      </td>
+                      <td className="max-w-[180px] px-2 py-1.5">
+                        <div className="truncate">{row.sourceFile}</div>
+                        <div className="text-[11px] text-ink-500">{row.polarity ?? "unknown"}</div>
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <div className="flex flex-col items-end gap-1">
+                          <button
+                            className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-50"
+                            onClick={() => onLocate(row.eicPlotId)}
+                            title="Scroll to and highlight this row's EIC plot"
+                          >
+                            Open EIC
+                          </button>
+                          <button
+                            className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-50"
+                            onClick={() => onDelete(row.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+interface KendrickPersistedSettings {
+  repeatSource: string;
+  customMass: number;
+  minRelIntensity: number;
+  toleranceValue: number;
+  toleranceUnit: "kmd" | "ppm";
+  minSeriesPoints: number;
+  xMode: "mz" | "knm";
+  labelSeries: boolean;
+}
+
+function loadKendrickSettings(): Partial<KendrickPersistedSettings> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(KENDRICK_SETTINGS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<KendrickPersistedSettings>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function KendrickDialog({
+  spectrum,
+  settings,
+  onCreateEic,
+  onClose,
+}: {
+  spectrum: SpectrumData | null;
+  settings: PolymerUiSettings;
+  onCreateEic: (mz: number, tolerance: number, metadata?: Partial<LCMSEICMetadata>) => void;
+  onClose: () => void;
+}) {
+  const monomers = useMemo(() => parseExpectedProductMonomers(polymerMonomerText(settings)), [settings]);
+  const firstMass = monomers[0]?.mass ?? 100;
+  const stored = useMemo(loadKendrickSettings, []);
+  const [repeatSource, setRepeatSource] = useState(stored.repeatSource ?? (monomers[0] ? "0" : "custom"));
+  const [customMass, setCustomMass] = useState(stored.customMass ?? firstMass);
+  const [minRelIntensity, setMinRelIntensity] = useState(stored.minRelIntensity ?? 1);
+  const [toleranceUnit, setToleranceUnit] = useState<"kmd" | "ppm">(stored.toleranceUnit ?? "kmd");
+  const [toleranceValue, setToleranceValue] = useState(
+    stored.toleranceValue ?? (stored.toleranceUnit === "ppm" ? 20 : 0.01),
+  );
+  const [minSeriesPoints, setMinSeriesPoints] = useState(stored.minSeriesPoints ?? 3);
+  const [xMode, setXMode] = useState<"mz" | "knm">(stored.xMode ?? "mz");
+  const [labelSeries, setLabelSeries] = useState(stored.labelSeries ?? true);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const payload: KendrickPersistedSettings = {
+        repeatSource,
+        customMass,
+        minRelIntensity,
+        toleranceValue,
+        toleranceUnit,
+        minSeriesPoints,
+        xMode,
+        labelSeries,
+      };
+      window.localStorage.setItem(KENDRICK_SETTINGS_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      /* ignore (private mode / SSR) */
+    }
+  }, [repeatSource, customMass, minRelIntensity, toleranceValue, toleranceUnit, minSeriesPoints, xMode, labelSeries]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const plotRef = useRef<PlotlyHTMLElement | null>(null);
+  const plotSize = useContainerSize(containerRef, 460);
+  const pt = usePlotlyTheme();
+
+  const selectedMonomer = repeatSource === "custom" ? null : monomers[Number(repeatSource)] ?? null;
+  const repeatMass = selectedMonomer?.mass ?? customMass;
+  const nominalRepeatMass = Number.isFinite(repeatMass) && repeatMass > 0 ? Math.round(repeatMass) : null;
+  const result = useMemo(
+    () =>
+      spectrum
+        ? buildKendrickPoints(
+            spectrum,
+            repeatMass,
+            minRelIntensity,
+            toleranceValue,
+            toleranceUnit,
+            Math.max(2, Math.round(minSeriesPoints)),
+          )
+        : { points: [], series: [], truncated: false },
+    [minRelIntensity, minSeriesPoints, repeatMass, spectrum, toleranceUnit, toleranceValue],
+  );
+  const pointsBySeries = useMemo(() => {
+    const map = new Map<number, KendrickPoint[]>();
+    for (const point of result.points) {
+      if (point.seriesId == null) continue;
+      const list = map.get(point.seriesId);
+      if (list) list.push(point);
+      else map.set(point.seriesId, [point]);
+    }
+    return map;
+  }, [result.points]);
+  const handleCreateSeriesEic = useCallback(
+    (seriesId: number) => {
+      const list = pointsBySeries.get(seriesId);
+      if (!list || list.length === 0) return;
+      const top = [...list].sort((a, b) => b.intensity - a.intensity).slice(0, 5);
+      for (const point of top) onCreateEic(point.mz, 0.02);
+    },
+    [onCreateEic, pointsBySeries],
+  );
+  const labelIds = useMemo(
+    () =>
+      new Set(
+        result.points
+          .filter((point) => point.seriesId != null)
+          .sort((a, b) => b.intensity - a.intensity)
+          .slice(0, 80)
+          .map((point) => point.id),
+      ),
+    [result.points],
+  );
+  usePlotResizePulses([
+    labelSeries,
+    minRelIntensity,
+    minSeriesPoints,
+    repeatMass,
+    result.points.length,
+    result.series.length,
+    toleranceUnit,
+    toleranceValue,
+    xMode,
+  ], plotRef);
+
+  const xValues = result.points.map((point) => (xMode === "knm" ? point.kendrickNominalMass : point.mz));
+  const markerColors = result.points.map((point) =>
+    point.seriesId == null
+      ? "rgba(70,83,106,0.45)"
+      : pt.colorway[(point.seriesId - 1) % pt.colorway.length] ?? "#3559A8",
+  );
+  const markerSizes = result.points.map((point) => Math.min(18, 5 + Math.sqrt(point.relIntensity) * 1.4));
+  const markerText = result.points.map((point) =>
+    labelSeries && point.seriesId != null && labelIds.has(point.id)
+      ? `S${point.seriesId} ${point.mz.toFixed(1)}`
+      : "",
+  );
+  const shapes = result.series.map((series) => ({
+    type: "line" as const,
+    xref: "paper" as const,
+    x0: 0,
+    x1: 1,
+    y0: series.center,
+    y1: series.center,
+    line: {
+      color: pt.colorway[(series.id - 1) % pt.colorway.length] ?? "#3559A8",
+      width: 1,
+      dash: "dot" as const,
+    },
+  }));
+
+  return (
+    <Modal
+      title="Kendrick Mass Defect"
+      onClose={onClose}
+      width="max-w-6xl"
+      footer={<button className="btn-primary" onClick={onClose}>Done</button>}
+    >
+      <div className="flex flex-col gap-4 text-sm">
+        <div className="grid grid-cols-6 gap-3">
+          <SelectSetting
+            label="Repeat unit"
+            value={repeatSource}
+            options={[
+              ...monomers.map((monomer, index) => ({
+                value: String(index),
+                label: `${monomer.name} (${monomer.mass.toFixed(4)})`,
+              })),
+              { value: "custom", label: "Custom mass" },
+            ]}
+            onChange={setRepeatSource}
+          />
+          <NumberSetting
+            label="Custom mass"
+            value={customMass}
+            min={0.0001}
+            step={0.0001}
+            onChange={(value) => setCustomMass(Math.max(0.0001, value ?? firstMass))}
+          />
+          <NumberSetting
+            label="Min intensity (%)"
+            value={minRelIntensity}
+            min={0}
+            max={100}
+            step={0.1}
+            onChange={(value) => setMinRelIntensity(Math.max(0, Math.min(100, value ?? 1)))}
+          />
+          <NumberSetting
+            label={toleranceUnit === "ppm" ? "Tolerance (ppm)" : "KMD tolerance"}
+            value={toleranceValue}
+            min={toleranceUnit === "ppm" ? 0.1 : 0.0001}
+            max={toleranceUnit === "ppm" ? 200 : 0.5}
+            step={toleranceUnit === "ppm" ? 0.5 : 0.001}
+            onChange={(value) =>
+              setToleranceValue(
+                Math.max(toleranceUnit === "ppm" ? 0.1 : 0.0001, value ?? (toleranceUnit === "ppm" ? 20 : 0.01)),
+              )
+            }
+          />
+          <SelectSetting
+            label="Tolerance unit"
+            value={toleranceUnit}
+            options={[
+              { value: "kmd", label: "Absolute KMD" },
+              { value: "ppm", label: "ppm of m/z" },
+            ]}
+            onChange={(value) => {
+              const next = value as "kmd" | "ppm";
+              setToleranceUnit(next);
+              setToleranceValue(next === "ppm" ? 20 : 0.01);
+            }}
+          />
+          <NumberSetting
+            label="Min line points"
+            value={minSeriesPoints}
+            min={2}
+            max={20}
+            step={1}
+            onChange={(value) => setMinSeriesPoints(Math.max(2, Math.round(value ?? 3)))}
+          />
+          <SelectSetting
+            label="X axis"
+            value={xMode}
+            options={[
+              { value: "mz", label: "m/z" },
+              { value: "knm", label: "Kendrick nominal" },
+            ]}
+            onChange={(value) => setXMode(value as "mz" | "knm")}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500">
+          <div title="Nominal repeat mass = round(repeat mass). Custom values like 14.5 round up to 15 and silently shift the KMD scale.">
+            Repeat {repeatMass.toFixed(6)} Da
+            {nominalRepeatMass != null ? `, nominal ${nominalRepeatMass}` : ""}
+            {spectrum ? `, ${result.points.length.toLocaleString()} plotted peaks` : ""}
+            {result.truncated ? `, capped at ${KENDRICK_POINT_LIMIT.toLocaleString()}` : ""}
+          </div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={labelSeries}
+              onChange={(event) => setLabelSeries(event.target.checked)}
+            />
+            Label series points
+          </label>
+        </div>
+        {!spectrum ? (
+          <div className="rounded-md border border-dashed border-ink-200 p-6 text-center text-sm text-ink-500">
+            Load an MS1 spectrum first.
+          </div>
+        ) : result.points.length === 0 ? (
+          <div className="rounded-md border border-dashed border-ink-200 p-6 text-center text-sm text-ink-500">
+            No peaks passed the current Kendrick filters.
+          </div>
+        ) : (
+          <div className="grid h-[520px] grid-cols-[minmax(0,1fr)_240px] gap-4">
+            <div ref={containerRef} className="h-full min-w-0 overflow-hidden rounded-md border border-ink-200">
+              <Plot
+                revision={plotSize.revision}
+                data={[
+                  {
+                    type: "scattergl",
+                    mode: labelSeries ? "text+markers" : "markers",
+                    x: xValues,
+                    y: result.points.map((point) => point.kmd),
+                    text: markerText,
+                    textposition: "top center",
+                    textfont: { size: 10, color: "#46536a" },
+                    marker: {
+                      color: markerColors,
+                      size: markerSizes,
+                      opacity: 0.82,
+                      line: { color: "rgba(30,38,54,0.25)", width: 0.5 },
+                    },
+                    customdata: result.points.map((point) => [
+                      point.mz,
+                      point.intensity,
+                      point.relIntensity,
+                      point.kendrickMass,
+                      point.kendrickNominalMass,
+                      point.seriesId ?? "",
+                    ]),
+                    hovertemplate:
+                      "m/z: %{customdata[0]:.4f}<br>Intensity: %{customdata[1]:.3e}<br>Relative: %{customdata[2]:.1f}%<br>Kendrick mass: %{customdata[3]:.4f}<br>Kendrick nominal: %{customdata[4]}<br>KMD: %{y:.5f}<br>Series: %{customdata[5]}<extra></extra>",
+                    name: "KMD",
+                  },
+                ]}
+                layout={{
+                  height: plotSize.height,
+                  width: plotSize.width,
+                  margin: { l: 64, r: 20, t: 20, b: 48 },
+                  font: { size: 12 },
+                  xaxis: {
+                    title: axisTitle(xMode === "knm" ? "Kendrick nominal mass" : "m/z", 13),
+                    zeroline: false,
+                    showgrid: true,
+                  },
+                  yaxis: {
+                    title: axisTitle("Kendrick mass defect", 13),
+                    zeroline: false,
+                    showgrid: true,
+                  },
+                  shapes,
+                  colorway: pt.colorway,
+                  plot_bgcolor: pt.plot_bgcolor,
+                  paper_bgcolor: pt.paper_bgcolor,
+                  showlegend: false,
+                  dragmode: "zoom",
+                }}
+                config={{ responsive: true, displaylogo: false }}
+                style={{ width: "100%", height: "100%", minWidth: 0 }}
+                useResizeHandler
+                onInitialized={(_figure, graphDiv) => {
+                  plotRef.current = graphDiv as PlotlyHTMLElement;
+                  queuePlotlyElementResize(plotRef.current);
+                }}
+                onUpdate={(_figure, graphDiv) => {
+                  plotRef.current = graphDiv as PlotlyHTMLElement;
+                }}
+              />
+            </div>
+            <div className="flex min-w-0 flex-col gap-2">
+              <div className="label">Detected lines</div>
+              <div className="max-h-[460px] overflow-auto rounded-md border border-ink-200">
+                <table className="min-w-full divide-y divide-ink-200 text-xs">
+                  <thead className="sticky top-0 bg-ink-50 text-left text-ink-600">
+                    <tr>
+                      <th className="px-2 py-2 font-medium">Line</th>
+                      <th className="px-2 py-2 font-medium">KMD</th>
+                      <th className="px-2 py-2 font-medium">Peaks</th>
+                      <th className="px-2 py-2 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100 bg-surface">
+                    {result.series.length === 0 ? (
+                      <tr>
+                        <td className="px-2 py-3 text-ink-500" colSpan={4}>
+                          No repeated KMD lines at this tolerance.
+                        </td>
+                      </tr>
+                    ) : (
+                      result.series.map((series) => (
+                        <tr key={series.id}>
+                          <td className="px-2 py-1.5 font-medium" style={{ color: pt.colorway[(series.id - 1) % pt.colorway.length] }}>
+                            S{series.id}
+                          </td>
+                          <td className="px-2 py-1.5 font-mono">{series.center.toFixed(5)}</td>
+                          <td className="px-2 py-1.5">{series.count}</td>
+                          <td className="px-2 py-1.5">
+                            <button
+                              type="button"
+                              className="rounded border border-ink-200 px-2 py-0.5 text-[11px] text-ink-700 hover:bg-ink-100"
+                              onClick={() => handleCreateSeriesEic(series.id)}
+                              title="Create EICs for the top 5 most-intense peaks in this series"
+                            >
+                              EIC
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function ExpectedProductsDialog({
+  polarity,
+  settings,
+  spectrum,
+  tic,
+  activeSid,
+  onCreateEic,
+  onClose,
+}: {
+  polarity: Exclude<Polarity, "all">;
+  settings: PolymerUiSettings;
+  spectrum: SpectrumData | null;
+  tic: TICData | null;
+  activeSid: string | null;
+  onCreateEic: (mz: number, tolerance: number, metadata?: Partial<LCMSEICMetadata>) => void;
+  onClose: () => void;
+}) {
+  const [maxDp, setMaxDp] = useState(3);
+  const [resolutionMode, setResolutionMode] = useState<ExpectedProductResolutionMode>("normal");
+  const [lowResolutionTolerance, setLowResolutionTolerance] = useState(0.15);
+  const [showUnmatched, setShowUnmatched] = useState(false);
+  const [allScansThresholdPct, setAllScansThresholdPct] = useState(5);
+  const [exportingAllScans, setExportingAllScans] = useState(false);
+  const VISIBLE_ROW_CAP = 300;
+  const spectrumIndex = useMemo(() => (spectrum ? buildSpectrumIndex(spectrum) : null), [spectrum]);
+  const rows = useMemo(
+    () =>
+      spectrumIndex
+        ? buildExpectedProductHits(
+            settings,
+            polarity,
+            spectrumIndex,
+            maxDp,
+            resolutionMode,
+            lowResolutionTolerance,
+          )
+        : [],
+    [lowResolutionTolerance, maxDp, polarity, resolutionMode, settings, spectrumIndex],
+  );
+  const filteredRows = showUnmatched ? rows : rows.filter((row) => row.observedMz != null);
+  const visibleRows = filteredRows.slice(0, VISIBLE_ROW_CAP);
+  const truncated = filteredRows.length > VISIBLE_ROW_CAP;
+  const matchedCount = rows.filter((row) => row.observedMz != null).length;
+
+  const CSV_HEADER = ["RT_min", "Scan", "Composition", "Variant", "Ion", "ExpectedMz", "ObservedMz", "AbsErrDa", "PpmErr", "Intensity", "ToleranceDa"];
+  const esc = (v: string | number | null) => {
+    if (v == null) return "";
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const rowToCsvCells = (r: ExpectedProductHit, rt: number, scanId: string) =>
+    [rt.toFixed(4), scanId, r.composition, r.variant, r.ion,
+      r.expectedMz.toFixed(6), r.observedMz?.toFixed(6) ?? "",
+      r.absErr?.toFixed(6) ?? "", r.ppmErr?.toFixed(2) ?? "",
+      r.intensity?.toExponential(4) ?? "", r.toleranceDa.toFixed(6),
+    ].map(esc).join(",");
+
+  const downloadCsv = () => {
+    if (!spectrum) return;
+    const rt = spectrum.meta.rt_min;
+    const scanId = spectrum.meta.spectrum_id.startsWith("summed:")
+      ? `summed:${rt.toFixed(3)}`
+      : formatScanId(spectrum.meta.spectrum_id);
+    const csv = [CSV_HEADER.join(",")]
+      .concat(rows.map((r) => rowToCsvCells(r, rt, scanId)))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `expected_products_rt${rt.toFixed(3)}_dp${maxDp}_${polarity}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadAllScansCsv = async () => {
+    if (!activeSid || !tic || tic.rt_min.length === 0) return;
+    const maxTic = Math.max(...tic.tic);
+    const threshold = maxTic * (allScansThresholdPct / 100);
+    const rtsAboveThreshold = tic.rt_min.filter((_, i) => tic.tic[i] >= threshold);
+    if (rtsAboveThreshold.length === 0) return;
+    setExportingAllScans(true);
+    const allRows: string[] = [CSV_HEADER.join(",")];
+    try {
+      for (const rt of rtsAboveThreshold) {
+        const sp = await api.lcms.spectrum(activeSid, {
+          rt_min: rt,
+          polarity: polarity === "positive" ? "positive" : "negative",
+          top_n: 0,
+          min_rel: 0,
+        });
+        const idx = buildSpectrumIndex(sp);
+        const hits = buildExpectedProductHits(settings, polarity, idx, maxDp, resolutionMode, lowResolutionTolerance);
+        const matched = hits.filter((r) => r.observedMz != null);
+        const scanId = sp.meta.spectrum_id.startsWith("summed:")
+          ? `summed:${rt.toFixed(3)}`
+          : formatScanId(sp.meta.spectrum_id);
+        for (const r of matched) {
+          allRows.push(rowToCsvCells(r, rt, scanId));
+        }
+      }
+      const csv = allRows.join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `expected_products_all_scans_dp${maxDp}_${polarity}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingAllScans(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Expected Products"
+      onClose={onClose}
+      footer={<button className="btn-primary" onClick={onClose}>Done</button>}
+    >
+      <div className="flex flex-col gap-4 text-sm">
+        <div className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2 text-xs text-ink-600">
+          Matching expected oligomer products against the currently displayed MS1 spectrum.
+        </div>
+        <div className="grid grid-cols-4 gap-3">
+          <NumberSetting
+            label="Max oligomer size"
+            value={maxDp}
+            min={1}
+            max={EXPECTED_PRODUCT_MAX_DP}
+            step={1}
+            onChange={(value) =>
+              setMaxDp(Math.max(1, Math.min(EXPECTED_PRODUCT_MAX_DP, Math.round(value ?? 3))))
+            }
+          />
+          <SelectSetting
+            label="Resolution mode"
+            value={resolutionMode}
+            options={[
+              { value: "normal", label: "Normal tolerance" },
+              { value: "low", label: "Low resolution" },
+            ]}
+            onChange={(value) => setResolutionMode(value as ExpectedProductResolutionMode)}
+          />
+          <div title="Floor for matching in low-res mode. Configured ppm/Da is still used if wider.">
+            <NumberSetting
+              label="Low-res tolerance (Da)"
+              value={lowResolutionTolerance}
+              min={0.01}
+              max={2}
+              step={0.01}
+              onChange={(value) => setLowResolutionTolerance(Math.max(0.01, value ?? 0.15))}
+            />
+          </div>
+          <label className="flex items-end gap-2 pb-2 text-xs text-ink-600">
+            <input
+              type="checkbox"
+              checked={showUnmatched}
+              onChange={(event) => setShowUnmatched(event.target.checked)}
+            />
+            Show unmatched candidates
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500">
+          <div className="self-end pb-2 text-xs text-ink-500">
+            {matchedCount} matched / {rows.length} candidates
+            {truncated && (
+              <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-amber-800">
+                showing first {VISIBLE_ROW_CAP}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-3 pb-2">
+            {resolutionMode === "low" && (
+              <span>
+                Low resolution mode uses at least ± {lowResolutionTolerance.toFixed(2)} Da for matching.
+              </span>
+            )}
+            <button
+              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+              onClick={downloadCsv}
+              disabled={rows.length === 0 || !spectrum}
+            >
+              Export current scan CSV
+            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                className="rounded-md border border-brand-300 bg-surface px-2 py-1 text-xs text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:text-ink-400"
+                onClick={() => void downloadAllScansCsv()}
+                disabled={exportingAllScans || !activeSid || !tic}
+                title={`Export matched products from all TIC scans above ${allScansThresholdPct}% of max TIC intensity`}
+              >
+                {exportingAllScans ? "Exporting…" : "Export all scans CSV"}
+              </button>
+              <span className="text-xs text-ink-500">TIC threshold:</span>
+              <input
+                type="number"
+                className="input w-16 text-xs"
+                value={allScansThresholdPct}
+                min={0.1}
+                max={100}
+                step={0.5}
+                onChange={(e) => setAllScansThresholdPct(Math.max(0.1, Math.min(100, parseFloat(e.target.value) || 5)))}
+              />
+              <span className="text-xs text-ink-500">% of max</span>
+            </div>
+          </div>
+        </div>
+        {!spectrum ? (
+          <div className="rounded-md border border-dashed border-ink-200 p-6 text-center text-sm text-ink-500">
+            Load an MS1 spectrum first.
+          </div>
+        ) : visibleRows.length === 0 ? (
+          <div className="rounded-md border border-dashed border-ink-200 p-6 text-center text-sm text-ink-500">
+            No expected products matched the current spectrum with the current tolerance.
+          </div>
+        ) : (
+          <div className="max-h-[460px] overflow-auto rounded-md border border-ink-200">
+            <table className="min-w-full divide-y divide-ink-200 text-xs">
+              <thead className="sticky top-0 bg-ink-50 text-left text-ink-600">
+                <tr>
+                  <th className="px-2 py-2 font-medium">Product</th>
+                  <th className="px-2 py-2 font-medium">Ion</th>
+                  <th className="px-2 py-2 font-medium">Expected m/z</th>
+                  <th className="px-2 py-2 font-medium">Observed</th>
+                  <th className="px-2 py-2 font-medium">Error</th>
+                  <th className="px-2 py-2 font-medium">Intensity</th>
+                  <th className="px-2 py-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-ink-100 bg-surface">
+                {visibleRows.map((row) => {
+                  const mzForEic = row.observedMz ?? row.expectedMz;
+                  return (
+                    <tr key={row.id} className={row.observedMz == null ? "text-ink-400" : "text-ink-700"}>
+                      <td className="max-w-[220px] px-2 py-1.5">
+                        <div className="truncate font-medium">{row.composition}</div>
+                        {row.variant ? <div className="text-[11px] text-ink-500">{row.variant}</div> : null}
+                      </td>
+                      <td className="px-2 py-1.5 font-mono">{row.ion}</td>
+                      <td className="px-2 py-1.5 font-mono">{row.expectedMz.toFixed(4)}</td>
+                      <td className="px-2 py-1.5 font-mono">
+                        {row.observedMz != null ? row.observedMz.toFixed(4) : "-"}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        {row.absErr != null && row.ppmErr != null
+                          ? `${row.absErr.toFixed(4)} Da / ${row.ppmErr.toFixed(1)} ppm`
+                          : "-"}
+                      </td>
+                      <td className="px-2 py-1.5 font-mono">
+                        {row.intensity != null ? row.intensity.toExponential(2) : "-"}
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <button
+                          className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-50"
+                          onClick={() =>
+                            onCreateEic(mzForEic, row.toleranceDa, {
+                              label: `${row.composition} ${row.ion}`,
+                              expectedProduct: row.composition,
+                              annotation: [row.variant, row.ion].filter(Boolean).join(" "),
+                            })
+                          }
+                        >
+                          EIC
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function GraphSettingsDialog({
   settings,
   onChange,
+  overlayEicEnabled,
+  setOverlayEicEnabled,
   onSetDefault,
   onReset,
   onClose,
 }: {
   settings: GraphSettings;
   onChange: (updater: (prev: GraphSettings) => GraphSettings) => void;
+  overlayEicEnabled: boolean;
+  setOverlayEicEnabled: (value: boolean) => void;
   onSetDefault: () => void;
   onReset: () => void;
   onClose: () => void;
@@ -5954,6 +7927,12 @@ function GraphSettingsDialog({
     onChange((prev) => ({
       ...prev,
       [id]: { ...prev[id], labels: { ...prev[id].labels, ...patch } },
+    }));
+  };
+  const updateEicOverlay = (patch: Partial<EICOverlaySettings>) => {
+    onChange((prev) => ({
+      ...prev,
+      eicOverlay: { ...prev.eicOverlay, ...patch },
     }));
   };
 
@@ -6107,6 +8086,66 @@ function GraphSettingsDialog({
           </p>
         </div>
 
+        {id === "eic" && (
+          <div className="mt-4 rounded-md border border-ink-200 bg-ink-50/40 p-3">
+            <div className="mb-2 label">EIC overlay analysis</div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex items-center gap-2 text-xs text-ink-600">
+                <input
+                  type="checkbox"
+                  checked={overlayEicEnabled}
+                  onChange={(event) => setOverlayEicEnabled(event.target.checked)}
+                />
+                Overlay generated EICs
+              </label>
+              <label className="flex items-center gap-2 text-xs text-ink-600">
+                <input
+                  type="checkbox"
+                  checked={settings.eicOverlay.showLegend}
+                  onChange={(event) => updateEicOverlay({ showLegend: event.target.checked })}
+                />
+                Show legend
+              </label>
+              <label className="flex items-center gap-2 text-xs text-ink-600">
+                <input
+                  type="checkbox"
+                  checked={settings.eicOverlay.normalize}
+                  onChange={(event) => updateEicOverlay({ normalize: event.target.checked })}
+                />
+                Normalize each EIC to 100%
+              </label>
+              <label className="flex items-center gap-2 text-xs text-ink-600">
+                <input
+                  type="checkbox"
+                  checked={settings.eicOverlay.stack}
+                  onChange={(event) => updateEicOverlay({ stack: event.target.checked })}
+                />
+                Stack traces vertically
+              </label>
+              <NumberSetting
+                label="Overlay opacity"
+                value={settings.eicOverlay.opacity}
+                min={0.1}
+                max={1}
+                step={0.05}
+                onChange={(value) =>
+                  updateEicOverlay({ opacity: Math.min(1, Math.max(0.1, value ?? 0.9)) })
+                }
+              />
+              <NumberSetting
+                label="Stack gap (%)"
+                value={settings.eicOverlay.stackGap}
+                min={10}
+                max={300}
+                step={5}
+                onChange={(value) =>
+                  updateEicOverlay({ stackGap: Math.max(10, value ?? 110) })
+                }
+              />
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 rounded-md border border-ink-200 bg-ink-50/40 p-3">
           <div className="mb-2 flex items-center justify-between">
             <div className="label">{labelControlsTitle}</div>
@@ -6201,6 +8240,7 @@ function GraphSettingsDialog({
       </div>
       <div className="flex flex-col gap-4">
         {section("tic", "TIC")}
+        {section("eic", "EIC")}
         {section("uv", "UV chromatogram")}
         {section("spectrum", "MS1 spectrum")}
       </div>
@@ -6482,6 +8522,24 @@ function PolymerDialog({
   const patchProfile = (next: Partial<PolymerModeSettings>) =>
     onChange({ ...settings, [activeMode]: { ...profile, ...next } });
   const patchMonomers = (monomers: PolymerMonomerPreset[]) => onChange({ ...settings, monomers });
+  const applySmallOligomerPreset = () => {
+    onChange({
+      ...settings,
+      shared: {
+        ...settings.shared,
+        enabled: true,
+        h2o_loss: true,
+        cluster: true,
+        charges: settings.shared.charges || "1",
+      },
+      [activeMode]: {
+        ...profile,
+        ...(activeMode === "positive"
+          ? { adduct_na: true, adduct_k: true }
+          : { adduct_cl: true, adduct_formate: true, adduct_acetate: true }),
+      },
+    });
+  };
   const selectedSummary = polymerMonomerText(settings)
     .split(/\r?\n/)
     .filter(Boolean)
@@ -6528,14 +8586,28 @@ function PolymerDialog({
         {!disabled && (
           <div className="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-700">
             {polarity === "positive"
-              ? "Positive mode: +H adduct mass with optional +Na/+K."
-              : "Negative mode: -H adduct mass with optional +Cl/+HCOO/+Ac."}
+              ? "Positive mode: +H adduct mass with optional +Na/+K, water loss, and 2M clusters."
+              : "Negative mode: -H adduct mass with optional +Cl/+HCOO/+Ac, water loss, and 2M clusters."}
           </div>
+        )}
+        {!disabled && (
+          <button
+            type="button"
+            className="rounded-md border border-brand-200 bg-surface px-3 py-2 text-left text-xs text-brand-700 transition-colors hover:bg-brand-50"
+            onClick={applySmallOligomerPreset}
+          >
+            Apply small-oligomer MS1 annotation preset
+          </button>
         )}
         <GroupBox title="Monomers">
           <div className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2 text-xs text-ink-600">
             Using: {selectedSummary || "no monomers selected"}
           </div>
+          {!selectedSummary && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Select at least one monomer below — adduct annotations are computed for compositions of the selected monomers.
+            </div>
+          )}
           <MonomerPresetBox
             title="Known hydroxy acids"
             category="hydroxy"
@@ -6671,6 +8743,11 @@ function PolymerDialog({
 
         <GroupBox title="Variants">
           <Check
+            label="Water loss (-H2O)"
+            checked={shared.h2o_loss}
+            onChange={(h2o_loss) => patchShared({ h2o_loss })}
+          />
+          <Check
             label="Decarboxylation (-CO2)"
             checked={shared.decarb}
             onChange={(decarb) => patchShared({ decarb })}
@@ -6681,7 +8758,7 @@ function PolymerDialog({
             onChange={(oxid) => patchShared({ oxid })}
           />
           <Check
-            label="Noncovalent dimers (2M-H)"
+            label={polarity === "negative" ? "Noncovalent dimers (2M-H)" : "Noncovalent dimers (2M+H)"}
             checked={shared.cluster}
             onChange={(cluster) => patchShared({ cluster })}
           />

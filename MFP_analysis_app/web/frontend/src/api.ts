@@ -78,6 +78,7 @@ export interface PolymerSettings {
   charges: string;
   decarb: boolean;
   oxid: boolean;
+  h2o_loss?: boolean;
   cluster: boolean;
   max_dp: number;
   tol_value: number;
@@ -89,9 +90,15 @@ export interface SpectrumData {
   meta: {
     spectrum_id: string;
     rt_min: number;
+    rt_max?: number;
+    rt_start?: number;
+    rt_end?: number;
     tic: number;
     polarity: string | null;
     n_peaks: number;
+    n_scans?: number;
+    bin_width?: number;
+    merge_mode?: string;
   };
   mz: number[];
   intensity: number[];
@@ -129,6 +136,7 @@ export interface LCMSRegionSpectrumData {
   n_scans: number;
   mz: number[];
   intensity: number[];
+  polymer_labels?: SpectrumLabel[];
 }
 
 export interface LCMSTICOverlayTrace extends TICData {
@@ -832,12 +840,17 @@ export const api = {
         bin_width?: number;
         min_rel?: number;
         max_bins?: number;
+        polymer?: PolymerSettings;
       },
     ) =>
       fetch(`/api/lcms/sessions/${sid}/region-spectrum`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          ...body,
+          polymer: undefined,
+          polymer_settings: body.polymer?.enabled ? body.polymer : undefined,
+        }),
       }).then((r) => handle<LCMSRegionSpectrumData>(r)),
     ticOverlay: (body: { session_ids: string[]; polarity?: "positive" | "negative" }) =>
       fetch("/api/lcms/overlays/tic", {

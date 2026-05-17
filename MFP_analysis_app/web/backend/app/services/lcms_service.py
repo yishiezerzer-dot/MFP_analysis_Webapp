@@ -291,6 +291,7 @@ def summed_spectrum_in_rt_range(
     hi = max(float(rt_min), float(rt_max))
     width = max(1e-6, float(bin_width))
     totals: Dict[int, float] = {}
+    weighted_mz: Dict[int, float] = {}
     n_scans = 0
     for _meta, mz_vals, int_vals in iter_ms1_spectra(
         state,
@@ -300,10 +301,13 @@ def summed_spectrum_in_rt_range(
     ):
         n_scans += 1
         keys = np.rint(mz_vals / width).astype(np.int64)
-        for key, intensity in zip(keys.tolist(), int_vals.tolist()):
-            if not np.isfinite(intensity):
+        for key, mz_value, intensity in zip(keys.tolist(), mz_vals.tolist(), int_vals.tolist()):
+            if not np.isfinite(mz_value) or not np.isfinite(intensity):
                 continue
-            totals[int(key)] = totals.get(int(key), 0.0) + float(intensity)
+            key_int = int(key)
+            value = float(intensity)
+            totals[key_int] = totals.get(key_int, 0.0) + value
+            weighted_mz[key_int] = weighted_mz.get(key_int, 0.0) + float(mz_value) * value
     if not totals:
         return {
             "rt_min": lo,
@@ -313,7 +317,13 @@ def summed_spectrum_in_rt_range(
             "mz": [],
             "intensity": [],
         }
-    mz_out = np.asarray([key * width for key in totals.keys()], dtype=float)
+    mz_out = np.asarray(
+        [
+            (weighted_mz.get(key, 0.0) / total) if total > 0 else key * width
+            for key, total in totals.items()
+        ],
+        dtype=float,
+    )
     int_out = np.asarray(list(totals.values()), dtype=float)
     imax = float(np.nanmax(int_out)) if int_out.size else 0.0
     if imax > 0 and min_rel > 0:
@@ -560,6 +570,7 @@ def polymer_match_labels(
         base_adduct_mass=adduct_mass,
         enable_decarb=bool(settings.get("decarb")),
         enable_oxid=bool(settings.get("oxid")),
+        enable_h2o_loss=bool(settings.get("h2o_loss")),
         enable_cluster=bool(settings.get("cluster")),
         cluster_adduct_mass=cluster_adduct_mass,
         enable_na=bool(settings.get("adduct_na")),
@@ -573,7 +584,7 @@ def polymer_match_labels(
         allow_variant_combo=True,
     )
     labels: List[Dict[str, Any]] = []
-    kind_order = ["poly", "ox", "decarb", "oxdecarb", "2m"]
+    kind_order = ["poly", "h2o", "ox", "decarb", "oxdecarb", "2m"]
     for peak_i, kinds in best_by_peak.items():
         ordered = [(kind, kinds[kind]) for kind in kind_order if kind in kinds]
         if not ordered:

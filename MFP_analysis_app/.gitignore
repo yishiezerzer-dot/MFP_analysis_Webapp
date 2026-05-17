@@ -8,6 +8,8 @@ __pycache__/
 node_modules/
 web/frontend/dist/
 web/frontend/.vite/
+web/.logs/
+.mfp_uploads/
 .pnpm-store/
 npm-debug.log*
 pnpm-debug.log*

@@ -19,6 +19,13 @@ ACETATE_MASS = 59.013851  # CH3COO-
 
 OXIDATION_MASS = 15.994915
 CO2_LOSS_MASS = 43.989829
+H2O_LOSS_MASS = 18.010565
+
+# A cluster [2M+X]+ annotation requires the monomer [M+X]+ to be present in the
+# spectrum at intensity >= (dimer intensity * this factor). In ESI the monomer
+# is almost always more abundant than the dimer, so we require the monomer to
+# be at least as intense as the candidate dimer peak.
+_CLUSTER_MONOMER_MIN_RATIO_VS_DIMER = 1.0
 
 
 class PolymerSearchTooLarge(RuntimeError):
@@ -121,6 +128,7 @@ def generate_variants(
     *,
     max_ox: int = 1,
     max_decarb: int = 1,
+    max_h2o_loss: int = 0,
     allow_combo: bool = True,
 ) -> List[Variant]:
     """Implement the `generate_variants` behavior for this module.
@@ -129,20 +137,29 @@ def generate_variants(
     """
     max_ox = max(0, int(max_ox))
     max_decarb = max(0, int(max_decarb))
+    max_h2o_loss = max(0, int(max_h2o_loss))
     out: List[Variant] = []
     for ox in range(0, max_ox + 1):
         for dec in range(0, max_decarb + 1):
-            if not allow_combo and ox > 0 and dec > 0:
-                continue
-            delta = float(ox) * OXIDATION_MASS - float(dec) * CO2_LOSS_MASS
+            for h2o in range(0, max_h2o_loss + 1):
+                active_variant_count = int(ox > 0) + int(dec > 0) + int(h2o > 0)
+                if not allow_combo and active_variant_count > 1:
+                    continue
+                delta = (
+                    float(ox) * OXIDATION_MASS
+                    - float(dec) * CO2_LOSS_MASS
+                    - float(h2o) * H2O_LOSS_MASS
+                )
 
-            tag_parts: List[str] = []
-            if ox > 0:
-                tag_parts.append("+O" if ox == 1 else f"+{ox}O")
-            if dec > 0:
-                tag_parts.append("-CO2" if dec == 1 else f"-{dec}CO2")
-            tag = "".join(tag_parts)
-            out.append(Variant(mass_delta=float(delta), tag=str(tag)))
+                tag_parts: List[str] = []
+                if ox > 0:
+                    tag_parts.append("+O" if ox == 1 else f"+{ox}O")
+                if dec > 0:
+                    tag_parts.append("-CO2" if dec == 1 else f"-{dec}CO2")
+                if h2o > 0:
+                    tag_parts.append("-H2O" if h2o == 1 else f"-{h2o}H2O")
+                tag = "".join(tag_parts)
+                out.append(Variant(mass_delta=float(delta), tag=str(tag)))
 
     # De-dup (shouldn't be needed, but safe)
     seen: set[Tuple[float, str]] = set()
@@ -350,8 +367,11 @@ def _kind_for_variant(tag: str) -> str:
     t = str(tag or "")
     has_o = "+O" in t
     has_co2 = "CO2" in t and "-CO2" in t
+    has_h2o = "H2O" in t and "-H2O" in t
     if not t:
         return "poly"
+    if has_h2o:
+        return "h2o"
     if has_o and has_co2:
         return "oxdecarb"
     if has_o:
@@ -382,6 +402,7 @@ def compute_polymer_best_by_peak_sorted(
     enable_cl: bool,
     enable_formate: bool,
     enable_acetate: bool = False,
+    enable_h2o_loss: bool = False,
     tol_value: float,
     tol_unit: str,
     min_rel_int: float,
@@ -458,10 +479,13 @@ def compute_polymer_best_by_peak_sorted(
             variants.append(Variant(-2.015650, "-2H"))
         if enable_decarb:
             variants.append(Variant(-CO2_LOSS_MASS, "-CO2"))
+        if enable_h2o_loss:
+            variants.append(Variant(-H2O_LOSS_MASS, "-H2O"))
     else:
         variants = generate_variants(
             max_ox=(1 if enable_oxid else 0),
             max_decarb=(1 if enable_decarb else 0),
+            max_h2o_loss=(1 if enable_h2o_loss else 0),
             allow_combo=bool(allow_variant_combo),
         )
 
@@ -590,6 +614,25 @@ def compute_polymer_best_by_peak_sorted(
             return "2M+H"
         return f"2M{float(adduct_mass_val):+.4f}".replace("-", "−")
 
+    _SUPERSCRIPT_DIGITS = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+    def ion_label(adduct_label: str, adduct_mass_val: float, z: int, *, cluster: bool = False) -> str:
+        pol = (polarity or "").strip().lower()
+        core = "2M" if cluster else "M"
+        charge = int(z)
+        sign = "⁺" if pol != "negative" else "⁻"
+        charge_suffix = sign if charge <= 1 else f"{str(charge).translate(_SUPERSCRIPT_DIGITS)}{sign}"
+        label = (str(adduct_label or "")).replace("-", "−")
+        if label:
+            return f"[{core}{label}]{charge_suffix}"
+        if abs(float(adduct_mass_val) - PROTON_MASS) <= 0.002:
+            proton = "+H"
+        elif abs(float(adduct_mass_val) - (-PROTON_MASS)) <= 0.002:
+            proton = "−H"
+        else:
+            proton = f"{float(adduct_mass_val):+.4f}".replace("-", "−")
+        return f"[{core}{proton}]{charge_suffix}"
+
     # Enumerate compositions
     for counts in generate_polymer_compositions(n, max_dp_i, 1):
         dp = int(sum(counts))
@@ -654,8 +697,7 @@ def compute_polymer_best_by_peak_sorted(
                         if float(score) < float(min_score):
                             continue
 
-                    suffix = f" {adduct_lbl}" if adduct_lbl else ""
-                    label = f"{base_label}{tag_txt}{suffix} z={int(z)}".strip()
+                    label = f"{base_label}{tag_txt} {ion_label(str(adduct_lbl), float(adduct_mass_val), int(z))}".strip()
                     set_best(
                         peak_i,
                         str(kind),
@@ -690,6 +732,25 @@ def compute_polymer_best_by_peak_sorted(
                     if float(inten_act) < float(min_int):
                         continue
 
+                    # Require monomer [M+X]+ (z=1, same adduct) at intensity >= dimer intensity.
+                    # In ESI the monomer is almost always more abundant than [2M+X]+; if it isn't,
+                    # the [2M+X]+ candidate is almost certainly a mis-annotation or noise coincidence.
+                    mz_mono = (float(neutral_poly) + float(adduct_mass_val)) / 1.0
+                    tol_da_mono, tol_ppm_mono = _tol_to_da(
+                        mz_pred=float(mz_mono), tol_value=float(tol_value), tol_unit=str(tol_unit)
+                    )
+                    mono_match = find_best_peak_match(
+                        mz_s,
+                        int_s,
+                        float(mz_mono),
+                        tol_da=tol_da_mono,
+                        tol_ppm=tol_ppm_mono,
+                        prefer_intensity=True,
+                    )
+                    mono_inten = float(int_s[mono_match.index]) if mono_match is not None else 0.0
+                    if float(mono_inten) < float(_CLUSTER_MONOMER_MIN_RATIO_VS_DIMER) * float(inten_act):
+                        continue
+
                     if min_score is not None:
                         tol_ppm_eff = _effective_tol_ppm(mz_pred=float(mz_pred), tol_da=tol_da, tol_ppm=tol_ppm)
                         score = _confidence_score(
@@ -702,9 +763,8 @@ def compute_polymer_best_by_peak_sorted(
                         if float(score) < float(min_score):
                             continue
 
-                    tag = cluster_tag(str(adduct_lbl), float(adduct_mass_val))
-                    z_suffix = f" z={int(z)}" if len(charges_use) > 1 else ""
-                    label = f"{base_label} ({tag}){z_suffix}".strip()
+                    tag = ion_label(str(adduct_lbl), float(adduct_mass_val), int(z), cluster=True)
+                    label = f"{base_label} {tag}".strip()
                     set_best(
                         peak_i,
                         "2m",
@@ -741,6 +801,7 @@ def explain_best_match_for_peak_sorted(
     enable_cl: bool,
     enable_formate: bool,
     enable_acetate: bool = False,
+    enable_h2o_loss: bool = False,
     tol_value: float,
     tol_unit: str,
     min_rel_int: float,
@@ -812,6 +873,7 @@ def explain_best_match_for_peak_sorted(
         variants = generate_variants(
             max_ox=(1 if enable_oxid else 0),
             max_decarb=(1 if enable_decarb else 0),
+            max_h2o_loss=(1 if enable_h2o_loss else 0),
             allow_combo=bool(allow_variant_combo),
         )
 
@@ -919,7 +981,38 @@ def explain_best_match_for_peak_sorted(
             neutral_dimer = 2.0 * float(neutral_poly)
             for z in charges_use:
                 for adduct_lbl, adduct_mass_val in cluster_adducts:
+                    # Find dimer peak intensity first; the monomer must be at least as intense.
                     mz_pred = (float(neutral_dimer) + float(adduct_mass_val)) / float(z)
+                    tol_da_dim, tol_ppm_dim = _tol_to_da(
+                        mz_pred=float(mz_pred), tol_value=float(tol_value), tol_unit=str(tol_unit)
+                    )
+                    dim_match = find_best_peak_match(
+                        mz_s,
+                        int_s,
+                        float(mz_pred),
+                        tol_da=tol_da_dim,
+                        tol_ppm=tol_ppm_dim,
+                        prefer_intensity=True,
+                    )
+                    if dim_match is None:
+                        continue
+                    dim_inten = float(int_s[int(dim_match.index)])
+
+                    mz_mono = (float(neutral_poly) + float(adduct_mass_val)) / 1.0
+                    tol_da_mono, tol_ppm_mono = _tol_to_da(
+                        mz_pred=float(mz_mono), tol_value=float(tol_value), tol_unit=str(tol_unit)
+                    )
+                    mono_match = find_best_peak_match(
+                        mz_s,
+                        int_s,
+                        float(mz_mono),
+                        tol_da=tol_da_mono,
+                        tol_ppm=tol_ppm_mono,
+                        prefer_intensity=True,
+                    )
+                    mono_inten = float(int_s[mono_match.index]) if mono_match is not None else 0.0
+                    if float(mono_inten) < float(_CLUSTER_MONOMER_MIN_RATIO_VS_DIMER) * float(dim_inten):
+                        continue
                     comp = f"{base_label} (2M)"
                     consider_candidate(
                         kind="2m",
