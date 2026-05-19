@@ -1,0 +1,51 @@
+{
+  "cases": [
+    {
+      "name": "running-mean clustering with absolute KMD tolerance",
+      "input": {
+        "mz": [100, 200, 119.5],
+        "intensity": [100, 90, 80],
+        "repeat_mass": 100.0,
+        "min_rel_intensity": 0,
+        "tolerance_value": 0.01,
+        "tolerance_unit": "kmd",
+        "min_series_points": 2
+      },
+      "expected": {
+        "series_count": 1,
+        "series_0_count": 2
+      }
+    },
+    {
+      "name": "ppm tolerance scales with m/z",
+      "input": {
+        "mz": [100, 110, 119.5],
+        "intensity": [100, 90, 80],
+        "repeat_mass": 100.0,
+        "min_rel_intensity": 0,
+        "tolerance_value": 20,
+        "tolerance_unit": "ppm",
+        "min_series_points": 2
+      },
+      "expected": {
+        "series_count": 1,
+        "series_0_count": 2
+      }
+    },
+    {
+      "name": "minSeriesPoints filters small clusters",
+      "input": {
+        "mz": [100, 200],
+        "intensity": [100, 90],
+        "repeat_mass": 100.0,
+        "min_rel_intensity": 0,
+        "tolerance_value": 0.01,
+        "tolerance_unit": "kmd",
+        "min_series_points": 5
+      },
+      "expected": {
+        "series_count": 0
+      }
+    }
+  ]
+}

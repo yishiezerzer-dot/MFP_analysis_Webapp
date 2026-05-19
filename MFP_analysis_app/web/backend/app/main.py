@@ -16,6 +16,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from .automation import router as automation  # noqa: E402
 from .routers import ai, data_studio, ftir, lcms, plate_reader  # noqa: E402
 
 app = FastAPI(
@@ -46,3 +47,4 @@ app.include_router(plate_reader.router, prefix="/api/plate-reader", tags=["plate
 app.include_router(data_studio.router, prefix="/api/data-studio", tags=["data-studio"])
 app.include_router(ftir.router, prefix="/api/ftir", tags=["ftir"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(automation.router, prefix="/api/automation", tags=["automation"])

@@ -1,0 +1,14 @@
+{
+  "_comment": "Shared MCP server config for the MFP Analysis app. The shape is identical for Cursor, Codex, and Claude Code — only the destination file differs. See README.md (`Client setup` section) for where each client expects this JSON. Replace <ABSOLUTE_PATH_TO_REPO> with the absolute path to the cloned repository.",
+  "mcpServers": {
+    "mfp": {
+      "command": "mfp-mcp",
+      "args": [],
+      "cwd": "<ABSOLUTE_PATH_TO_REPO>\\MFP_analysis_app\\mcp_server",
+      "env": {
+        "MFP_BACKEND_URL": "http://127.0.0.1:8000",
+        "MFP_MCP_TIMEOUT": "60"
+      }
+    }
+  }
+}

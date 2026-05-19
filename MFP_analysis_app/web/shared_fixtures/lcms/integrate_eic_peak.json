@@ -1,0 +1,41 @@
+{
+  "cases": [
+    {
+      "name": "global apex with no reference RT",
+      "input": {
+        "rt_min": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "intensity": [10, 10, 20, 80, 20, 10, 15, 120, 15, 10],
+        "reference_rt": null
+      },
+      "expected": {
+        "rt_apex": 7,
+        "height": 120
+      }
+    },
+    {
+      "name": "reference RT picks the smaller local maximum",
+      "input": {
+        "rt_min": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "intensity": [10, 10, 20, 80, 20, 10, 15, 120, 15, 10],
+        "reference_rt": 3
+      },
+      "expected": {
+        "rt_apex": 3,
+        "height": 80
+      }
+    },
+    {
+      "name": "baseline derived from outside-window points",
+      "input": {
+        "rt_min": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+        "intensity": [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 100, 5, 5, 5, 5, 5, 5, 5, 5, 5],
+        "reference_rt": null
+      },
+      "expected": {
+        "rt_apex": 10,
+        "height": 100,
+        "baseline": 5
+      }
+    }
+  ]
+}

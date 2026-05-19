@@ -1,0 +1,60 @@
+{
+  "cases": [
+    {
+      "name": "anchor-based clustering prevents transitive drift",
+      "input": {
+        "rows": [
+          {
+            "id": "a", "session_id": null, "source_file": "a.mzML", "mz": 100.00,
+            "polarity": "positive", "rt_apex": 1.0, "height": 100, "area": 100,
+            "baseline": 0, "n_points": 3, "tolerance": 0.02
+          },
+          {
+            "id": "b", "session_id": null, "source_file": "b.mzML", "mz": 100.04,
+            "polarity": "positive", "rt_apex": 1.0, "height": 100, "area": 100,
+            "baseline": 0, "n_points": 3, "tolerance": 0.02
+          },
+          {
+            "id": "c", "session_id": null, "source_file": "c.mzML", "mz": 100.08,
+            "polarity": "positive", "rt_apex": 1.0, "height": 100, "area": 100,
+            "baseline": 0, "n_points": 3, "tolerance": 0.02
+          }
+        ],
+        "metric": "area",
+        "group_mode": "mz",
+        "mz_tolerance": 0.05
+      },
+      "expected": {
+        "group_count": 2,
+        "members": [["a", "b"], ["c"]]
+      }
+    },
+    {
+      "name": "cell collisions are surfaced, not silently dropped",
+      "input": {
+        "rows": [
+          {
+            "id": "f1", "session_id": "s1", "source_file": "s1.mzML", "mz": 100.0,
+            "polarity": "positive", "rt_apex": 1.0, "height": 100, "area": 300,
+            "baseline": 0, "n_points": 3, "tolerance": 0.02,
+            "expected_product": "1-Test"
+          },
+          {
+            "id": "f2", "session_id": "s1", "source_file": "s1.mzML", "mz": 100.0,
+            "polarity": "positive", "rt_apex": 1.1, "height": 100, "area": 150,
+            "baseline": 0, "n_points": 3, "tolerance": 0.02,
+            "expected_product": "1-Test"
+          }
+        ],
+        "metric": "area",
+        "group_mode": "evidence",
+        "mz_tolerance": 0.05
+      },
+      "expected": {
+        "group_count": 1,
+        "headline_row_id": "f1",
+        "collision_ids": ["f2"]
+      }
+    }
+  ]
+}
