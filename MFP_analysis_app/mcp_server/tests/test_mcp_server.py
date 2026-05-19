@@ -153,14 +153,19 @@ async def test_safe_backend_action_executes():
 
 
 @pytest.mark.asyncio
-async def test_browser_scope_action_returns_requires_open_app_without_calling_backend():
+async def test_browser_scope_action_forwards_to_backend_and_translates_409():
+    """Phase 4 routing: the MCP server delegates browser-scope routing to
+    the backend (single source of truth). The backend returns HTTP 409 with
+    'requires_open_app' in the detail when no browser is connected; the MCP
+    server translates that into a clean ``requires_open_app`` payload."""
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.url.path)
         if request.url.path == "/api/automation/actions":
             return httpx.Response(200, json=CATALOG)
-        raise AssertionError(f"backend should not have been called for browser action; got {request.url}")
+        # Browser action with no browser connected → backend 409.
+        return httpx.Response(409, json={"detail": {"error": "requires_open_app", "message": "requires_open_app"}})
 
     server = _make_server(handler)
     result = await server.handle_call_tool("lcms.push_eic_to_ui", {})
@@ -169,8 +174,8 @@ async def test_browser_scope_action_returns_requires_open_app_without_calling_ba
     assert result.structuredContent is None
     parsed = json.loads(result.content[0].text)
     assert parsed["status"] == "requires_open_app"
-    # Only /actions should have been hit (during refresh_actions).
-    assert all(path == "/api/automation/actions" for path in seen)
+    # Backend execute SHOULD have been called now (delegated routing).
+    assert any(path.endswith("/lcms.push_eic_to_ui/execute") for path in seen)
     await server.client.close()
 
 

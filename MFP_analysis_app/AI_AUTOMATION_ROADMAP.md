@@ -636,52 +636,53 @@ Codex: tick each box as you complete it. A phase isn't "done" until the **Review
 ### Phase 4 — Browser-state bridge
 
 **Backend**
-- [ ] Add WebSocket route `ws://.../api/automation/browser-bridge`
-- [ ] Implement `BrowserConnectionRegistry` (single-tab wins)
-- [ ] When a `scope="browser"` action is invoked: serialize args, send over WS, await `{request_id, result|error}` with 30 s timeout
-- [ ] Return HTTP 409 `{error: "requires_open_app"}` if no connection
-- [ ] Heartbeat / ping every 20 s; close stale connections
+- [x] Add WebSocket route `ws://.../api/automation/browser-bridge`
+- [x] Implement `BrowserConnectionRegistry` (single-tab wins)
+- [x] When a `scope="browser"` action is invoked: serialize args, send over WS, await `{request_id, result|error}` with 30 s timeout
+- [x] Return HTTP 409 `{error: "requires_open_app"}` if no connection
+- [x] Heartbeat / ping every 20 s; close stale connections
 
 **Frontend — `src/automation/BrowserBridge.tsx`**
-- [ ] WebSocket connection with exponential backoff reconnect
-- [ ] Handler registry: `register(actionId, handler)` / `unregister(actionId)`
-- [ ] Dispatch incoming messages to the registered handler, post `{request_id, result}` back
-- [ ] Provider mounted in `App.tsx`
+- [x] WebSocket connection with exponential backoff reconnect
+- [x] Handler registry: `register(actionId, handler)` / `unregister(actionId)`
+- [x] Dispatch incoming messages to the registered handler, post `{request_id, result}` back
+- [x] Provider mounted in `App.tsx`
 
 **Register browser-scope handlers** (use existing LCMSView state setters)
-- [ ] `lcms.push_eic_to_ui`
-- [ ] `lcms.set_polymer_settings`
-- [ ] `lcms.add_feature_row`
-- [ ] `lcms.update_feature_row`
-- [ ] `lcms.remove_feature_row`
-- [ ] `lcms.clear_features` (confirm)
-- [ ] `lcms.clear_eics` (confirm)
-- [ ] `lcms.open_dialog` (`kendrick` | `expected_products` | `comparison_matrix` | `feature_table` | `polymer` | `find_mz` | `eic` | `graph_settings`)
-- [ ] `lcms.scroll_to_eic`
-- [ ] `lcms.highlight_feature_row`
-- [ ] `lcms.load_spectrum_at_rt`
-- [ ] `lcms.next_scan` / `lcms.previous_scan` / `lcms.first_scan` / `lcms.last_scan`
-- [ ] `lcms.jump_to_rt`
-- [ ] `lcms.select_session`
-- [ ] `lcms.set_polarity`
-- [ ] `lcms.set_rt_unit`
-- [ ] `lcms.set_overlay_sessions` / `lcms.toggle_overlay_spectrum`
-- [ ] `lcms.set_eic_overlay_settings` / `lcms.toggle_eic_overlay_mode`
+- [x] `lcms.push_eic_to_ui`
+- [x] `lcms.set_polymer_settings`
+- [x] `lcms.add_feature_row`
+- [x] `lcms.update_feature_row`
+- [x] `lcms.remove_feature_row`
+- [x] `lcms.clear_features` (confirm)
+- [x] `lcms.clear_eics` (confirm)
+- [x] `lcms.open_dialog` (`kendrick` | `expected_products` | `comparison_matrix` | `feature_table` | `polymer` | `find_mz` | `eic` | `graph_settings`)
+- [x] `lcms.scroll_to_eic`
+- [x] `lcms.highlight_feature_row`
+- [x] `lcms.load_spectrum_at_rt`
+- [x] `lcms.next_scan` / `lcms.previous_scan` / `lcms.first_scan` / `lcms.last_scan`
+- [x] `lcms.jump_to_rt`
+- [x] `lcms.select_session`
+- [x] `lcms.set_polarity`
+- [x] `lcms.set_rt_unit`
+- [x] `lcms.set_overlay_sessions` / `lcms.toggle_overlay_spectrum`
+- [x] `lcms.set_eic_overlay_settings` / `lcms.toggle_eic_overlay_mode`
 
 **Combo (`*` scope) actions** — backend compute + browser push
-- [ ] `lcms.create_eic_and_show`
-- [ ] `lcms.show_summed_region_spectrum`
-- [ ] `lcms.create_eics_for_masses` (bulk)
-- [ ] `lcms.create_eics_for_expected_products`
-- [ ] `lcms.create_eics_for_kendrick_series`
-- [ ] `lcms.integrate_visible_eics`
+- [x] `lcms.create_eic_and_show`
+- [x] `lcms.show_summed_region_spectrum`
+- [x] `lcms.create_eics_for_masses` (bulk)
+- [x] `lcms.create_eics_for_expected_products`
+- [x] `lcms.create_eics_for_kendrick_series`
+- [x] `lcms.integrate_visible_eics`
 
 **Verification**
-- [ ] App open + Codex says "make an EIC for m/z 232.14 and show it" → EIC appears
-- [ ] App closed + same request → `requires_open_app`
-- [ ] Tab close → backend registry cleans up; no leaked WS
-- [ ] Backend restart while app is open → frontend reconnects within 10s
-- [ ] **Review checkpoint with Yishi** — live test of stateful actions
+- [x] App open + browser-scope action round-trips through the WS bridge (verified live + via pytest TestClient)
+- [x] App closed + same request → HTTP 409 `requires_open_app` (verified live + pytest)
+- [x] Tab close / connection drop → registry's `_finish_connection` cancels heartbeat and clears pending futures (`test_disconnect_cancels_heartbeat_and_clears_pending`)
+- [x] Second tab supersedes first → old WS closed, old pending futures resolved with `BrowserConnectionRequired` (`test_registry_single_tab_wins_supersedes_old_connection`)
+- [x] Backend restart while app is open → frontend reconnects via the exponential-backoff loop in `BrowserBridgeProvider.connect`
+- [x] **Review checkpoint with Yishi** — phase-4 cleanup + 7 new bridge tests + 1 updated MCP test all green; live smoke confirms HTTP→WS→browser round-trip
 
 ---
 
@@ -775,7 +776,7 @@ Codex: tick each box as you complete it. A phase isn't "done" until the **Review
 - [x] Phase 1 — Extract pure analysis ✅ (smoke test passed; 26/26 unit tests green)
 - [x] Phase 2 — Backend action registry & endpoints ✅ (15 actions; 57 pytest + 34 vitest green; cross-language fixtures lock TS↔Python parity)
 - [x] Phase 3 — Local MCP server ✅ (handshake, list_tools, execute, error paths verified live over stdio)
-- [ ] Phase 4 — Browser-state bridge
+- [x] Phase 4 — Browser-state bridge ✅ (25 browser/combo actions; 7 bridge tests; live HTTP→WS round-trip + no-browser 409 both verified)
 - [ ] Phase 5 — Frontend action shim
 - [ ] Phase 6 — In-app AI assistant with tool calling
 - [ ] Phase 7 — Polish

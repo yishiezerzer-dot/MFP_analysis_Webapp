@@ -67,7 +67,7 @@ def _requires_open_app_payload(action: AutomationAction) -> dict[str, Any]:
         "action_id": action.id,
         "risk": action.risk,
         "scope": action.scope,
-        "message": "This action needs an open MFP browser tab and will be available after the browser bridge phase.",
+        "message": "This action needs an open MFP browser tab connected to the local backend.",
     }
 
 
@@ -131,9 +131,6 @@ class MFPToolServer:
             )
 
         args = dict(arguments or {})
-        if action.scope == "browser":
-            return _structured_result(_requires_open_app_payload(action), is_error=True)
-
         if action.risk in {"confirm", "destructive"}:
             try:
                 preview = await self.client.preview(action.id, args)

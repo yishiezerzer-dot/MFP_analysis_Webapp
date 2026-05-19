@@ -57,6 +57,14 @@ class ActionInputError(ActionRegistryError):
     pass
 
 
+class BrowserConnectionRequired(ActionRegistryError):
+    pass
+
+
+class BrowserActionFailed(ActionRegistryError):
+    pass
+
+
 class ConfirmationRequired(ActionRegistryError):
     pass
 

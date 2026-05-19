@@ -2,6 +2,7 @@
 
 from . import (  # noqa: F401
     lcms_eic,
+    lcms_browser,
     lcms_export,
     lcms_features,
     lcms_kendrick,

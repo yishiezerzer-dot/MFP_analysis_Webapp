@@ -10,6 +10,7 @@ import { AIView } from "./views/AIView";
 import type { PageHeaderContextValue } from "./layout/PageHeader";
 import { UserMenu, type AppUser } from "./layout/UserMenu";
 import { Tooltip } from "./components/Tooltip";
+import { BrowserBridgeProvider } from "./automation/BrowserBridge";
 import mfpLogo from "./assets/mfp-logo.png";
 
 const CURRENT_USER: AppUser = {
@@ -333,16 +334,18 @@ function Layout() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<Navigate to="/lcms" replace />} />
-        <Route path="/lcms" element={<LCMSView />} />
-        <Route path="/ftir" element={<FTIRView />} />
-        <Route path="/plate-reader" element={<PlateReaderView />} />
-        <Route path="/data-studio" element={<DataStudioView />} />
-        <Route path="/ai" element={<AIView />} />
-      </Route>
-    </Routes>
+    <BrowserBridgeProvider>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Navigate to="/lcms" replace />} />
+          <Route path="/lcms" element={<LCMSView />} />
+          <Route path="/ftir" element={<FTIRView />} />
+          <Route path="/plate-reader" element={<PlateReaderView />} />
+          <Route path="/data-studio" element={<DataStudioView />} />
+          <Route path="/ai" element={<AIView />} />
+        </Route>
+      </Routes>
+    </BrowserBridgeProvider>
   );
 }
 

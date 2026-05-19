@@ -31,6 +31,7 @@ import { getHelpModule } from "../help/registry";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
+import { useBrowserAutomation } from "../automation/BrowserBridge";
 import { useStoredState } from "../hooks/useStoredState";
 import {
   buildExpectedProductHits,
@@ -1048,6 +1049,7 @@ function readJsonFile<T>(file: File): Promise<T> {
 // --- Main view ---------------------------------------------------------------
 
 export function LCMSView() {
+  const browserAutomation = useBrowserAutomation();
   const persistedProjectState = useMemo(() => loadProjectPersistence(), []);
 
   // Sessions / data
@@ -2715,6 +2717,275 @@ export function LCMSView() {
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    const unregister: Array<() => void> = [];
+    const on = (actionId: string, handler: (args: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>) => {
+      unregister.push(browserAutomation.register(actionId, handler));
+    };
+    const obj = (value: unknown): Record<string, unknown> =>
+      value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+    const num = (value: unknown): number | null =>
+      typeof value === "number" && Number.isFinite(value) ? value : typeof value === "string" && Number.isFinite(Number(value)) ? Number(value) : null;
+    const str = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
+    const stringArray = (value: unknown): string[] =>
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+    const sourceFileFor = (sessionId: string | null) =>
+      sessions.find((session) => session.session_id === sessionId)?.display_name ?? active?.display_name ?? "LCMS session";
+
+    const showEicPayload = (args: Record<string, unknown>) => {
+      const eic = obj(args.eic) as unknown as LCMSEICData;
+      if (!Array.isArray(eic.rt_min) || !Array.isArray(eic.intensity)) {
+        throw new Error("EIC payload is missing rt_min/intensity arrays.");
+      }
+      const metadata = obj(args.metadata) as Partial<LCMSEICMetadata>;
+      const sourceSessionId = str(args.session_id) ?? str(metadata.sourceSessionId) ?? activeSid;
+      const metadataSource =
+        metadata.source === "spectrum" || metadata.source === "expected" || metadata.source === "manual"
+          ? metadata.source
+          : "manual";
+      const id = `automation-${Date.now()}-${eicPlotCounterRef.current + 1}`;
+      eicPlotCounterRef.current += 1;
+      setEicPlots((prev) => [
+        ...prev,
+        {
+          id,
+          eic,
+          metadata: {
+            ...metadata,
+            source: metadataSource,
+            sourceSessionId,
+            sourceFile: str(args.source_file) ?? sourceFileFor(sourceSessionId),
+          },
+        },
+      ]);
+      if (eic.best?.rt_min != null && typeof eic.best.rt_min === "number") {
+        setSelectedRt(eic.best.rt_min);
+      }
+      setInfo(`Automation added EIC m/z ${eic.target_mz.toFixed(4)}.`);
+      return { eic_plot_id: id };
+    };
+
+    const loadSpectrumFor = async (args: Record<string, unknown>) => {
+      const rtMin = num(args.rt_min);
+      if (rtMin == null) throw new Error("rt_min is required.");
+      const sessionId = str(args.session_id) ?? activeSid;
+      if (!sessionId) throw new Error("No LCMS session is selected.");
+      const requestedPolarity = args.polarity === "positive" || args.polarity === "negative" ? args.polarity : pol;
+      const sp = await api.lcms.spectrum(sessionId, {
+        rt_min: rtMin,
+        polarity: requestedPolarity,
+        top_n: Math.max(1, spectrumTopN),
+        min_rel: Math.max(0, spectrumMinRel),
+        polymer: activePolymerSettings,
+      });
+      if (sessionId !== activeSid) setActiveSid(sessionId);
+      setSpectrum(sp);
+      setSelectedRt(sp.meta.rt_min);
+      setInfo(`Automation loaded spectrum at RT ${sp.meta.rt_min.toFixed(3)} min.`);
+      return { rt_min: sp.meta.rt_min, spectrum_id: sp.meta.spectrum_id };
+    };
+
+    const integratePlots = (plots: LCMSEICPlot[], selectedRtOverride?: number | null) => {
+      const rows: LCMSFeatureRow[] = [];
+      plots.forEach((plot) => {
+        const integrated = integrateEICPeak(plot.eic, selectedRtOverride ?? selectedRt);
+        if (!integrated) return;
+        const sourceSid = eicSourceSessionId(plot) ?? activeSid;
+        rows.push({
+          id: `feature-${plot.id}`,
+          eicPlotId: plot.id,
+          session_id: sourceSid,
+          sourceFile: eicSourceFile(plot),
+          mz: plot.eic.target_mz,
+          tolerance: plot.eic.tolerance,
+          polarity: plot.eic.best.polarity ?? pol ?? null,
+          ...integrated,
+          source: plot.metadata?.source ?? "manual",
+          label: plot.metadata?.label,
+          expectedProduct: plot.metadata?.expectedProduct,
+          annotation: plot.metadata?.annotation,
+          createdAt: new Date().toISOString(),
+        });
+      });
+      if (rows.length === 0) return { count: 0 };
+      setFeatureRows((prev) => {
+        const rowIds = new Set(rows.map((row) => row.id));
+        return [...prev.filter((row) => !rowIds.has(row.id)), ...rows].sort((a, b) => a.rtApex - b.rtApex || a.mz - b.mz);
+      });
+      setInfo(`Automation integrated ${rows.length} EIC${rows.length === 1 ? "" : "s"}.`);
+      return { count: rows.length, feature_row_ids: rows.map((row) => row.id) };
+    };
+
+    on("lcms.push_eic_to_ui", showEicPayload);
+    on("lcms.set_polymer_settings", (args) => {
+      setPolymerSettings(obj(args.settings) as unknown as PolymerUiSettings);
+      return { ok: true };
+    });
+    on("lcms.add_feature_row", (args) => {
+      const row = obj(args.row) as unknown as LCMSFeatureRow;
+      setFeatureRows((prev) => [...prev.filter((item) => item.id !== row.id), row].sort((a, b) => a.rtApex - b.rtApex || a.mz - b.mz));
+      return { feature_row_id: row.id };
+    });
+    on("lcms.update_feature_row", (args) => {
+      const id = str(args.id);
+      if (!id) throw new Error("id is required.");
+      const patch = obj(args.patch);
+      setFeatureRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+      return { feature_row_id: id };
+    });
+    on("lcms.remove_feature_row", (args) => {
+      const id = str(args.id);
+      if (!id) throw new Error("id is required.");
+      setFeatureRows((prev) => prev.filter((row) => row.id !== id));
+      return { feature_row_id: id };
+    });
+    on("lcms.clear_features", () => {
+      const count = featureRows.length;
+      setFeatureRows([]);
+      return { count };
+    });
+    on("lcms.clear_eics", () => {
+      const cleared = visibleEicPlots.length;
+      setEicPlots((prev) =>
+        prev.filter((plot) => {
+          const sourceSid = eicSourceSessionId(plot);
+          return sourceSid != null && sourceSid !== activeSid;
+        }),
+      );
+      return { count: cleared };
+    });
+    on("lcms.open_dialog", (args) => {
+      const dialog = str(args.dialog);
+      if (dialog === "kendrick") setKendrickOpen(true);
+      else if (dialog === "expected_products") setExpectedProductsOpen(true);
+      else if (dialog === "comparison_matrix") setComparisonMatrixOpen(true);
+      else if (dialog === "feature_table") setFeatureTableOpen(true);
+      else if (dialog === "polymer") setPolymerDialogOpen(true);
+      else if (dialog === "find_mz") setFindMzOpen(true);
+      else if (dialog === "eic") setEicOpen(true);
+      else if (dialog === "graph_settings") setGraphSettingsOpen(true);
+      else throw new Error("Unknown dialog.");
+      return { dialog };
+    });
+    on("lcms.scroll_to_eic", (args) => {
+      const id = str(args.eic_plot_id);
+      if (!id) throw new Error("eic_plot_id is required.");
+      const el = eicPlotRefs.current[id];
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedEicPlotId(id);
+      window.setTimeout(() => setHighlightedEicPlotId((curr) => (curr === id ? null : curr)), 2200);
+      return { eic_plot_id: id };
+    });
+    on("lcms.highlight_feature_row", (args) => {
+      const eicPlotId = str(args.eic_plot_id) ?? featureRows.find((row) => row.id === str(args.feature_row_id))?.eicPlotId ?? null;
+      if (!eicPlotId) throw new Error("No feature/eic target found.");
+      setHighlightedEicPlotId(eicPlotId);
+      window.setTimeout(() => setHighlightedEicPlotId((curr) => (curr === eicPlotId ? null : curr)), 2200);
+      return { eic_plot_id: eicPlotId };
+    });
+    on("lcms.load_spectrum_at_rt", loadSpectrumFor);
+    on("lcms.jump_to_rt", loadSpectrumFor);
+    on("lcms.next_scan", () => {
+      goNext();
+      return { ok: true };
+    });
+    on("lcms.previous_scan", () => {
+      goPrev();
+      return { ok: true };
+    });
+    on("lcms.first_scan", () => {
+      goFirst();
+      return { ok: true };
+    });
+    on("lcms.last_scan", () => {
+      goLast();
+      return { ok: true };
+    });
+    on("lcms.select_session", (args) => {
+      const sessionId = str(args.session_id);
+      if (!sessionId) throw new Error("session_id is required.");
+      if (!sessions.some((session) => session.session_id === sessionId)) {
+        throw new Error(`Unknown session_id: ${sessionId}`);
+      }
+      setActiveSid(sessionId);
+      return { session_id: sessionId };
+    });
+    on("lcms.set_polarity", (args) => {
+      if (!isPolarity(args.polarity)) throw new Error("Invalid polarity.");
+      setPolarity(args.polarity);
+      return { polarity: args.polarity };
+    });
+    on("lcms.set_rt_unit", (args) => {
+      const rt = str(args.rt_unit);
+      if (!isRtUnit(rt)) throw new Error("Invalid RT unit.");
+      setRtUnit(rt);
+      return { rt_unit: rt };
+    });
+    on("lcms.set_overlay_sessions", (args) => {
+      const ids = stringArray(args.session_ids);
+      setOverlaySessionIds(ids);
+      return { session_ids: ids };
+    });
+    on("lcms.toggle_overlay_spectrum", (args) => {
+      const enabled = typeof args.enabled === "boolean" ? args.enabled : !overlaySpectrumEnabled;
+      setOverlaySpectrumEnabled(enabled);
+      return { enabled };
+    });
+    on("lcms.set_eic_overlay_settings", (args) => {
+      const settings = obj(args.settings);
+      setGraphSettings((prev) => ({ ...prev, eicOverlay: { ...prev.eicOverlay, ...settings } }));
+      if (typeof args.enabled === "boolean") setOverlayEicEnabled(args.enabled);
+      return { settings, enabled: typeof args.enabled === "boolean" ? args.enabled : overlayEicEnabled };
+    });
+    on("lcms.toggle_eic_overlay_mode", (args) => {
+      const enabled = typeof args.enabled === "boolean" ? args.enabled : !overlayEicEnabled;
+      setOverlayEicEnabled(enabled);
+      return { enabled };
+    });
+    on("lcms.show_summed_region_spectrum", (args) => {
+      const sp = obj(args.spectrum) as unknown as SpectrumData;
+      if (!Array.isArray(sp.mz) || !Array.isArray(sp.intensity)) {
+        throw new Error("Spectrum payload is missing mz/intensity arrays.");
+      }
+      const sessionId = str(args.session_id);
+      if (sessionId && sessionId !== activeSid) setActiveSid(sessionId);
+      setSpectrum(sp);
+      setSelectedRt(sp.meta.rt_min);
+      if (sp.meta.rt_start != null && sp.meta.rt_end != null) {
+        setSelectedRegion({ rtMin: sp.meta.rt_start, rtMax: sp.meta.rt_end });
+      }
+      return { spectrum_id: sp.meta.spectrum_id };
+    });
+    on("lcms.integrate_visible_eics", (args) => integratePlots(visibleEicPlots, num(args.selected_rt)));
+
+    return () => unregister.forEach((fn) => fn());
+  }, [
+    active,
+    activePolymerSettings,
+    activeSid,
+    browserAutomation,
+    eicPlots.length,
+    featureRows,
+    goFirst,
+    goLast,
+    goNext,
+    goPrev,
+    overlayEicEnabled,
+    overlaySpectrumEnabled,
+    pol,
+    selectedRt,
+    sessions,
+    setActiveSid,
+    setOverlayEicEnabled,
+    setOverlaySessionIds,
+    setOverlaySpectrumEnabled,
+    setPolarity,
+    setRtUnit,
+    spectrumMinRel,
+    spectrumTopN,
+    visibleEicPlots,
+  ]);
 
   const rtFromPlotClick = (ev: Readonly<PlotMouseEvent>) => {
     const p = ev.points?.[0];

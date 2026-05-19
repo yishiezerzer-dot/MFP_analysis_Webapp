@@ -3,12 +3,15 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 
 from . import actions as _actions  # noqa: F401 - imports register action modules
+from .browser_bridge import browser_connections
 from .registry import (
     ActionInputError,
+    BrowserActionFailed,
+    BrowserConnectionRequired,
     ActionNotFound,
     ConfirmationInvalid,
     ConfirmationRequired,
@@ -87,6 +90,10 @@ async def execute_action(
         raise HTTPException(status_code=403, detail=str(exc))
     except ActionInputError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    except BrowserConnectionRequired as exc:
+        raise HTTPException(status_code=409, detail={"error": "requires_open_app", "message": str(exc)})
+    except BrowserActionFailed as exc:
+        raise HTTPException(status_code=422, detail={"error": "browser_action_failed", "message": str(exc)})
     except HTTPException:
         raise
 
@@ -94,3 +101,19 @@ async def execute_action(
 @router.get("/logs")
 async def get_logs() -> List[Dict[str, Any]]:
     return [_dump_model(entry) for entry in list_log_entries()]
+
+
+@router.websocket("/browser-bridge")
+async def browser_bridge(
+    websocket: WebSocket,
+    browser_id: str | None = Query(default=None),
+) -> None:
+    connection = await browser_connections.connect(websocket, browser_id)
+    try:
+        while True:
+            message = await websocket.receive_json()
+            await browser_connections.receive(connection, message)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await browser_connections.disconnect(connection)
