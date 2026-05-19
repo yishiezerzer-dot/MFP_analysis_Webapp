@@ -1,9 +1,15 @@
 {
+  "permissions": {
+    "allow": [
+      "PowerShell($frontend = \"c:\\\\Users\\\\owner\\\\OneDrive - huji.ac.il\\\\שולחן העבודה\\\\yishi - moran's lab'\\\\github copilot folder\\\\Yishi's app\\\\MFP_analysis_app\\\\web\\\\frontend\"; \"=== TypeCheck ===\"; & \"$frontend\\\\node_modules\\\\.bin\\\\tsc.cmd\" -p \"$frontend\\\\tsconfig.json\" --noEmit 2>&1; \"=== Tests ===\"; & \"$frontend\\\\node_modules\\\\.bin\\\\vitest.cmd\" run 2>&1 | Select-Object -Last 15)",
+      "PowerShell($frontend = \"c:\\\\Users\\\\owner\\\\OneDrive - huji.ac.il\\\\שולחן העבודה\\\\yishi - moran's lab'\\\\github copilot folder\\\\Yishi's app\\\\MFP_analysis_app\\\\web\\\\frontend\"; Set-Location $frontend; \"=== TypeCheck ===\"; & \"$frontend\\\\node_modules\\\\.bin\\\\tsc.cmd\" -p \"$frontend\\\\tsconfig.json\" --noEmit 2>&1; \"=== Tests ===\"; & \"$frontend\\\\node_modules\\\\.bin\\\\vitest.cmd\" run 2>&1 | Select-Object -Last 12)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
   "enabledPlugins": {
     "code-review@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
     "agent-sdk-dev@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true
-  },
-  "enableAllProjectMcpServers": true
+  }
 }
