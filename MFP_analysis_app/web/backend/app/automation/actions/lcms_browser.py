@@ -71,6 +71,49 @@ class BrowserEmptyInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class BrowserOptionalSessionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: Optional[str] = None
+
+
+class BrowserExportLabelsInput(BrowserOptionalSessionInput):
+    polarity: Optional[Literal["positive", "negative"]] = None
+    top_n: Optional[int] = None
+    min_rel: Optional[float] = None
+
+
+class BrowserExportSpectrumInput(BrowserOptionalSessionInput):
+    rt_min: Optional[float] = None
+    polarity: Optional[Literal["positive", "negative"]] = None
+
+
+class BrowserExportTICOverlayInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_ids: Optional[List[str]] = None
+    polarity: Optional[Literal["positive", "negative"]] = None
+
+
+class BrowserCreateProjectInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = None
+
+
+class BrowserProjectIdInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+
+
+class BrowserMoveSessionProjectInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str
+    project_id: Optional[str] = None
+
+
 class BrowserEICIdInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -254,6 +297,76 @@ async def clear_features(args: BrowserEmptyInput) -> BrowserActionOutput:
 @_browser_action("lcms.clear_eics", "Clear visible generated EIC plots.", BrowserEmptyInput, risk="confirm")
 async def clear_eics(args: BrowserEmptyInput) -> BrowserActionOutput:
     return await _dispatch("lcms.clear_eics", args)
+
+
+@_browser_action("lcms.export_labels_csv", "Export all-scan LCMS labels as CSV from the browser.", BrowserExportLabelsInput)
+async def export_labels_csv(args: BrowserExportLabelsInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.export_labels_csv", args)
+
+
+@_browser_action("lcms.export_spectrum_csv", "Export the current LCMS spectrum as CSV from the browser.", BrowserExportSpectrumInput)
+async def export_spectrum_csv(args: BrowserExportSpectrumInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.export_spectrum_csv", args)
+
+
+@_browser_action("lcms.export_uv_csv", "Export the attached UV chromatogram as CSV from the browser.", BrowserOptionalSessionInput)
+async def export_uv_csv(args: BrowserOptionalSessionInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.export_uv_csv", args)
+
+
+@_browser_action("lcms.export_tic_overlay_csv", "Export TIC overlays as CSV from the browser.", BrowserExportTICOverlayInput)
+async def export_tic_overlay_csv(args: BrowserExportTICOverlayInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.export_tic_overlay_csv", args)
+
+
+@_browser_action("lcms.open_uv_file_picker", "Open the UV chromatogram file picker.", BrowserEmptyInput)
+async def open_uv_file_picker(args: BrowserEmptyInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.open_uv_file_picker", args)
+
+
+@_browser_action("lcms.clear_uv", "Clear the attached UV chromatogram from the active session.", BrowserOptionalSessionInput)
+async def clear_uv(args: BrowserOptionalSessionInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.clear_uv", args)
+
+
+@_browser_action("lcms.auto_align_uv", "Run UV-to-MS auto alignment in the browser.", BrowserEmptyInput)
+async def auto_align_uv(args: BrowserEmptyInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.auto_align_uv", args)
+
+
+@_browser_action("lcms.auto_label_uv", "Auto-label UV peaks from nearby MS spectra.", BrowserEmptyInput)
+async def auto_label_uv(args: BrowserEmptyInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.auto_label_uv", args)
+
+
+@_browser_action("lcms.open_custom_uv_label", "Open the custom UV label dialog.", BrowserEmptyInput)
+async def open_custom_uv_label(args: BrowserEmptyInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.open_custom_uv_label", args)
+
+
+@_browser_action("lcms.clear_uv_labels", "Clear UV labels for the active LCMS session.", BrowserEmptyInput)
+async def clear_uv_labels(args: BrowserEmptyInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.clear_uv_labels", args)
+
+
+@_browser_action("lcms.create_project", "Create an LCMS project in the sidebar.", BrowserCreateProjectInput)
+async def create_project(args: BrowserCreateProjectInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.create_project", args)
+
+
+@_browser_action("lcms.delete_project", "Delete an LCMS project from the sidebar.", BrowserProjectIdInput)
+async def delete_project(args: BrowserProjectIdInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.delete_project", args)
+
+
+@_browser_action("lcms.move_session_to_project", "Move an LCMS session into a sidebar project.", BrowserMoveSessionProjectInput)
+async def move_session_to_project(args: BrowserMoveSessionProjectInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.move_session_to_project", args)
+
+
+@_browser_action("lcms.select_project", "Select an LCMS sidebar project.", BrowserProjectIdInput)
+async def select_project(args: BrowserProjectIdInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.select_project", args)
 
 
 @_browser_action("lcms.open_dialog", "Open an LCMS dialog in the browser.", BrowserOpenDialogInput)

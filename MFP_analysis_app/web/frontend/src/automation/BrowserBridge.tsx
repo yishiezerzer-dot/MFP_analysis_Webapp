@@ -8,12 +8,13 @@ import {
   useRef,
 } from "react";
 
-type AutomationArgs = Record<string, unknown>;
-type AutomationResult = Record<string, unknown> | void;
-type BrowserAutomationHandler = (args: AutomationArgs) => AutomationResult | Promise<AutomationResult>;
+export type AutomationArgs = Record<string, unknown>;
+export type AutomationResult = Record<string, unknown> | void;
+export type BrowserAutomationHandler = (args: AutomationArgs) => AutomationResult | Promise<AutomationResult>;
 
 interface BrowserAutomationContextValue {
   register: (actionId: string, handler: BrowserAutomationHandler) => () => void;
+  dispatchLocal: (actionId: string, args: AutomationArgs) => Promise<Record<string, unknown>>;
 }
 
 const BrowserAutomationContext = createContext<BrowserAutomationContextValue | null>(null);
@@ -57,6 +58,12 @@ export function BrowserBridgeProvider({ children }: { children: ReactNode }) {
       const current = handlersRef.current.get(actionId);
       if (current === handler) handlersRef.current.delete(actionId);
     };
+  }, []);
+
+  const dispatchLocal = useCallback(async (actionId: string, args: AutomationArgs) => {
+    const handler = handlersRef.current.get(actionId);
+    if (!handler) throw new Error(`No browser handler registered for ${actionId}`);
+    return ((await handler(args)) ?? {}) as Record<string, unknown>;
   }, []);
 
   const send = useCallback((payload: Record<string, unknown>) => {
@@ -147,7 +154,7 @@ export function BrowserBridgeProvider({ children }: { children: ReactNode }) {
     };
   }, [connect]);
 
-  const value = useMemo(() => ({ register }), [register]);
+  const value = useMemo(() => ({ register, dispatchLocal }), [dispatchLocal, register]);
   return <BrowserAutomationContext.Provider value={value}>{children}</BrowserAutomationContext.Provider>;
 }
 

@@ -537,7 +537,7 @@ export interface DSLoadOptions {
 
 // --- AI Assistant types ---
 
-export type AIProvider = "demo" | "openai" | "ollama";
+export type AIProvider = "demo" | "openai" | "anthropic" | "ollama";
 
 export interface AIProviderStatus {
   openai: {
@@ -545,6 +545,11 @@ export interface AIProviderStatus {
     sdk: boolean;
     api_key_env_var: string;
     has_api_key: boolean;
+    default_model: string;
+  };
+  anthropic?: {
+    available: boolean;
+    has_api_key?: boolean;
     default_model: string;
   };
   ollama: {

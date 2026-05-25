@@ -18,6 +18,7 @@ import {
   LCMSEICData,
   LCMSRegionSpectrumData,
   LCMSTICOverlayTrace,
+  LCMSFindMzResponse,
   LCMSSessionSummary,
   PolymerSettings,
   SpectrumData,
@@ -32,6 +33,7 @@ import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
+import { useAutomationDispatch } from "../automation/registry";
 import { useStoredState } from "../hooks/useStoredState";
 import {
   buildExpectedProductHits,
@@ -1050,6 +1052,7 @@ function readJsonFile<T>(file: File): Promise<T> {
 
 export function LCMSView() {
   const browserAutomation = useBrowserAutomation();
+  const actionDispatch = useAutomationDispatch();
   const persistedProjectState = useMemo(() => loadProjectPersistence(), []);
 
   // Sessions / data
@@ -1232,6 +1235,66 @@ export function LCMSView() {
   const [helpOpen, setHelpOpen] = useState(false);
   const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
 
+  const dispatchUiAction = useCallback(
+    (actionId: Parameters<typeof actionDispatch>[0], args: Record<string, unknown> = {}) => {
+      void actionDispatch(actionId, args).catch((err) => setError(String(err)));
+    },
+    [actionDispatch],
+  );
+
+  /** Awaitable variant of dispatchUiAction. Surface the result to the caller
+   * (e.g. CSV exports that need the payload) while still funneling errors
+   * through setError. Returns `null` on failure. */
+  const runUiAction = useCallback(
+    async (
+      actionId: Parameters<typeof actionDispatch>[0],
+      args: Record<string, unknown> = {},
+    ): Promise<Record<string, unknown> | null> => {
+      try {
+        return await actionDispatch(actionId, args);
+      } catch (err) {
+        setError(String(err));
+        return null;
+      }
+    },
+    [actionDispatch],
+  );
+
+  const featureRowsForAutomation = useCallback(
+    (rows: LCMSFeatureRow[]) =>
+      rows.map((row) => ({
+        id: row.id,
+        eic_plot_id: row.eicPlotId,
+        session_id: row.session_id,
+        source_file: row.sourceFile,
+        mz: row.mz,
+        tolerance: row.tolerance,
+        polarity: row.polarity,
+        rt_start: row.rtStart,
+        rt_apex: row.rtApex,
+        rt_end: row.rtEnd,
+        height: row.height,
+        area: row.area,
+        baseline: row.baseline,
+        n_points: row.nPoints,
+        source: row.source,
+        label: row.label,
+        expected_product: row.expectedProduct,
+        annotation: row.annotation,
+        created_at: row.createdAt,
+      })),
+    [],
+  );
+
+  const downloadAutomationCsv = useCallback((payload: unknown, fallbackName: string) => {
+    const data = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+    const csv = typeof data.csv === "string" ? data.csv : "";
+    if (!csv) throw new Error("CSV export action did not return CSV text.");
+    const filename = typeof data.filename === "string" ? data.filename : fallbackName;
+    const contentType = typeof data.content_type === "string" ? data.content_type : "text/csv;charset=utf-8";
+    downloadBlob(new Blob([csv], { type: contentType }), filename);
+  }, []);
+
   const active = useMemo(
     () => sessions.find((s) => s.session_id === activeSid) ?? null,
     [sessions, activeSid],
@@ -1315,6 +1378,89 @@ export function LCMSView() {
     [polarity, polymerSettings],
   );
 
+  const exportFeatureTableCsv = useCallback(
+    async (rows: LCMSFeatureRow[]) => {
+      const payload = await runUiAction("lcms.export_feature_table_csv", {
+        rows: featureRowsForAutomation(rows),
+      });
+      if (payload) downloadAutomationCsv(payload, "lcms_feature_table.csv");
+    },
+    [downloadAutomationCsv, featureRowsForAutomation, runUiAction],
+  );
+
+  const exportComparisonMatrixCsv = useCallback(
+    async (
+      rows: LCMSFeatureRow[],
+      options: {
+        metric: FeatureMatrixMetric;
+        groupMode: FeatureMatrixGroupMode;
+        mzTolerance: number;
+        normalizeRows: boolean;
+      },
+    ) => {
+      const payload = await runUiAction("lcms.export_comparison_matrix_csv", {
+        rows: featureRowsForAutomation(rows),
+        metric: options.metric,
+        group_mode: options.groupMode,
+        mz_tolerance: options.mzTolerance,
+        normalize_rows: options.normalizeRows,
+      });
+      if (payload) downloadAutomationCsv(payload, "lcms_comparison_matrix.csv");
+    },
+    [downloadAutomationCsv, featureRowsForAutomation, runUiAction],
+  );
+
+  const openComparisonMatrix = useCallback(async () => {
+    // The Comparison Matrix dialog computes everything locally via
+    // groupFeatureRowsForMatrix; no need to ask the backend to recompute
+    // it on dialog open. Codex/in-app assistant invokes
+    // lcms.build_comparison_matrix directly when it wants the JSON.
+    try {
+      await actionDispatch("lcms.open_dialog", { dialog: "comparison_matrix" });
+    } catch (err) {
+      setError(String(err));
+    }
+  }, [actionDispatch]);
+
+  const openPolymerDialogWithMatch = useCallback(async () => {
+    if (activeSid && spectrum && activePolymerSettings) {
+      const result = (await runUiAction("lcms.match_polymers_for_spectrum", {
+        session_id: activeSid,
+        rt_min: spectrum.meta.rt_min,
+        polarity: pol,
+        settings: activePolymerSettings,
+      })) as { labels?: SpectrumLabel[] } | null;
+      if (result && Array.isArray(result.labels)) {
+        setSpectrum((prev) =>
+          prev
+            ? { ...prev, labels: [...prev.labels.filter((label) => label.source !== "polymer"), ...result.labels!], polymer_labels: result.labels }
+            : prev,
+        );
+      }
+    }
+    await runUiAction("lcms.open_dialog", { dialog: "polymer" });
+  }, [activePolymerSettings, activeSid, pol, runUiAction, spectrum]);
+
+  // The Expected Products and Kendrick dialogs compute everything locally
+  // via buildExpectedProductHits / buildKendrickPoints. The dialog open
+  // just toggles UI state — no backend warmup needed. Agents that want the
+  // JSON call the corresponding action explicitly.
+  const openExpectedProductsWithCompute = useCallback(async () => {
+    try {
+      await actionDispatch("lcms.open_dialog", { dialog: "expected_products" });
+    } catch (err) {
+      setError(String(err));
+    }
+  }, [actionDispatch]);
+
+  const openKendrickWithCompute = useCallback(async () => {
+    try {
+      await actionDispatch("lcms.open_dialog", { dialog: "kendrick" });
+    } catch (err) {
+      setError(String(err));
+    }
+  }, [actionDispatch]);
+
   // --- data loading ---------------------------------------------------------
 
   useEffect(() => {
@@ -1341,9 +1487,9 @@ export function LCMSView() {
     setInfo("Saved polymer matching defaults.");
   }, [polymerSettings]);
 
-  const createProject = useCallback(() => {
-    const name = window.prompt("Project name");
-    const trimmed = name?.trim();
+  const createProject = useCallback((providedName?: string) => {
+    const name = providedName ?? window.prompt("Project name") ?? "";
+    const trimmed = name.trim();
     if (!trimmed) return;
     const project: LCMSProject = {
       id: makeProjectId(),
@@ -1352,6 +1498,7 @@ export function LCMSView() {
     };
     setProjects((prev) => [...prev, project]);
     setActiveProjectId(project.id);
+    return project;
   }, []);
 
   const deleteProject = useCallback((projectId: string) => {
@@ -2111,14 +2258,6 @@ export function LCMSView() {
     const i = nearestIndex(rtList, selectedRt);
     goToIndex(Math.min(rtList.length - 1, i + 1));
   };
-  const goJump = () => {
-    const t = parseFloat(rtJumpText);
-    if (!Number.isFinite(t) || rtList.length === 0) return;
-    const rtMin = rtUnit === "seconds" ? t / 60.0 : t;
-    const i = nearestIndex(rtList, rtMin);
-    goToIndex(i);
-  };
-
   // Find m/z: scan every MS1 at current filter for the most intense near m/z
   const [findMzInput, setFindMzInput] = useState("");
   const [findMzTol, setFindMzTol] = useState(0.01);
@@ -2131,14 +2270,12 @@ export function LCMSView() {
     setBusy(true);
     setError(null);
     try {
-      // Crude but works: sweep every MS1 and ask backend for spectrum; pick the one
-      // with highest intensity in [target-tol, target+tol]. For large files this is
-      // slow, so we first downsample the RT grid to at most 200 probes.
-      const result = await api.lcms.findMz(activeSid, {
+      const result = await actionDispatch("lcms.find_mz", {
+        session_id: activeSid,
         mz: target,
         tolerance: findMzTol,
         polarity: pol,
-      });
+      }) as unknown as LCMSFindMzResponse;
       const bestRt = result.best.rt_min;
       if (bestRt == null) {
         setInfo(`No match found for m/z ${target.toFixed(4)} within ${findMzTol.toFixed(3)} Da.`);
@@ -2175,31 +2312,22 @@ export function LCMSView() {
       setBusy(true);
       setError(null);
       try {
-        const result = await api.lcms.eic(sourceSid, {
+        await actionDispatch("lcms.create_eic_and_show", {
+          session_id: sourceSid,
           mz: target,
           tolerance,
           polarity: pol,
-        });
-        eicPlotCounterRef.current += 1;
-        setEicPlots((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-${eicPlotCounterRef.current}`,
-            eic: result,
-            metadata: {
-              source: source === "dialog" ? "manual" : source,
-              sourceSessionId: sourceSid,
-              sourceFile,
-              label: metadata?.label,
-              expectedProduct: metadata?.expectedProduct,
-              annotation: metadata?.annotation,
-            },
+          source,
+          source_file: sourceFile,
+          metadata: {
+            label: metadata?.label,
+            expectedProduct: metadata?.expectedProduct,
+            annotation: metadata?.annotation,
           },
-        ]);
+        });
         if (source === "dialog") setEicOpen(false);
-        if (source === "dialog" && result.best.rt_min != null) loadSpectrum(result.best.rt_min);
         setInfo(
-          `Generated EIC for ${sourceFile}: m/z ${target.toFixed(4)} +/- ${tolerance.toFixed(4)} across ${result.n_scans} scans.`,
+          `Generated EIC for ${sourceFile}: m/z ${target.toFixed(4)} +/- ${tolerance.toFixed(4)}.`,
         );
       } catch (err) {
         setError(String(err));
@@ -2207,7 +2335,7 @@ export function LCMSView() {
         setBusy(false);
       }
     },
-    [active?.display_name, activeSid, eicTol, loadSpectrum, pol],
+    [actionDispatch, active?.display_name, activeSid, eicTol, pol],
   );
 
   const runEIC = async () => {
@@ -2427,23 +2555,16 @@ export function LCMSView() {
     setBusy(true);
     setError(null);
     try {
-      const data = await api.lcms.regionSpectrum(activeSid, {
+      await actionDispatch("lcms.show_summed_region_spectrum", {
+        session_id: activeSid,
         rt_min: rtMin,
         rt_max: rtMax,
         polarity: pol,
         bin_width: 0.01,
         min_rel: 0.0,
-        polymer: activePolymerSettings,
       });
-      const nextSpectrum = spectrumFromRegionData(data, rtMin, rtMax);
-      setSpectrum(nextSpectrum);
-      setSelectedRt(nextSpectrum.meta.rt_min);
       setShowSpectrum(true);
-      setInfo(
-        data.n_scans > 0
-          ? `Loaded summed MS1 from ${data.n_scans} scans (${data.rt_min.toFixed(3)}-${data.rt_max.toFixed(3)} min).`
-          : `No MS1 scans found in ${data.rt_min.toFixed(3)}-${data.rt_max.toFixed(3)} min.`,
-      );
+      setInfo(`Loaded summed MS1 for ${rtMin.toFixed(3)}-${rtMax.toFixed(3)} min.`);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -2761,6 +2882,9 @@ export function LCMSView() {
       ]);
       if (eic.best?.rt_min != null && typeof eic.best.rt_min === "number") {
         setSelectedRt(eic.best.rt_min);
+        if (metadataSource === "manual") {
+          loadSpectrum(eic.best.rt_min);
+        }
       }
       setInfo(`Automation added EIC m/z ${eic.target_mz.toFixed(4)}.`);
       return { eic_plot_id: id };
@@ -2854,6 +2978,70 @@ export function LCMSView() {
         }),
       );
       return { count: cleared };
+    });
+    on("lcms.export_labels_csv", async () => {
+      await exportLabels();
+      return { ok: true };
+    });
+    on("lcms.export_spectrum_csv", async () => {
+      await exportSpectrum();
+      return { ok: true };
+    });
+    on("lcms.export_uv_csv", async () => {
+      await exportUV();
+      return { ok: true };
+    });
+    on("lcms.export_tic_overlay_csv", async () => {
+      await exportTICOverlay();
+      return { ok: true };
+    });
+    on("lcms.open_uv_file_picker", () => {
+      uvFileRef.current?.click();
+      return { ok: true };
+    });
+    on("lcms.clear_uv", async () => {
+      await onRemoveUV();
+      return { ok: true };
+    });
+    on("lcms.auto_align_uv", () => {
+      autoAlignNow();
+      return { ok: true };
+    });
+    on("lcms.auto_label_uv", async () => {
+      await autoLabelUvPeaks();
+      return { ok: true };
+    });
+    on("lcms.open_custom_uv_label", () => {
+      openCustomUvLabel();
+      return { ok: true };
+    });
+    on("lcms.clear_uv_labels", () => {
+      const count = uvTextLabels.length;
+      setUvTextLabels([]);
+      return { count };
+    });
+    on("lcms.create_project", (args) => {
+      const project = createProject(str(args.name) ?? undefined);
+      return project ? { project_id: project.id } : { cancelled: true };
+    });
+    on("lcms.delete_project", (args) => {
+      const projectId = str(args.project_id);
+      if (!projectId) throw new Error("project_id is required.");
+      deleteProject(projectId);
+      return { project_id: projectId };
+    });
+    on("lcms.move_session_to_project", (args) => {
+      const sessionId = str(args.session_id);
+      if (!sessionId) throw new Error("session_id is required.");
+      const projectId = str(args.project_id);
+      moveSessionToProject(sessionId, projectId);
+      return { session_id: sessionId, project_id: projectId };
+    });
+    on("lcms.select_project", (args) => {
+      const projectId = str(args.project_id);
+      if (!projectId) throw new Error("project_id is required.");
+      setActiveProjectId(projectId);
+      return { project_id: projectId };
     });
     on("lcms.open_dialog", (args) => {
       const dialog = str(args.dialog);
@@ -3112,10 +3300,12 @@ export function LCMSView() {
           activeProjectId={activeProjectId}
           onSelect={setActiveSid}
           onRemove={onRemove}
-          onCreateProject={createProject}
-          onDeleteProject={deleteProject}
-          onMoveSession={moveSessionToProject}
-          onSelectProject={setActiveProjectId}
+          onCreateProject={() => dispatchUiAction("lcms.create_project")}
+          onDeleteProject={(projectId) => dispatchUiAction("lcms.delete_project", { project_id: projectId })}
+          onMoveSession={(sessionId, projectId) =>
+            dispatchUiAction("lcms.move_session_to_project", { session_id: sessionId, project_id: projectId })
+          }
+          onSelectProject={(projectId) => dispatchUiAction("lcms.select_project", { project_id: projectId })}
         />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-6">
@@ -3150,14 +3340,14 @@ export function LCMSView() {
                   rtUnit={rtUnit}
                   onClick={onTICClick}
                   onClear={() =>
-                    setEicPlots((prev) =>
-                      prev.filter((plot) => {
-                        const sourceSid = eicSourceSessionId(plot);
-                        return sourceSid != null && sourceSid !== activeSid;
-                      }),
-                    )
+                    dispatchUiAction("lcms.clear_eics")
                   }
                   onIntegrate={integrateEicPlot}
+                  onIntegrateAll={() =>
+                    dispatchUiAction("lcms.integrate_visible_eics", {
+                      selected_rt: selectedRt,
+                    })
+                  }
                   clearLabel="Clear file"
                   settings={graphSettings.eic}
                   overlaySettings={graphSettings.eicOverlay}
@@ -3206,10 +3396,10 @@ export function LCMSView() {
                   }
                   labels={uvTextLabels}
                   rtUnit={rtUnit}
-                  onPickFile={() => uvFileRef.current?.click()}
-                  onRemove={onRemoveUV}
+                  onPickFile={() => dispatchUiAction("lcms.open_uv_file_picker")}
+                  onRemove={() => dispatchUiAction("lcms.clear_uv")}
                   onClick={onUVClick}
-                  onClearLabels={() => setUvTextLabels([])}
+                  onClearLabels={() => dispatchUiAction("lcms.clear_uv_labels")}
                   onDeleteLabel={deleteUvLabel}
                   onEditLabel={editUvLabel}
                   onMoveLabel={moveUvLabel}
@@ -3253,15 +3443,15 @@ export function LCMSView() {
 
         <ToolsPanel
           // Primary actions
-          onEIC={() => setEicOpen(true)}
-          onJumpMz={() => setFindMzOpen(true)}
-          onExportLabels={exportLabels}
-          onExportSpectrum={exportSpectrum}
-          onExportUV={exportUV}
-          onExportTICOverlay={exportTICOverlay}
+          onEIC={() => dispatchUiAction("lcms.open_dialog", { dialog: "eic" })}
+          onJumpMz={() => dispatchUiAction("lcms.open_dialog", { dialog: "find_mz" })}
+          onExportLabels={() => dispatchUiAction("lcms.export_labels_csv")}
+          onExportSpectrum={() => dispatchUiAction("lcms.export_spectrum_csv")}
+          onExportUV={() => dispatchUiAction("lcms.export_uv_csv")}
+          onExportTICOverlay={() => dispatchUiAction("lcms.export_tic_overlay_csv")}
           onSumRegionSpectrum={loadSummedRegionSpectrum}
-          onFeatureTable={() => setFeatureTableOpen(true)}
-          onComparisonMatrix={() => setComparisonMatrixOpen(true)}
+          onFeatureTable={() => dispatchUiAction("lcms.open_dialog", { dialog: "feature_table" })}
+          onComparisonMatrix={() => void openComparisonMatrix()}
           featureCount={featureRows.length}
           busy={busy}
           activeLoaded={!!active}
@@ -3278,16 +3468,23 @@ export function LCMSView() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           // Navigate
-          onPrev={goPrev}
-          onNext={goNext}
-          onFirst={goFirst}
-          onLast={goLast}
-          onFindMz={() => setFindMzOpen(true)}
-          onAutoAlignUV={autoAlignNow}
-          onEICDialog={() => setEicOpen(true)}
+          onPrev={() => dispatchUiAction("lcms.previous_scan")}
+          onNext={() => dispatchUiAction("lcms.next_scan")}
+          onFirst={() => dispatchUiAction("lcms.first_scan")}
+          onLast={() => dispatchUiAction("lcms.last_scan")}
+          onFindMz={() => dispatchUiAction("lcms.open_dialog", { dialog: "find_mz" })}
+          onAutoAlignUV={() => dispatchUiAction("lcms.auto_align_uv")}
+          onEICDialog={() => dispatchUiAction("lcms.open_dialog", { dialog: "eic" })}
           rtJumpText={rtJumpText}
           setRtJumpText={setRtJumpText}
-          onRtJump={goJump}
+          onRtJump={() => {
+            const t = parseFloat(rtJumpText);
+            if (!Number.isFinite(t)) return;
+            dispatchUiAction("lcms.jump_to_rt", {
+              rt_min: rtUnit === "seconds" ? t / 60.0 : t,
+              polarity: pol,
+            });
+          }}
           rtUnit={rtUnit}
           // View
           polarity={polarity}
@@ -3301,7 +3498,7 @@ export function LCMSView() {
           }}
           autoAlignUv={autoAlignUv}
           setAutoAlignUv={setAutoAlignUv}
-          onGraphSettings={() => setGraphSettingsOpen(true)}
+          onGraphSettings={() => dispatchUiAction("lcms.open_dialog", { dialog: "graph_settings" })}
           showTIC={showTIC}
           setShowTIC={setShowTIC}
           showSpectrum={showSpectrum}
@@ -3352,8 +3549,8 @@ export function LCMSView() {
           uvLabelStairYStep={uvLabelStairYStep}
           setUvLabelStairYStep={setUvLabelStairYStep}
           onLabelSelectedRT={transferSelectedSpectrumToUv}
-          onAutoLabelUV={autoLabelUvPeaks}
-          onCustomUvLabel={openCustomUvLabel}
+          onAutoLabelUV={() => dispatchUiAction("lcms.auto_label_uv")}
+          onCustomUvLabel={() => dispatchUiAction("lcms.open_custom_uv_label")}
           onAutoArrangeLabels={autoArrangeUvLabels}
           canAddCustomUvLabel={uv?.available === true && (selectedUvRt != null || selectedRt != null)}
           uvLabelCount={uvTextLabels.length}
@@ -3365,9 +3562,9 @@ export function LCMSView() {
           // Polymer
           polymerSettings={polymerSettings}
           setPolymerSettings={setPolymerSettings}
-          onPolymerDialog={() => setPolymerDialogOpen(true)}
-          onExpectedProducts={() => setExpectedProductsOpen(true)}
-          onKendrick={() => setKendrickOpen(true)}
+          onPolymerDialog={() => void openPolymerDialogWithMatch()}
+          onExpectedProducts={() => void openExpectedProductsWithCompute()}
+          onKendrick={() => void openKendrickWithCompute()}
           canOpenExpectedProducts={Boolean(spectrum && polarity !== "all" && polymerMonomerText(polymerSettings))}
           canOpenKendrick={Boolean(spectrum)}
           onSavePolymerDefaults={savePolymerDefaults}
@@ -3444,6 +3641,7 @@ export function LCMSView() {
           rows={featureRows}
           onDelete={(id) => setFeatureRows((prev) => prev.filter((row) => row.id !== id))}
           onClear={() => setFeatureRows([])}
+          onExportCsv={() => void exportFeatureTableCsv(featureRows)}
           onClose={() => setFeatureTableOpen(false)}
           onUpdate={(id, patch) =>
             setFeatureRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)))
@@ -3463,6 +3661,7 @@ export function LCMSView() {
         <ComparisonMatrixDialog
           rows={featureRows}
           sessions={sessions}
+          onExportCsv={exportComparisonMatrixCsv}
           onClose={() => setComparisonMatrixOpen(false)}
         />
       )}
@@ -5382,6 +5581,7 @@ function EICChart(props: {
   onClick: (e: Readonly<PlotMouseEvent>) => void;
   onClear: () => void;
   onIntegrate: (plot: LCMSEICPlot) => void;
+  onIntegrateAll?: () => void;
   clearLabel?: string;
   selectedRt: number | null;
   rtUnit: RtUnit;
@@ -5496,7 +5696,11 @@ function EICChart(props: {
           )}
           <button
             className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
-            onClick={() => props.eics.forEach((plot) => props.onIntegrate(plot))}
+            onClick={() =>
+              props.onIntegrateAll && props.eics.length > 1
+                ? props.onIntegrateAll()
+                : props.eics.forEach((plot) => props.onIntegrate(plot))
+            }
           >
             {props.eics.length > 1 ? "Integrate all" : "Integrate"}
           </button>
@@ -6606,6 +6810,7 @@ function FeatureTableDialog({
   rows,
   onDelete,
   onClear,
+  onExportCsv,
   onClose,
   onUpdate,
   onLocate,
@@ -6613,6 +6818,7 @@ function FeatureTableDialog({
   rows: LCMSFeatureRow[];
   onDelete: (id: string) => void;
   onClear: () => void;
+  onExportCsv: () => void;
   onClose: () => void;
   onUpdate: (id: string, patch: Partial<LCMSFeatureRow>) => void;
   onLocate: (eicPlotId: string) => void;
@@ -6650,56 +6856,6 @@ function FeatureTableDialog({
   };
   const sortIndicator = (key: FeatureSortKey) => (sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
-  const exportCsv = () => {
-    const header = [
-      "FeatureID",
-      "SourceFile",
-      "mz",
-      "ToleranceDa",
-      "Polarity",
-      "RTApexMin",
-      "RTStartMin",
-      "RTEndMin",
-      "Height",
-      "Area",
-      "Baseline",
-      "SN",
-      "NPoints",
-      "Source",
-      "Label",
-      "ExpectedProduct",
-      "Annotation",
-      "CreatedAt",
-    ];
-    const csv = rowsToCsv([
-      header,
-      ...sortedRows.map((row) => {
-        const sn = snFor(row);
-        return [
-          row.id,
-          row.sourceFile,
-          row.mz.toFixed(6),
-          row.tolerance.toFixed(6),
-          row.polarity,
-          row.rtApex.toFixed(5),
-          row.rtStart.toFixed(5),
-          row.rtEnd.toFixed(5),
-          row.height.toExponential(6),
-          row.area.toExponential(6),
-          row.baseline.toExponential(6),
-          Number.isFinite(sn) ? sn.toFixed(2) : "",
-          row.nPoints,
-          row.source,
-          row.label,
-          row.expectedProduct,
-          row.annotation,
-          row.createdAt,
-        ];
-      }),
-    ]);
-    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), "lcms_feature_table.csv");
-  };
-
   return (
     <Modal
       title="Feature Table"
@@ -6718,7 +6874,7 @@ function FeatureTableDialog({
             <button
               className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
               disabled={rows.length === 0}
-              onClick={exportCsv}
+              onClick={onExportCsv}
             >
               Export CSV
             </button>
@@ -6836,10 +6992,20 @@ function FeatureTableDialog({
 function ComparisonMatrixDialog({
   rows,
   sessions,
+  onExportCsv,
   onClose,
 }: {
   rows: LCMSFeatureRow[];
   sessions: LCMSSessionSummary[];
+  onExportCsv: (
+    rows: LCMSFeatureRow[],
+    options: {
+      metric: FeatureMatrixMetric;
+      groupMode: FeatureMatrixGroupMode;
+      mzTolerance: number;
+      normalizeRows: boolean;
+    },
+  ) => Promise<void>;
   onClose: () => void;
 }) {
   const [metric, setMetric] = useState<FeatureMatrixMetric>("area");
@@ -6871,36 +7037,6 @@ function ComparisonMatrixDialog({
     const spread = group.rtMax - group.rtMin;
     return spread > 0.01 ? `${group.rtMin.toFixed(3)}–${group.rtMax.toFixed(3)}` : group.rtApex.toFixed(3);
   };
-  const exportCsv = () => {
-    const header = [
-      "Feature",
-      "Annotation",
-      "MeanMz",
-      "RTRangeMin",
-      "Polarity",
-      "Metric",
-      "Normalized",
-      ...columnIds.map(columnLabel),
-    ];
-    const csv = rowsToCsv([
-      header,
-      ...groups.map((group) => {
-        const maxValue = cellMaxValue(group);
-        return [
-          group.label,
-          group.annotation,
-          group.mz.toFixed(6),
-          formatRtRange(group),
-          group.polarity,
-          metric,
-          normalizeRows ? "yes" : "no",
-          ...columnIds.map((id) => formatCellValue(group.cells[id], maxValue)),
-        ];
-      }),
-    ]);
-    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), "lcms_comparison_matrix.csv");
-  };
-
   return (
     <Modal
       title="Comparison Matrix"
@@ -6915,7 +7051,14 @@ function ComparisonMatrixDialog({
             <button
               className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
               disabled={groups.length === 0}
-              onClick={exportCsv}
+              onClick={() =>
+                void onExportCsv(rows, {
+                  metric,
+                  groupMode,
+                  mzTolerance,
+                  normalizeRows,
+                })
+              }
             >
               Export CSV
             </button>

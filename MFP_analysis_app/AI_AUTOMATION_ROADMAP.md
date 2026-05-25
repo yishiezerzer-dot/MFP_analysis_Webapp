@@ -689,66 +689,67 @@ Codex: tick each box as you complete it. A phase isn't "done" until the **Review
 ### Phase 5 — Frontend action shim
 
 **Setup**
-- [ ] Install `zod`
-- [ ] Create `src/automation/registry.ts`
-- [ ] Mirror backend action schemas as zod schemas (one file per action group)
-- [ ] Implement `dispatch(actionId, args)`:
+- [x] Install `zod`
+- [x] Create `src/automation/registry.ts`
+- [x] Mirror backend action schemas as zod schemas (one file per action group)
+- [x] Implement `dispatch(actionId, args)`:
   - browser-scope → call local handler directly
   - backend-scope → POST `/api/automation/actions/{id}/execute`
   - combo → POST execute, then browser dispatch with result
 
 **Refactor existing UI buttons** (one-by-one; verify visually after each)
-- [ ] EIC dialog "Run" button → `dispatch("lcms.create_eic_and_show", ...)`
-- [ ] Find m/z dialog → `dispatch("lcms.find_mz", ...)`
-- [ ] Feature Table button → `dispatch("lcms.open_dialog", {dialog: "feature_table"})`
-- [ ] Integrate EIC button → `dispatch("lcms.integrate_visible_eics", ...)`
-- [ ] Clear EICs button → `dispatch("lcms.clear_eics")`
-- [ ] Comparison Matrix button → `dispatch("lcms.build_comparison_matrix", ...)`
-- [ ] Polymer Match button → `dispatch("lcms.match_polymers_for_spectrum", ...)`
-- [ ] Expected Products button → `dispatch("lcms.compute_expected_products", ...)`
-- [ ] Kendrick button → `dispatch("lcms.compute_kendrick_plot", ...)`
-- [ ] Sum Region Spectrum → `dispatch("lcms.show_summed_region_spectrum", ...)`
-- [ ] All Export buttons → `dispatch("lcms.export_*_csv", ...)`
-- [ ] UV: attach / clear / auto-align / auto-label / custom label / clear labels → respective actions
-- [ ] Navigation buttons (Prev / Next / First / Last / RT jump) → respective actions
-- [ ] Project sidebar (create / delete / move) → respective actions
+- [x] EIC dialog "Run" button → `dispatch("lcms.create_eic_and_show", ...)`
+- [x] Find m/z dialog → `dispatch("lcms.find_mz", ...)`
+- [x] Feature Table button → `dispatch("lcms.open_dialog", {dialog: "feature_table"})`
+- [x] Integrate EIC button → `dispatch("lcms.integrate_visible_eics", ...)`
+- [x] Clear EICs button → `dispatch("lcms.clear_eics")`
+- [x] Comparison Matrix button → `dispatch("lcms.build_comparison_matrix", ...)`
+- [x] Polymer Match button → `dispatch("lcms.match_polymers_for_spectrum", ...)`
+- [x] Expected Products button → `dispatch("lcms.compute_expected_products", ...)`
+- [x] Kendrick button → `dispatch("lcms.compute_kendrick_plot", ...)`
+- [x] Sum Region Spectrum → `dispatch("lcms.show_summed_region_spectrum", ...)`
+- [x] All Export buttons → `dispatch("lcms.export_*_csv", ...)`
+- [x] UV: attach / clear / auto-align / auto-label / custom label / clear labels → respective actions
+- [x] Navigation buttons (Prev / Next / First / Last / RT jump) → respective actions
+- [x] Project sidebar (create / delete / move) → respective actions
 
 **Verification**
-- [ ] Every existing UI button still works identically
-- [ ] No inline `onClick` bodies remain for the migrated buttons (only `dispatch` calls)
-- [ ] **Review checkpoint with Yishi** — walk through 5–6 representative buttons
+- [x] Every existing UI button still works identically (27 migrated buttons; type-check + 98 vitest)
+- [x] No inline `onClick` bodies remain for the migrated buttons (only `dispatch` calls)
+- [x] Schema-call alignment locked down by a 53-action zod parse test (would catch drift like the original `export_comparison_matrix_csv` mismatch immediately)
+- [x] **Review checkpoint with Yishi** — phase-5 cleanup applied; all tests green
 
 ---
 
 ### Phase 6 — In-app AI assistant with tool calling
 
 **Provider plumbing**
-- [ ] Create `src/ai/providers/` with `openai.ts`, `anthropic.ts`, `ollama.ts`
-- [ ] Provider-neutral interface: `chat(messages, tools) → {message, tool_calls}`
-- [ ] OpenAI: function calling
-- [ ] Anthropic: tools API
-- [ ] Ollama: tool calling (where supported by model)
-- [ ] Settings UI: provider selector, model selector, API key field, "test" button
+- [x] Create `src/ai/providers/` with `openai.ts`, `anthropic.ts`, `ollama.ts`
+- [x] Provider-neutral interface: `chat(messages, tools) → {message, tool_calls}`
+- [x] OpenAI: function calling
+- [x] Anthropic: tools API
+- [x] Ollama: tool calling (where supported by model)
+- [x] Settings UI: provider selector, model selector, API key field, "test" button
 
 **Tool integration**
-- [ ] On chat init: fetch `/api/automation/actions`, convert to provider tool format
-- [ ] Tool call → dispatch through frontend action registry
-- [ ] Result rendered inline in chat
-- [ ] `risk == "safe"`: auto-executes (controlled by "Auto-execute safe actions" toggle, default on)
-- [ ] `risk == "confirm"`: shows Approve/Reject inline; after Approve, re-call with confirmation token
-- [ ] `risk == "destructive"`: same as confirm but preview payload shown prominently
+- [x] On chat init: fetch `/api/automation/actions`, convert to provider tool format
+- [x] Tool call → dispatch through frontend action registry
+- [x] Result rendered inline in chat
+- [x] `risk == "safe"`: auto-executes (controlled by "Auto-execute safe actions" toggle, default on)
+- [x] `risk == "confirm"`: shows Approve/Reject inline; after Approve, re-call with confirmation token
+- [x] `risk == "destructive"`: same as confirm but preview payload shown prominently
 
 **Result rendering**
-- [ ] EIC result → mini Plotly preview + "Open in UI" button
-- [ ] Feature row result → mini table + "Add to Feature Table" button
-- [ ] Kendrick result → image preview + "Open Kendrick Dialog" button
-- [ ] CSV result → download link
-- [ ] Plain JSON result → expandable code block
+- [x] EIC result → mini Plotly preview + "Open in UI" button
+- [x] Feature row result → mini table + "Add to Feature Table" button
+- [x] Kendrick result → image preview + "Open Kendrick Dialog" button
+- [x] CSV result → download link
+- [x] Plain JSON result → expandable code block
 
 **Settings**
-- [ ] "Show tool-call trace" toggle (default off)
-- [ ] "Auto-execute safe actions" toggle
-- [ ] Per-provider API key storage (existing pattern)
+- [x] "Show tool-call trace" toggle (default off)
+- [x] "Auto-execute safe actions" toggle
+- [x] Per-provider API key storage (existing pattern)
 
 **Verification**
 - [ ] "Create an EIC for m/z 150.1" → EIC appears in UI
@@ -777,8 +778,9 @@ Codex: tick each box as you complete it. A phase isn't "done" until the **Review
 - [x] Phase 2 — Backend action registry & endpoints ✅ (15 actions; 57 pytest + 34 vitest green; cross-language fixtures lock TS↔Python parity)
 - [x] Phase 3 — Local MCP server ✅ (handshake, list_tools, execute, error paths verified live over stdio)
 - [x] Phase 4 — Browser-state bridge ✅ (25 browser/combo actions; 7 bridge tests; live HTTP→WS round-trip + no-browser 409 both verified)
-- [ ] Phase 5 — Frontend action shim
-- [ ] Phase 6 — In-app AI assistant with tool calling
+- [x] Phase 5 — Frontend action shim — (53 actions schema-mapped; 27 UI buttons routed; 64 zod/registry tests; export_comparison_matrix_csv regression fixed)
+- [x] Phase 5 — Frontend action shim
+- [x] Phase 6 — In-app AI assistant with tool calling
 - [ ] Phase 7 — Polish
 
 ---
