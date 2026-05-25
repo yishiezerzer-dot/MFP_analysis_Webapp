@@ -8,12 +8,16 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import os
 import re
 import secrets
+import sqlite3
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Deque, Dict, List, Literal, Optional, Tuple, Type
 
 from pydantic import BaseModel, ValidationError
@@ -76,6 +80,15 @@ class ConfirmationInvalid(ActionRegistryError):
 _ACTIONS: Dict[str, ActionSpec] = {}
 _LOG: Deque[ActionLogEntry] = deque(maxlen=_MAX_LOG_ENTRIES)
 _CONFIRMATION_TOKENS: Dict[str, Tuple[str, str, float]] = {}
+_LOG_DB_PATH = Path(
+    os.environ.get(
+        "MFP_AUTOMATION_LOG_DB",
+        str(Path(__file__).resolve().parents[2] / ".automation" / "action_log.sqlite3"),
+    )
+)
+_LOG_DB_LOCK = threading.Lock()
+_LOG_DB_INITIALIZED = False
+_LOG_DB_FAILED = False
 
 
 def _utcnow() -> datetime:
@@ -132,6 +145,112 @@ def _summarize(value: Any, *, max_items: int = 8) -> Any:
     return value
 
 
+def _log_db_connect() -> sqlite3.Connection:
+    _LOG_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(_LOG_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _ensure_log_db() -> None:
+    global _LOG_DB_INITIALIZED
+    if _LOG_DB_INITIALIZED:
+        return
+    with _LOG_DB_LOCK:
+        if _LOG_DB_INITIALIZED:
+            return
+        with _log_db_connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS action_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    action_id TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    args_summary TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    duration_ms REAL NOT NULL,
+                    result_summary TEXT,
+                    error TEXT
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_action_log_timestamp ON action_log(timestamp)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_action_log_action_status ON action_log(action_id, status)")
+        _LOG_DB_INITIALIZED = True
+
+
+def _persist_log_entry(entry: ActionLogEntry) -> None:
+    global _LOG_DB_FAILED
+    if _LOG_DB_FAILED:
+        return
+    try:
+        _ensure_log_db()
+        with _LOG_DB_LOCK, _log_db_connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO action_log (
+                    timestamp, action_id, actor, args_summary, status,
+                    duration_ms, result_summary, error
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry.timestamp.isoformat(),
+                    entry.action_id,
+                    entry.actor,
+                    json.dumps(entry.args_summary, sort_keys=True, default=str),
+                    entry.status,
+                    entry.duration_ms,
+                    None
+                    if entry.result_summary is None
+                    else json.dumps(entry.result_summary, sort_keys=True, default=str),
+                    entry.error,
+                ),
+            )
+    except Exception as exc:
+        # Logging must never break an analysis action; disable SQLite after first failure.
+        _LOG_DB_FAILED = True
+        import sys
+        print(f"[automation] SQLite log disabled after error: {exc}", file=sys.stderr)
+
+
+def _load_log_entries_from_db(limit: int = _MAX_LOG_ENTRIES) -> List[ActionLogEntry]:
+    try:
+        _ensure_log_db()
+        with _LOG_DB_LOCK, _log_db_connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT timestamp, action_id, actor, args_summary, status,
+                       duration_ms, result_summary, error
+                FROM action_log
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+    except Exception:
+        return list(_LOG)
+
+    entries: List[ActionLogEntry] = []
+    for row in reversed(rows):
+        entries.append(
+            ActionLogEntry(
+                timestamp=datetime.fromisoformat(row["timestamp"]),
+                action_id=row["action_id"],
+                actor=row["actor"],
+                args_summary=json.loads(row["args_summary"] or "{}"),
+                status=row["status"],
+                duration_ms=float(row["duration_ms"]),
+                result_summary=None
+                if row["result_summary"] is None
+                else json.loads(row["result_summary"]),
+                error=row["error"],
+            )
+        )
+    return entries
+
+
 def _append_log(
     *,
     action_id: str,
@@ -141,17 +260,18 @@ def _append_log(
     result: Any = None,
     error: Optional[str] = None,
 ) -> None:
-    _LOG.append(
-        ActionLogEntry(
-            timestamp=_utcnow(),
-            action_id=action_id,
-            args_summary=_summarize(args),
-            status=status,
-            duration_ms=duration_ms,
-            result_summary=None if result is None else _summarize(result),
-            error=error,
-        )
+    entry = ActionLogEntry(
+        timestamp=_utcnow(),
+        action_id=action_id,
+        args_summary=_summarize(args),
+        actor="automation",
+        status=status,
+        duration_ms=duration_ms,
+        result_summary=None if result is None else _summarize(result),
+        error=error,
     )
+    _LOG.append(entry)
+    _persist_log_entry(entry)
 
 
 def _prune_confirmation_tokens() -> None:
@@ -301,11 +421,17 @@ async def execute(action_id: str, args: Dict[str, Any], *, confirmation_token: O
 
 
 def list_log_entries() -> List[ActionLogEntry]:
-    return list(_LOG)
+    return _load_log_entries_from_db()
 
 
 def clear_log_for_tests() -> None:
     _LOG.clear()
+    try:
+        _ensure_log_db()
+        with _LOG_DB_LOCK, _log_db_connect() as conn:
+            conn.execute("DELETE FROM action_log")
+    except Exception:
+        return
 
 
 def clear_confirmation_tokens_for_tests() -> None:

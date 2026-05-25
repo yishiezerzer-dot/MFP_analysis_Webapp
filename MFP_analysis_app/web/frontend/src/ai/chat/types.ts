@@ -31,6 +31,37 @@ export interface ChatTurn extends AIAssistantMessage {
 
 export const MODULE_NAMES: AIModuleName[] = ["LCMS", "FTIR", "Plate Reader", "Data Studio"];
 
+export interface SavedPrompt {
+  id: string;
+  title: string;
+  text: string;
+  builtIn?: boolean;
+}
+
+export interface MacroStep {
+  actionId: string;
+  args: Record<string, unknown>;
+}
+
+export interface SavedMacro {
+  id: string;
+  name: string;
+  savedAt: string;
+  steps: MacroStep[];
+}
+
+/** Frontend shape of a log entry returned by /api/automation/logs. */
+export interface ActionLogEntry {
+  timestamp: string;
+  action_id: string;
+  actor?: string;
+  args_summary: Record<string, unknown>;
+  status: string;
+  duration_ms: number;
+  result_summary?: Record<string, unknown> | null;
+  error?: string | null;
+}
+
 export function genId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
 }

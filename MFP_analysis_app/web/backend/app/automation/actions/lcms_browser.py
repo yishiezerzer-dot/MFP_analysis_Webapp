@@ -71,10 +71,27 @@ class BrowserEmptyInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class BrowserUVLabelSettingsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prominence: Optional[float] = None
+    min_distance: Optional[float] = None
+    orientation: Optional[Literal["vertical", "horizontal"]] = None
+    stair_x_step: Optional[float] = None
+    stair_y_step: Optional[float] = None
+    bunch_labels: Optional[bool] = None
+    bunch_hub_offset: Optional[float] = None
+    snap_labels: Optional[bool] = None
+
+
 class BrowserOptionalSessionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     session_id: Optional[str] = None
+
+
+class BrowserAutoLabelUvInput(BrowserOptionalSessionInput):
+    polymer_settings: Optional[dict] = None
 
 
 class BrowserExportLabelsInput(BrowserOptionalSessionInput):
@@ -334,8 +351,8 @@ async def auto_align_uv(args: BrowserEmptyInput) -> BrowserActionOutput:
     return await _dispatch("lcms.auto_align_uv", args)
 
 
-@_browser_action("lcms.auto_label_uv", "Auto-label UV peaks from nearby MS spectra.", BrowserEmptyInput)
-async def auto_label_uv(args: BrowserEmptyInput) -> BrowserActionOutput:
+@_browser_action("lcms.auto_label_uv", "Auto-label UV peaks from nearby MS spectra. Pass session_id to label a specific session without switching the active view. Pass polymer_settings to override the active polymer settings for this labeling call.", BrowserAutoLabelUvInput)
+async def auto_label_uv(args: BrowserAutoLabelUvInput) -> BrowserActionOutput:
     return await _dispatch("lcms.auto_label_uv", args)
 
 
@@ -447,6 +464,24 @@ async def set_eic_overlay_settings(args: BrowserEICOverlaySettingsInput) -> Brow
 @_browser_action("lcms.toggle_eic_overlay_mode", "Toggle EIC overlay mode.", BrowserEICOverlayModeInput)
 async def toggle_eic_overlay_mode(args: BrowserEICOverlayModeInput) -> BrowserActionOutput:
     return await _dispatch("lcms.toggle_eic_overlay_mode", args)
+
+
+@_browser_action(
+    "lcms.set_uv_label_settings",
+    "Set UV chromatogram label settings (prominence, min_distance, orientation, spacing, bunching, snap). All fields optional — only provided fields are applied.",
+    BrowserUVLabelSettingsInput,
+)
+async def set_uv_label_settings(args: BrowserUVLabelSettingsInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.set_uv_label_settings", args)
+
+
+@_browser_action(
+    "lcms.auto_arrange_uv_labels",
+    "Trigger the auto-arrange stair layout on the current UV labels.",
+    BrowserEmptyInput,
+)
+async def auto_arrange_uv_labels(args: BrowserEmptyInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.auto_arrange_uv_labels", args)
 
 
 @register(

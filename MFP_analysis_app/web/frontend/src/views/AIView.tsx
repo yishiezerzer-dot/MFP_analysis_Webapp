@@ -5,7 +5,6 @@ import type { Data, Layout } from "plotly.js";
 import { useLocation } from "react-router-dom";
 import {
   api,
-  AIAssistantMessage,
   AIContextSession,
   AIContextSnapshot,
   AIModuleName,
@@ -13,8 +12,32 @@ import {
   AIProviderStatus,
 } from "../api";
 import {
+  type ActionLogEntry,
+  type ChatTurn,
+  type MacroStep,
+  type SavedMacro,
+  type SavedPrompt,
+  type ToolEvent,
+  MODULE_NAMES,
+  genId,
+  truncate,
+  defaultModelFor,
+  buildToolSystemPrompt,
+  turnsToProviderMessages,
+  unwrapResult,
+  findEicPayload,
+  findKendrickPayload,
+  findFeatureRows,
+  findCsvPayload,
+  numberArray,
+  statusClass,
+  formatCell,
+  stringProp,
+  hasStringProp,
+} from "../ai/chat/types";
+import {
   aiProviders,
-  type ProviderMessage,
+  type ProviderChatResponse,
   type ProviderTool,
   type ProviderToolCall,
 } from "../ai/providers";
@@ -33,38 +56,23 @@ import { HelpOpenButton, HelpShell } from "../help/HelpShell";
 import { getHelpModule } from "../help/registry";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 
-const MODULE_NAMES: AIModuleName[] = ["LCMS", "FTIR", "Plate Reader", "Data Studio"];
-
-interface ChatTurn extends AIAssistantMessage {
-  id: string;
-  mode_hint?: string;
-  is_mock?: boolean;
-  error?: string | null;
-  toolEvents?: ToolEvent[];
-  trace?: unknown[];
-  used_context?: {
-    active_module: string;
-    loaded_filenames: string[];
-    module_summary: string;
-  } | null;
-}
-
-interface ToolEvent {
-  id: string;
-  actionId: string;
-  args: Record<string, unknown>;
-  risk: "safe" | "confirm" | "destructive";
-  scope: "backend" | "browser" | "both";
-  status: "ran" | "pending" | "rejected" | "error";
-  result?: unknown;
-  error?: string;
-  preview?: unknown;
-  confirmationToken?: string;
-}
-
-function genId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
-}
+const BUILT_IN_PROMPTS: SavedPrompt[] = [
+  { id: "builtin-eic", title: "Create EIC", text: "Create an EIC for m/z 150.1", builtIn: true },
+  {
+    id: "builtin-integrate",
+    title: "Integrate visible EICs",
+    text: "Integrate all visible EICs and show me the feature table",
+    builtIn: true,
+  },
+  { id: "builtin-clear-eics", title: "Clear EICs", text: "Clear all EICs", builtIn: true },
+  { id: "builtin-kendrick", title: "Open Kendrick", text: "Open the Kendrick plot dialog", builtIn: true },
+  {
+    id: "builtin-products",
+    title: "Expected products",
+    text: "Find expected products in the current LCMS spectrum using my current polymer settings",
+    builtIn: true,
+  },
+];
 
 function useStoredRecord(
   key: string,
@@ -110,77 +118,36 @@ function useStoredBoolean(
   return [value, setValue];
 }
 
-function defaultModelFor(provider: AIProvider, status: AIProviderStatus | null): string {
-  if (provider === "openai") return status?.openai.default_model || "gpt-4.1-mini";
-  if (provider === "anthropic") return status?.anthropic?.default_model || "claude-sonnet-4-20250514";
-  if (provider === "ollama") return status?.ollama.default_model || "llama3.1:8b";
-  return "demo";
+function useStoredJson<T>(
+  key: string,
+  fallback: T,
+): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      return raw ? (JSON.parse(raw) as T) : fallback;
+    } catch {
+      return fallback;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // Ignore storage failures; the UI still works for this session.
+    }
+  }, [key, value]);
+  return [value, setValue];
 }
 
-/** Rebuild the provider message stream from chat turns + system prompt.
- *
- * Walks each turn in order, surfacing tool_calls on the assistant message
- * and a follow-up `{role: "tool", tool_call_id, content}` for every
- * completed tool event. Pending events are intentionally skipped — the
- * provider hasn't seen their results yet. */
-function turnsToProviderMessages(
-  turns: ChatTurn[],
-  systemPrompt: string,
-): ProviderMessage[] {
-  const messages: ProviderMessage[] = [{ role: "system", content: systemPrompt }];
-  for (const turn of turns) {
-    if (turn.role === "user") {
-      messages.push({ role: "user", content: turn.content });
-      continue;
-    }
-    if (turn.role !== "assistant") continue;
-    const events = turn.toolEvents ?? [];
-    const toolCalls = events.map((event) => ({
-      id: event.id,
-      name: event.actionId,
-      arguments: event.args,
-    }));
-    messages.push({
-      role: "assistant",
-      content: turn.content,
-      tool_calls: toolCalls.length ? toolCalls : undefined,
-    });
-    for (const event of events) {
-      if (event.status === "pending") continue;
-      let content: string;
-      if (event.status === "ran") content = JSON.stringify(event.result ?? {});
-      else if (event.status === "rejected") content = JSON.stringify({ rejected: true });
-      else content = JSON.stringify({ error: event.error ?? "tool failed" });
-      messages.push({ role: "tool", tool_call_id: event.id, content });
-    }
-  }
-  return messages;
+function fallbackProviderOrder(primary: AIProvider, enabled: boolean): AIProvider[] {
+  if (!enabled) return [primary];
+  const order: AIProvider[] = ["openai", "anthropic", "ollama", "demo"];
+  return [primary, ...order.filter((item) => item !== primary)];
 }
 
-function buildToolSystemPrompt({
-  activeModule,
-  includeContext,
-  context,
-  sessionIds,
-}: {
-  activeModule: AIModuleName | "";
-  includeContext: boolean;
-  context: AIContextSnapshot | null;
-  sessionIds: string[];
-}) {
-  const moduleSummary = activeModule && context?.[activeModule]?.summary ? context[activeModule].summary : "";
-  const loaded = context?.LCMS?.sessions ?? [];
-  return [
-    "You are the in-app analysis assistant for this local lab webapp.",
-    "Use automation tools when the user asks you to inspect LCMS data, create EICs, integrate peaks, open dialogs, export CSV, or modify visible app state.",
-    "Prefer LCMS action ids exactly as exposed. If an action needs a session_id, use one of the selected or loaded LCMS session ids.",
-    "For destructive or confirmation actions, request the tool call normally; the app will show the approval step.",
-    includeContext ? `Active module: ${activeModule || "auto"}. ${moduleSummary}` : "Prompt context is disabled.",
-    `Selected/available LCMS session ids: ${sessionIds.length ? sessionIds.join(", ") : "none"}.`,
-    loaded.length ? `Loaded LCMS files: ${loaded.map((item) => `${item.display_name} (${item.session_id})`).join("; ")}.` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+function providerNeedsKey(provider: AIProvider): boolean {
+  return provider === "openai" || provider === "anthropic";
 }
 
 export function AIView() {
@@ -192,6 +159,7 @@ export function AIView() {
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState<string>("");
   const [apiKeys, setApiKeys] = useStoredRecord("mfp.ai.providerKeys", {});
   const [showToolTrace, setShowToolTrace] = useStoredBoolean("mfp.ai.showToolTrace", false);
+  const [providerFallbackEnabled, setProviderFallbackEnabled] = useStoredBoolean("mfp.ai.providerFallback", false);
   // Default OFF for live providers: silently mutating session state on the
   // very first AI response is surprising and potentially destructive. Demo
   // provider auto-executes since it's local and key-free.
@@ -202,6 +170,12 @@ export function AIView() {
   const [providerTest, setProviderTest] = useState<{ ok: boolean; message: string } | null>(null);
   const [automationActions, setAutomationActions] = useState<AutomationActionSpec[]>([]);
   const [automationError, setAutomationError] = useState<string | null>(null);
+  const [savedPrompts, setSavedPrompts] = useStoredJson<SavedPrompt[]>("mfp.ai.savedPrompts", []);
+  const [savedMacros, setSavedMacros] = useStoredJson<SavedMacro[]>("mfp.ai.savedMacros", []);
+  const [macroRecording, setMacroRecording] = useState(false);
+  const [macroDraft, setMacroDraft] = useState<MacroStep[]>([]);
+  const [macroName, setMacroName] = useState("");
+  const [actionLogOpen, setActionLogOpen] = useState(false);
 
   const [context, setContext] = useState<AIContextSnapshot | null>(null);
   const [activeModule, setActiveModule] = useState<AIModuleName | "">("");
@@ -325,7 +299,7 @@ export function AIView() {
       const args = toolCall.arguments ?? {};
 
       if (risk === "safe") {
-        if (!autoExecuteSafeActions) {
+        if (!autoExecuteSafeActions && provider !== "demo") {
           return {
             id: toolCall.id,
             actionId: toolCall.name,
@@ -382,6 +356,44 @@ export function AIView() {
     [automationActions, autoExecuteSafeActions, dispatchAutomation],
   );
 
+  const recordMacroEvents = useCallback(
+    (events: ToolEvent[]) => {
+      if (!macroRecording) return;
+      const steps = events
+        .filter((event) => event.status === "ran")
+        .map((event) => ({ actionId: event.actionId, args: event.args }));
+      if (!steps.length) return;
+      setMacroDraft((prev) => [...prev, ...steps]);
+    },
+    [macroRecording],
+  );
+
+  const saveMacro = useCallback(() => {
+    if (!macroDraft.length) return;
+    const name = macroName.trim() || `Macro ${new Date().toLocaleString()}`;
+    setSavedMacros((prev) => [
+      {
+        id: genId("macro"),
+        name,
+        savedAt: new Date().toISOString(),
+        steps: macroDraft,
+      },
+      ...prev,
+    ]);
+    setMacroName("");
+    setMacroDraft([]);
+    setMacroRecording(false);
+  }, [macroDraft, macroName, setSavedMacros]);
+
+  const saveCurrentPrompt = useCallback(() => {
+    const text = input.trim();
+    if (!text) return;
+    setSavedPrompts((prev) => [
+      { id: genId("prompt"), title: truncate(text, 36), text },
+      ...prev,
+    ]);
+  }, [input, setSavedPrompts]);
+
   const runProviderTest = useCallback(async () => {
     setProviderTest(null);
     const key = apiKeys[provider] ?? "";
@@ -411,26 +423,45 @@ export function AIView() {
         context,
         sessionIds: selectedOrContextSessionIds,
       });
-      const client = aiProviders[provider];
-      const baseSettings = {
-        provider,
-        model: model || defaultModelFor(provider, status),
-        apiKey: apiKeys[provider] ?? "",
-        baseUrl: provider === "ollama" ? ollamaBaseUrl || undefined : undefined,
-        sessionIds: selectedOrContextSessionIds,
-      };
+      const providerOrder = fallbackProviderOrder(provider, providerFallbackEnabled);
       let currentTurns = seedTurns;
       const trace: unknown[] = [];
 
       for (let i = 0; i < 4; i += 1) {
         if (signal?.aborted) throw new DOMException("cancelled", "AbortError");
         const messages = turnsToProviderMessages(currentTurns, systemPrompt);
-        const resp = await client.chat({
-          messages,
-          tools: providerTools,
-          settings: baseSettings,
-        });
-        trace.push({ provider, response: resp });
+        let resp: ProviderChatResponse | null = null;
+        let lastProviderError: unknown = null;
+        for (const candidate of providerOrder) {
+          const settings = {
+            provider: candidate,
+            model: candidate === provider ? model || defaultModelFor(candidate, status) : defaultModelFor(candidate, status),
+            apiKey: apiKeys[candidate] ?? "",
+            baseUrl: candidate === "ollama" ? ollamaBaseUrl || undefined : undefined,
+            sessionIds: selectedOrContextSessionIds,
+          };
+          if (providerNeedsKey(candidate) && !settings.apiKey) {
+            lastProviderError = new Error(`${candidate} API key is missing.`);
+            trace.push({ provider: candidate, skipped: "missing_api_key" });
+            continue;
+          }
+          try {
+            resp = await aiProviders[candidate].chat({
+              messages,
+              tools: providerTools,
+              settings,
+            });
+            trace.push({ provider: candidate, response: resp, fallback: candidate !== provider });
+            break;
+          } catch (err) {
+            lastProviderError = err;
+            trace.push({ provider: candidate, error: err instanceof Error ? err.message : String(err) });
+            if (!providerFallbackEnabled) break;
+          }
+        }
+        if (!resp) {
+          throw lastProviderError instanceof Error ? lastProviderError : new Error(String(lastProviderError ?? "No provider responded."));
+        }
 
         // No tool calls — record final assistant turn and stop.
         if (!resp.tool_calls.length) {
@@ -455,6 +486,7 @@ export function AIView() {
           const event = await executeToolCall(toolCall);
           events.push(event);
         }
+        recordMacroEvents(events);
         const assistantTurn: ChatTurn = {
           id: genId("a"),
           role: "assistant",
@@ -489,7 +521,9 @@ export function AIView() {
       model,
       ollamaBaseUrl,
       provider,
+      providerFallbackEnabled,
       providerTools,
+      recordMacroEvents,
       selectedOrContextSessionIds,
       status,
     ],
@@ -516,6 +550,7 @@ export function AIView() {
           error: err instanceof Error ? err.message : String(err),
         };
       }
+      if (updatedEvent.status === "ran") recordMacroEvents([updatedEvent]);
 
       // Apply the event update and resume the conversation by re-invoking
       // the provider with the tool result included. This is the fix for the
@@ -549,7 +584,7 @@ export function AIView() {
         abortRef.current = null;
       }
     },
-    [runChatLoop, turns],
+    [recordMacroEvents, runChatLoop, turns],
   );
 
   const rejectToolEvent = useCallback(
@@ -621,6 +656,47 @@ export function AIView() {
     [busy, input, runChatLoop, turns],
   );
 
+  const runMacro = useCallback(
+    async (macro: SavedMacro) => {
+      if (busy || !macro.steps.length) return;
+      setError(null);
+      const userTurn: ChatTurn = {
+        id: genId("u"),
+        role: "user",
+        content: `Run macro: ${macro.name}`,
+      };
+      const events: ToolEvent[] = [];
+      setBusy(true);
+      try {
+        for (const step of macro.steps) {
+          const event = await executeToolCall({
+            id: genId("macro-tool"),
+            name: step.actionId,
+            arguments: step.args,
+          });
+          events.push(event);
+          if (event.status === "pending") break;
+        }
+        recordMacroEvents(events);
+        const assistantTurn: ChatTurn = {
+          id: genId("a"),
+          role: "assistant",
+          content: events.some((event) => event.status === "pending")
+            ? `Macro "${macro.name}" needs approval to continue.`
+            : `Macro "${macro.name}" finished. Results are attached below.`,
+          mode_hint: "Macro replay",
+          toolEvents: events,
+        };
+        setTurns((prev) => [...prev, userTurn, assistantTurn]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, executeToolCall, recordMacroEvents],
+  );
+
   const resetChat = () => {
     setTurns([]);
     setError(null);
@@ -675,13 +751,45 @@ export function AIView() {
             onRefresh={refreshContext}
           />
 
+          <SavedPromptsCard
+            prompts={[...BUILT_IN_PROMPTS, ...savedPrompts]}
+            currentInput={input}
+            onRun={(text) => { void send(text); }}
+            onUse={setInput}
+            onSaveCurrent={saveCurrentPrompt}
+            onDelete={(id) => setSavedPrompts((prev) => prev.filter((prompt) => prompt.id !== id))}
+          />
+
+          <MacroCard
+            recording={macroRecording}
+            draftCount={macroDraft.length}
+            name={macroName}
+            onNameChange={setMacroName}
+            onStart={() => {
+              setMacroDraft([]);
+              setMacroRecording(true);
+            }}
+            onStop={() => setMacroRecording(false)}
+            onDiscard={() => {
+              setMacroDraft([]);
+              setMacroRecording(false);
+            }}
+            onSave={saveMacro}
+            macros={savedMacros}
+            onRun={(macro) => { void runMacro(macro); }}
+            onDelete={(id) => setSavedMacros((prev) => prev.filter((macro) => macro.id !== id))}
+          />
+
           <AssistantSettingsCard
             showToolTrace={showToolTrace}
             onShowToolTraceChange={setShowToolTrace}
             autoExecuteSafeActions={autoExecuteSafeActions}
             onAutoExecuteSafeActionsChange={setAutoExecuteSafeActions}
+            providerFallbackEnabled={providerFallbackEnabled}
+            onProviderFallbackEnabledChange={setProviderFallbackEnabled}
             actionCount={automationActions.length}
             error={automationError}
+            onOpenActionLog={() => setActionLogOpen(true)}
           />
         </aside>
 
@@ -782,6 +890,7 @@ export function AIView() {
       {helpModule ? (
         <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
       ) : null}
+      {actionLogOpen && <ActionLogDialog onClose={() => setActionLogOpen(false)} />}
     </div>
   );
 }
@@ -1127,15 +1236,21 @@ function AssistantSettingsCard({
   onShowToolTraceChange,
   autoExecuteSafeActions,
   onAutoExecuteSafeActionsChange,
+  providerFallbackEnabled,
+  onProviderFallbackEnabledChange,
   actionCount,
   error,
+  onOpenActionLog,
 }: {
   showToolTrace: boolean;
   onShowToolTraceChange: (value: boolean) => void;
   autoExecuteSafeActions: boolean;
   onAutoExecuteSafeActionsChange: (value: boolean) => void;
+  providerFallbackEnabled: boolean;
+  onProviderFallbackEnabledChange: (value: boolean) => void;
   actionCount: number;
   error: string | null;
+  onOpenActionLog: () => void;
 }) {
   return (
     <div className="card shrink-0 p-4">
@@ -1156,17 +1271,150 @@ function AssistantSettingsCard({
         />
         Show tool-call trace
       </label>
+      <label className="mt-2 flex items-center gap-2 text-xs">
+        <input
+          type="checkbox"
+          checked={providerFallbackEnabled}
+          onChange={(e) => onProviderFallbackEnabledChange(e.target.checked)}
+        />
+        Provider fallback chain
+      </label>
       <p className="mt-2 text-[11px] text-ink-500">
         {error ? `Action catalog error: ${error}` : `${actionCount} automation actions available.`}
       </p>
-      <a
-        href="/api/automation/logs"
-        target="_blank"
-        rel="noreferrer noopener"
-        className="mt-2 inline-block text-[11px] text-ink-500 underline decoration-dotted hover:text-ink-700"
-      >
-        View backend action log →
-      </a>
+      <button type="button" className="btn-ghost mt-2 text-xs" onClick={onOpenActionLog}>
+        Action log
+      </button>
+    </div>
+  );
+}
+
+function SavedPromptsCard({
+  prompts,
+  currentInput,
+  onRun,
+  onUse,
+  onSaveCurrent,
+  onDelete,
+}: {
+  prompts: SavedPrompt[];
+  currentInput: string;
+  onRun: (text: string) => void;
+  onUse: (text: string) => void;
+  onSaveCurrent: () => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="card shrink-0 p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="label">Saved prompts</div>
+        <button type="button" className="btn-ghost text-xs" onClick={onSaveCurrent} disabled={!currentInput.trim()}>
+          Save input
+        </button>
+      </div>
+      <div className="flex max-h-56 flex-col gap-1 overflow-y-auto pr-1">
+        {prompts.map((prompt) => (
+          <div key={prompt.id} className="rounded border border-ink-200 bg-surface px-2 py-1.5 text-xs">
+            <div className="flex items-start justify-between gap-2">
+              <button
+                type="button"
+                className="min-w-0 text-left font-medium text-ink-700 hover:text-brand-600"
+                onClick={() => onUse(prompt.text)}
+                title={prompt.text}
+              >
+                {prompt.title}
+              </button>
+              {!prompt.builtIn && (
+                <button type="button" className="text-[10px] text-ink-400 hover:text-red-600" onClick={() => onDelete(prompt.id)}>
+                  Delete
+                </button>
+              )}
+            </div>
+            <p className="mt-1 line-clamp-2 text-[11px] text-ink-500">{prompt.text}</p>
+            <button type="button" className="mt-1 text-[11px] font-medium text-brand-600 hover:text-brand-700" onClick={() => onRun(prompt.text)}>
+              Run
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MacroCard({
+  recording,
+  draftCount,
+  name,
+  onNameChange,
+  onStart,
+  onStop,
+  onDiscard,
+  onSave,
+  macros,
+  onRun,
+  onDelete,
+}: {
+  recording: boolean;
+  draftCount: number;
+  name: string;
+  onNameChange: (value: string) => void;
+  onStart: () => void;
+  onStop: () => void;
+  onDiscard: () => void;
+  onSave: () => void;
+  macros: SavedMacro[];
+  onRun: (macro: SavedMacro) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="card shrink-0 p-4">
+      <div className="label mb-2">Macros</div>
+      <div className="rounded border border-ink-200 bg-ink-50 p-2 text-xs">
+        <div className="flex items-center justify-between gap-2">
+          <span className={recording ? "font-semibold text-red-700" : "text-ink-600"}>
+            {recording ? "Recording" : "Not recording"}
+          </span>
+          <span className="text-[11px] text-ink-500">{draftCount} step{draftCount === 1 ? "" : "s"}</span>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {recording ? (
+            <button type="button" className="btn-ghost text-xs" onClick={onStop}>Stop</button>
+          ) : (
+            <button type="button" className="btn-ghost text-xs" onClick={onStart}>Start</button>
+          )}
+          <button type="button" className="btn-ghost text-xs" onClick={onDiscard} disabled={!draftCount && !recording}>Discard</button>
+        </div>
+        {draftCount > 0 && (
+          <div className="mt-2 flex gap-2">
+            <input
+              className="input h-8 min-w-0 flex-1 text-xs"
+              value={name}
+              onChange={(e) => onNameChange(e.target.value)}
+              placeholder="Macro name"
+            />
+            <button type="button" className="btn-primary text-xs" onClick={onSave}>Save</button>
+          </div>
+        )}
+      </div>
+      <div className="mt-2 flex max-h-44 flex-col gap-1 overflow-y-auto pr-1">
+        {macros.length === 0 ? (
+          <p className="rounded border border-dashed border-ink-200 px-2 py-3 text-[11px] text-ink-500">No saved macros yet.</p>
+        ) : (
+          macros.map((macro) => (
+            <div key={macro.id} className="rounded border border-ink-200 bg-surface px-2 py-1.5 text-xs">
+              <div className="flex items-start justify-between gap-2">
+                <button type="button" className="min-w-0 text-left font-medium text-ink-700 hover:text-brand-600" onClick={() => onRun(macro)}>
+                  {macro.name}
+                </button>
+                <button type="button" className="text-[10px] text-ink-400 hover:text-red-600" onClick={() => onDelete(macro.id)}>
+                  Delete
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-ink-500">{macro.steps.length} action{macro.steps.length === 1 ? "" : "s"}</p>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -1561,6 +1809,128 @@ function CsvDownload({ csv, actionId }: { csv: string; actionId: string }) {
   );
 }
 
+function logStatusClass(status: string): string {
+  if (status === "ok" || status === "preview_ok") return "bg-emerald-50 text-emerald-700";
+  if (status === "not_found" || status === "validation_error" || status === "error") return "bg-red-50 text-red-700";
+  return "bg-ink-100 text-ink-600";
+}
+
+function ActionLogDialog({ onClose }: { onClose: () => void }) {
+  const [logs, setLogs] = useState<ActionLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionFilter, setActionFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [actorFilter, setActorFilter] = useState("");
+  const [timeFilter, setTimeFilter] = useState<"all" | "hour" | "day">("all");
+
+  const loadLogs = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetch("/api/automation/logs")
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+        return res.json() as Promise<ActionLogEntry[]>;
+      })
+      .then(setLogs)
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
+
+  const statuses = useMemo(() => Array.from(new Set(logs.map((entry) => entry.status))).sort(), [logs]);
+  const actors = useMemo(() => Array.from(new Set(logs.map((entry) => entry.actor || "automation"))).sort(), [logs]);
+  const filtered = useMemo(() => {
+    const now = Date.now();
+    const cutoff =
+      timeFilter === "hour" ? now - 60 * 60 * 1000 : timeFilter === "day" ? now - 24 * 60 * 60 * 1000 : 0;
+    return logs.filter((entry) => {
+      if (actionFilter && !entry.action_id.toLowerCase().includes(actionFilter.toLowerCase())) return false;
+      if (statusFilter && entry.status !== statusFilter) return false;
+      if (actorFilter && (entry.actor || "automation") !== actorFilter) return false;
+      if (cutoff && new Date(entry.timestamp).getTime() < cutoff) return false;
+      return true;
+    });
+  }, [actionFilter, actorFilter, logs, statusFilter, timeFilter]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+      <div className="flex max-h-[86vh] w-full max-w-5xl flex-col rounded-xl border border-ink-200 bg-surface shadow-xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-ink-200 px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-ink-800">Action log</h2>
+            <p className="text-xs text-ink-500">{filtered.length} of {logs.length} entries</p>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" className="btn-ghost text-xs" onClick={loadLogs}>Refresh</button>
+            <button type="button" className="btn-ghost text-xs" onClick={onClose}>Close</button>
+          </div>
+        </div>
+        <div className="grid shrink-0 grid-cols-1 gap-2 border-b border-ink-200 p-3 md:grid-cols-4">
+          <input className="input text-xs" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} placeholder="Filter action id" />
+          <select className="input text-xs" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">Any status</option>
+            {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+          </select>
+          <select className="input text-xs" value={actorFilter} onChange={(e) => setActorFilter(e.target.value)}>
+            <option value="">Any actor</option>
+            {actors.map((actor) => <option key={actor} value={actor}>{actor}</option>)}
+          </select>
+          <select className="input text-xs" value={timeFilter} onChange={(e) => setTimeFilter(e.target.value as "all" | "hour" | "day")}>
+            <option value="all">All time</option>
+            <option value="hour">Last hour</option>
+            <option value="day">Last 24 hours</option>
+          </select>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto p-3">
+          {loading ? (
+            <div className="text-sm text-ink-500">Loading...</div>
+          ) : error ? (
+            <AlertBanner kind="error" message={error} onDismiss={() => setError(null)} />
+          ) : filtered.length === 0 ? (
+            <div className="rounded border border-dashed border-ink-200 px-3 py-8 text-center text-sm text-ink-500">No log entries match those filters.</div>
+          ) : (
+            <table className="min-w-full text-left text-xs">
+              <thead className="sticky top-0 bg-surface text-ink-500">
+                <tr>
+                  <th className="border-b border-ink-200 px-2 py-2 font-medium">Time</th>
+                  <th className="border-b border-ink-200 px-2 py-2 font-medium">Action</th>
+                  <th className="border-b border-ink-200 px-2 py-2 font-medium">Actor</th>
+                  <th className="border-b border-ink-200 px-2 py-2 font-medium">Status</th>
+                  <th className="border-b border-ink-200 px-2 py-2 font-medium">ms</th>
+                  <th className="border-b border-ink-200 px-2 py-2 font-medium">Summary</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.slice().reverse().map((entry) => (
+                  <tr key={`${entry.timestamp}-${entry.action_id}`} className="border-b border-ink-100 align-top">
+                    <td className="whitespace-nowrap px-2 py-2 text-ink-500">{new Date(entry.timestamp).toLocaleTimeString()}</td>
+                    <td className="px-2 py-2 font-medium text-ink-700">{entry.action_id}</td>
+                    <td className="px-2 py-2 text-ink-500">{entry.actor || "automation"}</td>
+                    <td className="px-2 py-2"><span className={clsx("rounded px-1.5 py-0.5 text-[10px]", logStatusClass(entry.status))}>{entry.status}</span></td>
+                    <td className="px-2 py-2 text-ink-500">{Math.round(entry.duration_ms)}</td>
+                    <td className="px-2 py-2">
+                      <details>
+                        <summary className="cursor-pointer text-ink-600">{entry.error ? truncate(entry.error, 64) : "details"}</summary>
+                        <pre className="mt-1 max-h-36 overflow-auto rounded bg-ink-50 p-2 text-[10px]">
+                          {JSON.stringify({ args: entry.args_summary, result: entry.result_summary, error: entry.error }, null, 2)}
+                        </pre>
+                      </details>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TypingIndicator() {
   return (
     <div className="flex justify-start">
@@ -1638,79 +2008,6 @@ function Composer(props: {
       {hint && <div className="mt-1 text-[11px] text-ink-500">{hint}</div>}
     </div>
   );
-}
-
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
-}
-
-function unwrapResult(value: unknown): unknown {
-  if (value && typeof value === "object" && "result" in value) return (value as Record<string, unknown>).result;
-  return value;
-}
-
-function findEicPayload(value: unknown): Record<string, unknown> | null {
-  const root = unwrapResult(value);
-  if (!root || typeof root !== "object") return null;
-  const obj = root as Record<string, unknown>;
-  const eic = obj.eic && typeof obj.eic === "object" ? (obj.eic as Record<string, unknown>) : obj;
-  return Array.isArray(eic.rt_min) && Array.isArray(eic.intensity) ? eic : null;
-}
-
-function findKendrickPayload(value: unknown): Record<string, unknown> | null {
-  const root = unwrapResult(value);
-  if (!root || typeof root !== "object") return null;
-  const obj = root as Record<string, unknown>;
-  return Array.isArray(obj.points) ? obj : null;
-}
-
-function findFeatureRows(value: unknown): Record<string, unknown>[] {
-  const root = unwrapResult(value);
-  if (!root || typeof root !== "object") return [];
-  const obj = root as Record<string, unknown>;
-  const candidates = [obj.rows, obj.feature_rows, obj.features, obj.row ? [obj.row] : null];
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate.filter((row): row is Record<string, unknown> => !!row && typeof row === "object");
-    }
-  }
-  return [];
-}
-
-function findCsvPayload(value: unknown): string | null {
-  const root = unwrapResult(value);
-  if (!root || typeof root !== "object") return null;
-  const obj = root as Record<string, unknown>;
-  const csv = obj.csv ?? obj.csv_text ?? obj.content;
-  return typeof csv === "string" && csv.includes(",") ? csv : null;
-}
-
-function numberArray(value: unknown): number[] {
-  return Array.isArray(value) ? value.map(Number).filter((item) => Number.isFinite(item)) : [];
-}
-
-function statusClass(status: ToolEvent["status"]): string {
-  if (status === "ran") return "bg-emerald-50 text-emerald-700";
-  if (status === "pending") return "bg-amber-50 text-amber-700";
-  if (status === "error") return "bg-red-50 text-red-700";
-  return "bg-ink-100 text-ink-600";
-}
-
-function formatCell(value: unknown): string {
-  if (typeof value === "number") return Number.isFinite(value) ? value.toPrecision(5) : "";
-  if (typeof value === "string") return truncate(value, 28);
-  if (value == null) return "";
-  return truncate(JSON.stringify(value), 28);
-}
-
-function stringProp(value: unknown, key: string): string | null {
-  return value && typeof value === "object" && typeof (value as Record<string, unknown>)[key] === "string"
-    ? String((value as Record<string, unknown>)[key])
-    : null;
-}
-
-function hasStringProp(value: unknown, key: string): value is Record<string, string> {
-  return !!value && typeof value === "object" && typeof (value as Record<string, unknown>)[key] === "string";
 }
 
 function SendIcon({ className }: { className?: string }) {

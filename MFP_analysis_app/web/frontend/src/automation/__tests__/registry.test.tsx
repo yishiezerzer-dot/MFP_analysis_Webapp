@@ -234,6 +234,8 @@ describe("schema coverage — every action's representative call payload parses"
     "lcms.auto_label_uv": {},
     "lcms.open_custom_uv_label": {},
     "lcms.clear_uv_labels": {},
+    "lcms.set_uv_label_settings": { prominence: 0.05, orientation: "vertical" },
+    "lcms.auto_arrange_uv_labels": {},
     "lcms.create_project": { name: "Project A" },
     "lcms.delete_project": { project_id: "p1" },
     "lcms.move_session_to_project": { session_id: "s1", project_id: "p1" },

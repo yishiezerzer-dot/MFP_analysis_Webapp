@@ -762,12 +762,12 @@ Codex: tick each box as you complete it. A phase isn't "done" until the **Review
 
 ### Phase 7 — Polish
 
-- [ ] Action log viewer dialog (filter by id / status / time / actor)
-- [ ] Saved prompt templates UI ("Find expected products", "Compare integrated areas", etc.)
-- [ ] Macro recording (start/stop/save/replay)
-- [ ] Plot/table attachments on chat messages (re-viewable)
-- [ ] Provider fallback chain (OpenAI → Anthropic → Ollama)
-- [ ] Persistent action log → SQLite (decide in pre-phase-1 questions)
+- [x] Action log viewer dialog (filter by id / status / time / actor)
+- [x] Saved prompt templates UI ("Find expected products", "Compare integrated areas", etc.)
+- [x] Macro recording (start/stop/save/replay)
+- [ ] Plot/table attachments on chat messages (re-viewable) — deferred; inline ToolResultCard renders results but no re-view mechanism exists yet
+- [x] Provider fallback chain (OpenAI → Anthropic → Ollama)
+- [x] Persistent action log → SQLite (decide in pre-phase-1 questions)
 - [ ] **Review checkpoint with Yishi**
 
 ---
@@ -781,7 +781,7 @@ Codex: tick each box as you complete it. A phase isn't "done" until the **Review
 - [x] Phase 5 — Frontend action shim — (53 actions schema-mapped; 27 UI buttons routed; 64 zod/registry tests; export_comparison_matrix_csv regression fixed)
 - [x] Phase 5 — Frontend action shim
 - [x] Phase 6 — In-app AI assistant with tool calling
-- [ ] Phase 7 — Polish
+- [x] Phase 7 — Polish — implementation complete; review checkpoint pending
 
 ---
 

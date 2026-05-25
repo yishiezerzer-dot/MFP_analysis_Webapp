@@ -25,13 +25,20 @@ STALE_AFTER_SECONDS = 45.0
 
 
 @dataclass
+class _PendingRequest:
+    action_id: str
+    args: Dict[str, Any]
+    future: asyncio.Future[Dict[str, Any]]
+
+
+@dataclass
 class BrowserConnection:
     browser_id: str
     websocket: WebSocket
     connected_at: float = field(default_factory=time.monotonic)
     last_pong_at: float = field(default_factory=time.monotonic)
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    pending: Dict[str, asyncio.Future[dict[str, Any]]] = field(default_factory=dict)
+    pending: Dict[str, _PendingRequest] = field(default_factory=dict)
     heartbeat_task: Optional[asyncio.Task[None]] = None
 
 
@@ -42,11 +49,59 @@ class BrowserConnectionRegistry:
 
     async def connect(self, websocket: WebSocket, browser_id: Optional[str]) -> BrowserConnection:
         await websocket.accept()
-        connection = BrowserConnection(browser_id=browser_id or uuid.uuid4().hex, websocket=websocket)
+        bid = browser_id or uuid.uuid4().hex
+        connection = BrowserConnection(browser_id=bid, websocket=websocket)
+        to_resend: Dict[str, _PendingRequest] = {}
+
         async with self._lock:
-            await self._close_active_locked()
+            old = self._active
+            if old is not None:
+                if old.heartbeat_task and old.heartbeat_task is not asyncio.current_task():
+                    old.heartbeat_task.cancel()
+
+                if old.browser_id == bid:
+                    # Same tab reconnecting (page reload, hot-reload, brief disconnect).
+                    # Transfer in-flight requests so they survive the reconnect.
+                    # Do NOT close the old WebSocket — closing it would fire the frontend
+                    # onclose handler, scheduling yet another reconnect and creating a loop.
+                    to_resend = {rid: req for rid, req in old.pending.items() if not req.future.done()}
+                    old.pending.clear()
+                else:
+                    # Genuinely different browser tab: fail pending futures and close old socket.
+                    for req in old.pending.values():
+                        if not req.future.done():
+                            req.future.set_exception(
+                                BrowserConnectionRequired("browser superseded by a newer tab")
+                            )
+                    old.pending.clear()
+                    try:
+                        await old.websocket.close(code=1000)
+                    except Exception:
+                        pass
+
             self._active = connection
             connection.heartbeat_task = asyncio.create_task(self._heartbeat(connection))
+
+        # Re-send in-flight requests on the new connection (outside lock to avoid deadlock).
+        for request_id, req in to_resend.items():
+            if req.future.done():
+                continue
+            connection.pending[request_id] = req
+            try:
+                await self._send(
+                    connection,
+                    {
+                        "type": "automation_request",
+                        "request_id": request_id,
+                        "action_id": req.action_id,
+                        "args": req.args,
+                    },
+                )
+            except Exception as exc:
+                connection.pending.pop(request_id, None)
+                if not req.future.done():
+                    req.future.set_exception(exc)
+
         return connection
 
     async def disconnect(self, connection: BrowserConnection) -> None:
@@ -63,10 +118,10 @@ class BrowserConnectionRegistry:
         if message_type != "automation_response":
             return
         request_id = str(message.get("request_id") or "")
-        future = connection.pending.pop(request_id, None)
-        if future is None or future.done():
+        req = connection.pending.pop(request_id, None)
+        if req is None or req.future.done():
             return
-        future.set_result(message)
+        req.future.set_result(message)
 
     async def dispatch(self, action_id: str, args: dict[str, Any]) -> dict[str, Any]:
         async with self._lock:
@@ -77,7 +132,8 @@ class BrowserConnectionRegistry:
         request_id = uuid.uuid4().hex
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
-        connection.pending[request_id] = future
+        req = _PendingRequest(action_id=action_id, args=args, future=future)
+        connection.pending[request_id] = req
 
         try:
             await self._send(
@@ -123,23 +179,12 @@ class BrowserConnectionRegistry:
         except Exception:
             await self.disconnect(connection)
 
-    async def _close_active_locked(self) -> None:
-        if self._active is None:
-            return
-        active = self._active
-        self._active = None
-        await self._finish_connection(active, BrowserConnectionRequired("browser superseded by a newer tab"))
-        try:
-            await active.websocket.close(code=1000)
-        except Exception:
-            pass
-
     async def _finish_connection(self, connection: BrowserConnection, error: Exception) -> None:
         if connection.heartbeat_task and connection.heartbeat_task is not asyncio.current_task():
             connection.heartbeat_task.cancel()
-        for future in list(connection.pending.values()):
-            if not future.done():
-                future.set_exception(error)
+        for req in list(connection.pending.values()):
+            if not req.future.done():
+                req.future.set_exception(error)
         connection.pending.clear()
 
 

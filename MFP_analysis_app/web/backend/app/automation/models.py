@@ -40,6 +40,7 @@ class ActionLogEntry(BaseModel):
     timestamp: datetime
     action_id: str
     args_summary: Dict[str, Any]
+    actor: str = "automation"
     status: str
     duration_ms: float
     result_summary: Optional[Dict[str, Any]] = None

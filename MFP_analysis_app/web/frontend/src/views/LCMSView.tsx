@@ -1177,6 +1177,16 @@ export function LCMSView() {
     },
     [activeSid],
   );
+  const setUvTextLabelsForSession = useCallback(
+    (sid: string, next: UVTextLabel[] | ((prev: UVTextLabel[]) => UVTextLabel[])) => {
+      setUvLabelsBySessionId((prev) => {
+        const previousLabels = prev[sid] ?? [];
+        const nextLabels = typeof next === "function" ? next(previousLabels) : next;
+        return { ...prev, [sid]: nextLabels };
+      });
+    },
+    [],
+  );
   const clearUvLabelsForSession = useCallback((sid: string) => {
     setUvLabelsBySessionId((prev) => {
       if (!(sid in prev)) return prev;
@@ -1691,8 +1701,9 @@ export function LCMSView() {
     [snapUvRtToNearestPeak, uv],
   );
 
-  const addSpectrumLabelsToUv = useCallback((sp: SpectrumData, anchors: UVLabelAnchor[]) => {
-    if (!uv || uv.available !== true || anchors.length === 0) return 0;
+  const addSpectrumLabelsToUv = useCallback((sp: SpectrumData, anchors: UVLabelAnchor[], sessionIdOverride?: string) => {
+    if (!sessionIdOverride && (!uv || uv.available !== true)) return 0;
+    if (anchors.length === 0) return 0;
     const topLabels = [...spectrumLabelsForUv(sp)]
       .sort((a, b) => b.intensity - a.intensity)
       .slice(0, Math.max(1, uvTransferCount));
@@ -1721,16 +1732,21 @@ export function LCMSView() {
         ay: uvLabelOrientation === "vertical" ? -72 - index * 26 : -42 - index * 22,
       })),
     );
-    setUvTextLabels((prev) => [
+    const updater = (prev: UVTextLabel[]) => [
       ...prev.filter(
         (label) =>
           label.kind === "custom" ||
           !anchors.some((anchor) => Math.abs(label.uv_rt_min - anchor.uv_rt_min) < 1e-6),
       ),
       ...nextLabels,
-    ]);
+    ];
+    if (sessionIdOverride) {
+      setUvTextLabelsForSession(sessionIdOverride, updater);
+    } else {
+      setUvTextLabels(updater);
+    }
     return nextLabels.length;
-  }, [rtUnit, setUvTextLabels, uv, uvLabelOrientation, uvOffset, uvTransferCount]);
+  }, [rtUnit, setUvTextLabels, setUvTextLabelsForSession, uv, uvLabelOrientation, uvOffset, uvTransferCount]);
 
   const storeUvLabelsFromSpectrum = useCallback(
     (sp: SpectrumData, uvRtMin: number, options?: { snap?: boolean }) => {
@@ -1890,21 +1906,25 @@ export function LCMSView() {
     [selectedRt, setUvTextLabels, uvAnchorAtRt, uvTextLabels],
   );
 
-  const autoLabelUvPeaks = useCallback(async () => {
-    if (!uv || uv.available !== true) {
+  const autoLabelUvPeaks = useCallback(async (
+    sessionIdOverride?: string,
+    polymerSettingsOverride?: PolymerSettings,
+  ) => {
+    const sid = sessionIdOverride ?? activeSid;
+    if (!sid) return;
+    if (!sessionIdOverride && (!uv || uv.available !== true)) {
       setInfo("Attach a UV chromatogram before auto-labeling UV peaks.");
       return;
     }
-    if (!activeSid) return;
     setBusy(true);
     setError(null);
     try {
-      const freshUv = await api.lcms.uv(activeSid, {
+      const freshUv = await api.lcms.uv(sid, {
         top_n: UV_PEAK_FETCH_LIMIT,
         min_rel: uvProminence,
         min_distance_min: uvMinDistance,
       });
-      setUv(freshUv);
+      if (!sessionIdOverride) setUv(freshUv);
       const peaks = freshUv.available === true ? freshUv.peaks : [];
       if (peaks.length === 0) {
         setInfo("No UV peaks were detected with the current UV peak settings.");
@@ -1914,12 +1934,12 @@ export function LCMSView() {
       let labelCount = 0;
       for (let peakIndex = 0; peakIndex < peaks.length; peakIndex += 1) {
         const peak = peaks[peakIndex];
-        const sp = await api.lcms.spectrum(activeSid, {
+        const sp = await api.lcms.spectrum(sid, {
           rt_min: peak.rt_min + uvOffset,
           polarity: pol,
           top_n: Math.max(1, spectrumTopN),
           min_rel: Math.max(0, spectrumMinRel),
-          polymer: activePolymerSettings,
+          polymer: polymerSettingsOverride ?? activePolymerSettings,
         });
         const count = addSpectrumLabelsToUv(sp, [
           {
@@ -1927,7 +1947,7 @@ export function LCMSView() {
             signal: peak.signal,
             source_peak_index: peakIndex,
           },
-        ]);
+        ], sessionIdOverride);
         if (count > 0) {
           labeledPeaks += 1;
           labelCount += count;
@@ -3007,8 +3027,16 @@ export function LCMSView() {
       autoAlignNow();
       return { ok: true };
     });
-    on("lcms.auto_label_uv", async () => {
-      await autoLabelUvPeaks();
+    on("lcms.auto_label_uv", async (args) => {
+      const sid = str(args.session_id) ?? undefined;
+      let polymerOverride: PolymerSettings | undefined;
+      if (args.polymer_settings != null && pol != null) {
+        polymerOverride = toApiPolymerSettings(
+          args.polymer_settings as unknown as PolymerUiSettings,
+          pol,
+        );
+      }
+      await autoLabelUvPeaks(sid, polymerOverride);
       return { ok: true };
     });
     on("lcms.open_custom_uv_label", () => {
@@ -3019,6 +3047,22 @@ export function LCMSView() {
       const count = uvTextLabels.length;
       setUvTextLabels([]);
       return { count };
+    });
+    on("lcms.set_uv_label_settings", (args) => {
+      const applied: string[] = [];
+      if (args.prominence != null) { setUvProminence(Number(args.prominence)); applied.push("prominence"); }
+      if (args.min_distance != null) { setUvMinDistance(Number(args.min_distance)); applied.push("min_distance"); }
+      if (args.orientation === "vertical" || args.orientation === "horizontal") { setUvLabelOrientation(args.orientation); applied.push("orientation"); }
+      if (args.stair_x_step != null) { setUvLabelStairXStep(Number(args.stair_x_step)); applied.push("stair_x_step"); }
+      if (args.stair_y_step != null) { setUvLabelStairYStep(Number(args.stair_y_step)); applied.push("stair_y_step"); }
+      if (args.bunch_labels != null) { setUvBunchLabels(Boolean(args.bunch_labels)); applied.push("bunch_labels"); }
+      if (args.bunch_hub_offset != null) { setUvBunchHubOffset(Number(args.bunch_hub_offset)); applied.push("bunch_hub_offset"); }
+      if (args.snap_labels != null) { setSnapUvLabels(Boolean(args.snap_labels)); applied.push("snap_labels"); }
+      return { ok: true, applied };
+    });
+    on("lcms.auto_arrange_uv_labels", () => {
+      autoArrangeUvLabels();
+      return { ok: true };
     });
     on("lcms.create_project", (args) => {
       const project = createProject(str(args.name) ?? undefined);
