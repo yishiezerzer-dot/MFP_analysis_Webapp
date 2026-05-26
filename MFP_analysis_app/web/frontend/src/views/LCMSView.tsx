@@ -1156,6 +1156,8 @@ export function LCMSView() {
   const [multiDragOverlay, setMultiDragOverlay] = useStoredState(`${LCMS_STORAGE_PREFIX}.multiDragOverlay`, false);
   const [polymerSettings, setPolymerSettings] =
     useState<PolymerUiSettings>(() => loadPolymerUiSettings());
+  const polymerSettingsRef = useRef(polymerSettings);
+  useEffect(() => { polymerSettingsRef.current = polymerSettings; }, [polymerSettings]);
   const [uvLabelsBySessionId, setUvLabelsBySessionId] = useStoredState<Record<string, UVTextLabel[]>>(
     `${LCMS_STORAGE_PREFIX}.uvLabelsBySessionId`,
     {},
@@ -2962,6 +2964,9 @@ export function LCMSView() {
     };
 
     on("lcms.push_eic_to_ui", showEicPayload);
+    on("lcms.get_polymer_settings", () => {
+      return { settings: polymerSettingsRef.current };
+    });
     on("lcms.set_polymer_settings", (args) => {
       setPolymerSettings(obj(args.settings) as unknown as PolymerUiSettings);
       return { ok: true };

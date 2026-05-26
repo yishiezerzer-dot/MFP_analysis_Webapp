@@ -286,6 +286,11 @@ async def push_eic_to_ui(args: BrowserPushEICInput) -> BrowserActionOutput:
     return await _dispatch("lcms.push_eic_to_ui", args)
 
 
+@_browser_action("lcms.get_polymer_settings", "Get the current LCMS polymer matching UI settings from the browser.", BrowserEmptyInput)
+async def get_polymer_settings(args: BrowserEmptyInput) -> BrowserActionOutput:
+    return await _dispatch("lcms.get_polymer_settings", args)
+
+
 @_browser_action("lcms.set_polymer_settings", "Set LCMS polymer matching UI settings.", BrowserSettingsInput)
 async def set_polymer_settings(args: BrowserSettingsInput) -> BrowserActionOutput:
     return await _dispatch("lcms.set_polymer_settings", args)

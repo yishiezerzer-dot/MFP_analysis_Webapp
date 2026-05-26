@@ -218,6 +218,7 @@ describe("schema coverage — every action's representative call payload parses"
     "lcms.push_eic_to_ui": {
       eic: { target_mz: 150.1, tolerance: 0.02, rt_min: [0, 1], intensity: [0, 50] },
     },
+    "lcms.get_polymer_settings": {},
     "lcms.set_polymer_settings": { settings: {} },
     "lcms.add_feature_row": { row: {} },
     "lcms.update_feature_row": { id: "f1", patch: {} },

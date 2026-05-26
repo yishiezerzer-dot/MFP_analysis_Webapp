@@ -90,6 +90,7 @@ export const lcmsActionSchemas = {
     eic: eicPayload,
     metadata: anyObject.optional(),
   }).strict(),
+  "lcms.get_polymer_settings": z.object({}).strict(),
   "lcms.set_polymer_settings": z.object({ settings: anyObject }).strict(),
   "lcms.add_feature_row": z.object({ row: anyObject }).strict(),
   "lcms.update_feature_row": z.object({ id: z.string().min(1), patch: anyObject }).strict(),
