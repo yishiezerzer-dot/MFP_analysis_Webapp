@@ -282,7 +282,10 @@ export const lcmsHelpModule: HelpModule = {
         <>
           <DocP>
             When UV CSV is attached, the trace renders with the same RT axis scaling as MS (plus offset). Clicking
-            selects spectrum loading with UV RT context. <strong>Save SVG</strong> exports the Plotly view.
+            selects spectrum loading with UV RT context. <strong>Save SVG</strong> exports using the chart pixel size.
+            Use <strong>Publication</strong> export on LCMS charts for preset or manual plot-area sizes: SVG is vector,
+            while PNG uses the selected DPI and does not depend on the current browser panel size. Legends stack
+            vertically on the right with extra export space.
           </DocP>
           <DocP>
             Transferred labels support edit/delete/clear and draggable annotation handles when enabled in graph config.

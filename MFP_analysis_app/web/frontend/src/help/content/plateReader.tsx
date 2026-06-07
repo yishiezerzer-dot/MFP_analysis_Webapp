@@ -123,7 +123,12 @@ export const plateReaderHelpModule: HelpModule = {
               <strong>Export CSV / JSON</strong> downloads structured results for spreadsheets or pipelines.
             </DocLi>
             <DocLi>
-              <strong>Export PNG / SVG</strong> uses Plotly <DocCode>downloadImage</DocCode> with configured dimensions.
+              <strong>Export PNG / SVG</strong> uses Plotly <DocCode>downloadImage</DocCode> at the on-screen figure
+              size.
+            </DocLi>
+            <DocLi>
+              <strong>Publication</strong> export uses preset or manual plot-area sizes. SVG stays vector; PNG uses the
+              selected DPI for raster resolution. Legends stack vertically on the right with extra export space.
             </DocLi>
           </DocUl>
         </>

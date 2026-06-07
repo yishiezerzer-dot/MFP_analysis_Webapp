@@ -99,6 +99,9 @@ export interface SpectrumData {
     n_scans?: number;
     bin_width?: number;
     merge_mode?: string;
+    ignored_mz?: number[];
+    ignored_tolerance?: number;
+    ignored_peak_count?: number;
   };
   mz: number[];
   intensity: number[];

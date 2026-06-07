@@ -9,6 +9,13 @@ declare module "plotly.js-dist-min" {
       gd: PlotlyHTMLElement,
       opts: Record<string, unknown>,
     ) => Promise<string>;
+    newPlot: (
+      gd: HTMLElement,
+      data: unknown[],
+      layout: Record<string, unknown>,
+      config?: Record<string, unknown>,
+    ) => Promise<PlotlyHTMLElement>;
+    purge: (gd: HTMLElement | PlotlyHTMLElement) => void;
   };
   export default Plotly;
 }

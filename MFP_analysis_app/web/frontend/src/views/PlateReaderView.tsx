@@ -18,7 +18,14 @@ import { getHelpModule } from "../help/registry";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
+import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
 import { useStoredState } from "../hooks/useStoredState";
+import {
+  exportPlotlyPublicationImage,
+  PublicationExportFormat,
+  PublicationExportSettings,
+  publicationFilenameSuffix,
+} from "../utils/publicationPlotExport";
 
 type RowRole = "none" | "sample" | "control" | "blank";
 
@@ -538,6 +545,20 @@ export function PlateReaderView() {
     });
   };
 
+  const exportPlotImagePaper = (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
+    if (!plotRef.current) return;
+    void exportPlotlyPublicationImage(plotRef.current, {
+      format,
+      filename: `plate-reader-mic_${publicationFilenameSuffix(exportSettings, format)}`,
+      ...exportSettings,
+    }, {
+      layoutOverrides: {
+        font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
+        margin: { l: 58, r: 18, t: 18, b: 50 },
+      },
+    });
+  };
+
   usePageHeader(
     <PageHeaderContent
       title="Plate Reader"
@@ -749,6 +770,7 @@ export function PlateReaderView() {
                     onExportJson={exportMICJson}
                     onExportPng={() => exportPlotImage("png")}
                     onExportSvg={() => exportPlotImage("svg")}
+                    onPaperPlotExport={(format, dpi) => exportPlotImagePaper(format, dpi)}
                   />
                   <MICChart
                     mic={mic}
@@ -1138,6 +1160,7 @@ function ChartControls(props: {
   onExportJson: () => void;
   onExportPng: () => void;
   onExportSvg: () => void;
+  onPaperPlotExport: (format: PublicationExportFormat, settings: PublicationExportSettings) => void;
 }) {
   const setNumber = (key: keyof MICChartSettings, value: string, min: number, max: number) => {
     const parsed = Number(value);
@@ -1162,6 +1185,7 @@ function ChartControls(props: {
           <Tooltip content="Export chart as SVG vector">
             <button className="btn-ghost" onClick={props.onExportSvg}>SVG</button>
           </Tooltip>
+          <PaperFigureExportToolbar onExport={props.onPaperPlotExport} />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

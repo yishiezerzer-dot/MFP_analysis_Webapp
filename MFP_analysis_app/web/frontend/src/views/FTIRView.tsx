@@ -27,7 +27,15 @@ import { HelpOpenButton, HelpShell } from "../help/HelpShell";
 import { getHelpModule } from "../help/registry";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
+import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
 import { Tooltip } from "../components/Tooltip";
+import {
+  exportPlotlyPublicationImage,
+  PublicationExportFormat,
+  PublicationExportSettings,
+  publicationFilenameSuffix,
+  sanitizeFilenamePart,
+} from "../utils/publicationPlotExport";
 
 // --- types local to this view ---
 
@@ -338,7 +346,14 @@ function estimateYOffset(spectra: FTIRSpectrumResponse[]): number {
   return Math.max(...ranges, 1) * 1.15;
 }
 
-function buildStackedAxes(mode: GraphSettings["overlayMode"], count: number, color: string, showGrid: boolean): Partial<Layout> {
+function buildStackedAxes(
+  mode: GraphSettings["overlayMode"],
+  count: number,
+  color: string,
+  showGrid: boolean,
+  axisTitleSize: number,
+  axisTickSize: number,
+): Partial<Layout> {
   if (mode !== "stacked" || count <= 0) return {};
   const total = count + 1;
   const axes: Partial<Layout> = {};
@@ -351,7 +366,15 @@ function buildStackedAxes(mode: GraphSettings["overlayMode"], count: number, col
       zeroline: false,
       showgrid: showGrid,
       linecolor: color,
-      title: i === 0 ? { text: "Active" } : undefined,
+      tickfont: { size: axisTickSize },
+      automargin: true,
+      title: i === 0
+        ? {
+            text: "Active",
+            font: { size: axisTitleSize },
+            standoff: Math.max(8, Math.round(axisTickSize * 0.8)),
+          }
+        : undefined,
     };
   }
   return axes;
@@ -622,15 +645,22 @@ export function FTIRView() {
     };
   }, [overlayEnabled, overlaySessionIds, pre, sessions]);
 
-  const onUpload = async (file: File) => {
+  const onUpload = async (files: File[]) => {
+    if (files.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      const s = await api.ftir.upload(file, pre.mode);
-      setSessions((prev) => [...prev, s]);
-      setActiveSid(s.session_id);
-      setPeaks([]);
-      setAssignments(null);
+      const uploaded: FTIRSessionSummary[] = [];
+      for (const file of files) {
+        const s = await api.ftir.upload(file, pre.mode);
+        uploaded.push(s);
+      }
+      if (uploaded.length > 0) {
+        setSessions((prev) => [...prev, ...uploaded]);
+        setActiveSid(uploaded[uploaded.length - 1].session_id);
+        setPeaks([]);
+        setAssignments(null);
+      }
     } catch (err) {
       setError(String(err));
     } finally {
@@ -1060,10 +1090,11 @@ export function FTIRView() {
             ref={fileRef}
             type="file"
             accept=".csv,.txt,.tsv,.dx,.jdx,.spc"
+            multiple
             className="hidden"
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onUpload(f);
+              const files = e.target.files ? Array.from(e.target.files) : [];
+              if (files.length > 0) void onUpload(files);
               e.target.value = "";
             }}
           />
@@ -1136,7 +1167,7 @@ export function FTIRView() {
             disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
-            {busy ? "Working…" : "Open FTIR file…"}
+            {busy ? "Working…" : "Open FTIR file(s)…"}
           </button>
         </>
       }
@@ -1146,8 +1177,8 @@ export function FTIRView() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    const f = e.dataTransfer.files?.[0];
-    if (f) void onUpload(f);
+    const files = e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
+    if (files.length > 0) void onUpload(files);
   };
 
   const setControlPanelOpen = (key: FTIRControlPanelKey, open: boolean) => {
@@ -1165,7 +1196,7 @@ export function FTIRView() {
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-brand-500/10 backdrop-blur-sm">
           <div className="rounded-xl border-2 border-dashed border-brand-500 bg-surface px-10 py-8 text-center shadow-xl">
             <div className="text-3xl">📁</div>
-            <div className="mt-2 text-sm font-medium text-brand-700">Drop your FTIR file here</div>
+            <div className="mt-2 text-sm font-medium text-brand-700">Drop your FTIR files here</div>
           </div>
         </div>
       )}
@@ -1425,14 +1456,14 @@ function EmptyState(props: { onPick: () => void }) {
   return (
     <div className="card flex shrink-0 flex-col items-center justify-center gap-3 p-12 text-center">
       <div className="text-4xl">🧪</div>
-      <div className="text-lg font-semibold">Open an FTIR file</div>
+      <div className="text-lg font-semibold">Open FTIR files</div>
       <div className="max-w-md text-sm text-ink-500">
-        CSV, TXT/TSV or JASCO-style files with <code>XYDATA</code> blocks. The backend
-        uses the same parser as the desktop app and ignores header text automatically.
-        Supported formats: .spa, .csv, .txt, .dpt
+        CSV, TXT/TSV or JASCO-style files with <code>XYDATA</code> blocks. Select or drop
+        multiple files at once. The backend uses the same parser as the desktop app and
+        ignores header text automatically. Supported formats: .spa, .csv, .txt, .dpt
       </div>
       <button className="btn-primary mt-2" onClick={props.onPick}>
-        Choose file…
+        Choose file(s)…
       </button>
     </div>
   );
@@ -2447,8 +2478,9 @@ function SpectrumChart(props: {
     const activeColor = resolveTraceColor(`sid:${props.activeSessionId}`, "#1e2636");
     const overlayMode = props.graphSettings.overlayMode ?? "overlay";
     const yOffset = overlayMode === "offset" ? estimateYOffset([spectrum, ...visibleOverlays.map((o) => o.spectrum)]) : 0;
+    // Canvas scatter (not WebGL scattergl): SVG/PNG snapshot omits scattergl lines in some layouts.
     const trace: Data = {
-      type: "scattergl",
+      type: "scatter",
       mode: "lines",
       x: spectrum.wn,
       y: spectrum.y,
@@ -2457,7 +2489,7 @@ function SpectrumChart(props: {
       hovertemplate: "%{x:.1f} cm⁻¹<br>%{y:.4g}<extra></extra>",
     };
     const overlayTraces: Data[] = visibleOverlays.map((overlay, idx) => ({
-        type: "scattergl",
+        type: "scatter",
         mode: "lines",
         x: overlay.spectrum.wn,
         y: overlayMode === "offset" ? overlay.spectrum.y.map((v) => v + yOffset * (idx + 1)) : overlay.spectrum.y,
@@ -2476,7 +2508,7 @@ function SpectrumChart(props: {
     const differenceTrace: Data[] = props.differenceSpectrum
       ? [
           {
-            type: "scattergl",
+            type: "scatter",
             mode: "lines",
             x: props.differenceSpectrum.wn,
             y: props.differenceSpectrum.y,
@@ -2489,7 +2521,7 @@ function SpectrumChart(props: {
     const referenceTrace: Data[] = props.selectedReference
       ? [
           {
-            type: "scattergl",
+            type: "scatter",
             mode: "lines",
             x: props.selectedReference.reference.wn,
             y: props.selectedReference.reference.y,
@@ -2749,30 +2781,48 @@ function SpectrumChart(props: {
 
   const layout: Partial<Layout> = useMemo(
     () => {
-      const stackedAxes = buildStackedAxes(props.graphSettings.overlayMode ?? "overlay", visibleOverlays.length, pt.fontColor, props.graphSettings.showGrid);
+      const axisTitleSize = props.graphSettings.axisTitleSize;
+      const axisTickSize = props.graphSettings.axisTickSize;
+      const axisTitleStandoff = Math.max(8, Math.round(axisTickSize * 0.8));
+      const bottomMargin = Math.max(40, Math.round(20 + axisTickSize * 1.5 + axisTitleSize * 1.6));
+      const leftMargin = Math.max(50, Math.round(34 + axisTickSize * 1.8 + axisTitleSize * 1.2));
+      const stackedAxes = buildStackedAxes(
+        props.graphSettings.overlayMode ?? "overlay",
+        visibleOverlays.length,
+        pt.fontColor,
+        props.graphSettings.showGrid,
+        axisTitleSize,
+        axisTickSize,
+      );
       return ({
-      margin: { l: 50, r: 20, t: 8, b: 40 },
+      margin: { l: leftMargin, r: 20, t: 8, b: bottomMargin },
       height: 420,
       xaxis: {
         titlefont: { size: props.graphSettings.axisTitleSize },
         tickfont: { size: props.graphSettings.axisTickSize },
-        title: { text: "Wavenumber (cm⁻¹)" },
+        title: { text: "Wavenumber (cm\u207b\u00b9)", font: { size: axisTitleSize }, standoff: axisTitleStandoff },
         autorange: xRange ? false : "reversed",
         range: xRange ? [xRange[1], xRange[0]] : undefined,
         zeroline: false,
         showgrid: props.graphSettings.showGrid,
         ticks: props.graphSettings.showTicks ? "outside" : "",
         linecolor: pt.fontColor,
+        automargin: true,
         ...axisFrameProps,
       },
       yaxis: {
         titlefont: { size: props.graphSettings.axisTitleSize },
         tickfont: { size: props.graphSettings.axisTickSize },
-        title: { text: mode === "absorbance" ? "Absorbance" : "Transmittance" },
+        title: {
+          text: mode === "absorbance" ? "Absorbance" : "Transmittance",
+          font: { size: axisTitleSize },
+          standoff: axisTitleStandoff,
+        },
         zeroline: false,
         showgrid: props.graphSettings.showGrid,
         ticks: props.graphSettings.showTicks ? "outside" : "",
         linecolor: pt.fontColor,
+        automargin: true,
         ...axisFrameProps,
       },
       yaxis2: {
@@ -2817,12 +2867,32 @@ function SpectrumChart(props: {
     const base = props.title.trim().replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_") || "ftir";
     void Plotly.downloadImage(plotRef.current as never, {
       format,
-      filename: `${base}.spectrum`,
+      filename: `${base}_ftir_spectrum`,
       width: 1200,
       height: 600,
       scale: format === "png" ? 2 : 1,
     });
   }, [props.title]);
+
+  const exportPlotImagePaper = useCallback(
+    (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
+      const gd = plotRef.current;
+      if (!gd) return;
+      const base = sanitizeFilenamePart(props.title, "ftir");
+      void exportPlotlyPublicationImage(gd as never, {
+        format,
+        filename: `${base}_ftir_spectrum_${publicationFilenameSuffix(exportSettings, format)}`,
+        ...exportSettings,
+      }, {
+        layoutOverrides: {
+          margin: { l: 58, r: 18, t: props.graphSettings.overlayMode === "stacked" ? 18 : 12, b: 46 },
+          font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
+          showlegend: props.overlays.length > 1,
+        },
+      });
+    },
+    [props.graphSettings.overlayMode, props.overlays.length, props.title],
+  );
 
   return (
     <div className="card shrink-0 p-3">
@@ -2859,6 +2929,7 @@ function SpectrumChart(props: {
               </button>
             </span>
           </Tooltip>
+          <PaperFigureExportToolbar disabled={!spectrum} onExport={exportPlotImagePaper} />
           <span className="text-xs text-ink-400">Region:</span>
           <select
             className="input py-0.5 text-xs"

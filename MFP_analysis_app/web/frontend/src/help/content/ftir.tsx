@@ -30,7 +30,7 @@ export const ftirHelpModule: HelpModule = {
         <>
           <DocUl>
             <DocLi>
-              <strong>Open…</strong> accepts <DocCode>.csv .txt .tsv .dx .jdx .spc</DocCode>.
+              <strong>Open…</strong> accepts one or more files: <DocCode>.csv .txt .tsv .dx .jdx .spc</DocCode>.
             </DocLi>
             <DocLi>
               <strong>Load / Save workspace</strong> round-trips JSON with sessions and UI state.
@@ -175,7 +175,10 @@ export const ftirHelpModule: HelpModule = {
               peak label colors.
             </DocLi>
             <DocLi>
-              <strong>Save SVG / PNG</strong> uses Plotly image export on the active chart element.
+              <strong>Export SVG / PNG</strong> exports the on-screen chart quickly. For manuscripts, use{" "}
+              <strong>Publication</strong>: choose a preset or manual plot-area width and height, then download vector
+              SVG or PNG. PNG uses the selected DPI; SVG stays vector. Legends stack vertically on the right with extra
+              export space, so they do not shrink the chosen plot area.
             </DocLi>
             <DocLi>
               Peak markers and assignment labels render as annotations; drag edits may persist when the UI stores label

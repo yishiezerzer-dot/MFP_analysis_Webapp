@@ -31,10 +31,18 @@ import { HelpOpenButton, HelpShell } from "../help/HelpShell";
 import { getHelpModule } from "../help/registry";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
+import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
 import { Tooltip } from "../components/Tooltip";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
 import { useAutomationDispatch } from "../automation/registry";
 import { useStoredState } from "../hooks/useStoredState";
+import {
+  exportPlotlyPublicationImage,
+  PublicationExportFormat,
+  PublicationExportSettings,
+  publicationFilenameSuffix,
+  sanitizeFilenamePart,
+} from "../utils/publicationPlotExport";
 import {
   buildExpectedProductHits,
   buildKendrickPoints,
@@ -82,6 +90,11 @@ import {
 } from "../lcms/settings";
 
 let pendingPlotResizeFrame: number | null = null;
+
+interface IgnoredRegionMass {
+  mz: number;
+  tolerance: number;
+}
 
 function schedulePlotResize() {
   if (typeof window === "undefined" || pendingPlotResizeFrame !== null) return;
@@ -1048,6 +1061,58 @@ function readJsonFile<T>(file: File): Promise<T> {
   });
 }
 
+function parseRegionIgnoredMasses(text: string, tolerance: number): IgnoredRegionMass[] {
+  const tol = Math.max(0, Number.isFinite(tolerance) ? tolerance : 0);
+  if (!text.trim() || tol <= 0) return [];
+  return text
+    .split(/[\s,;]+/)
+    .map((part) => Number(part.trim()))
+    .filter((mz, index, values) =>
+      Number.isFinite(mz) && mz > 0 && values.findIndex((other) => Math.abs(other - mz) < 1e-9) === index,
+    )
+    .map((mz) => ({ mz, tolerance: tol }));
+}
+
+function isIgnoredRegionMz(mz: number, ignored: IgnoredRegionMass[]): boolean {
+  return ignored.some((item) => Math.abs(mz - item.mz) <= item.tolerance);
+}
+
+function filterIgnoredRegionSpectrum(
+  mzValues: number[],
+  intensityValues: number[],
+  labels: SpectrumLabel[],
+  polymerLabels: SpectrumLabel[],
+  ignored: IgnoredRegionMass[],
+): {
+  mz: number[];
+  intensity: number[];
+  labels: SpectrumLabel[];
+  polymerLabels: SpectrumLabel[];
+  ignoredPeakCount: number;
+} {
+  if (!ignored.length) {
+    return { mz: mzValues, intensity: intensityValues, labels, polymerLabels, ignoredPeakCount: 0 };
+  }
+  const mz: number[] = [];
+  const intensity: number[] = [];
+  let ignoredPeakCount = 0;
+  mzValues.forEach((value, index) => {
+    if (isIgnoredRegionMz(value, ignored)) {
+      ignoredPeakCount += 1;
+      return;
+    }
+    mz.push(value);
+    intensity.push(intensityValues[index] ?? 0);
+  });
+  return {
+    mz,
+    intensity,
+    labels: labels.filter((label) => !isIgnoredRegionMz(label.mz, ignored)),
+    polymerLabels: polymerLabels.filter((label) => !isIgnoredRegionMz(label.mz, ignored)),
+    ignoredPeakCount,
+  };
+}
+
 // --- Main view ---------------------------------------------------------------
 
 export function LCMSView() {
@@ -1115,6 +1180,22 @@ export function LCMSView() {
   const [showTIC, setShowTIC] = useStoredState(`${LCMS_STORAGE_PREFIX}.showTIC`, true);
   const [showSpectrum, setShowSpectrum] = useStoredState(`${LCMS_STORAGE_PREFIX}.showSpectrum`, true);
   const [showUV, setShowUV] = useStoredState(`${LCMS_STORAGE_PREFIX}.showUV`, true);
+  const [regionIgnoredMzText, setRegionIgnoredMzText] = useStoredState(
+    `${LCMS_STORAGE_PREFIX}.regionIgnoredMzText`,
+    "",
+  );
+  const [regionIgnoredMzTolerance, setRegionIgnoredMzTolerance] = useStoredState(
+    `${LCMS_STORAGE_PREFIX}.regionIgnoredMzTolerance`,
+    0.2,
+    (value) => {
+      const n = Number(value);
+      return Number.isFinite(n) && n > 0 ? n : 0.2;
+    },
+  );
+  const regionIgnoredMasses = useMemo(
+    () => parseRegionIgnoredMasses(regionIgnoredMzText, regionIgnoredMzTolerance),
+    [regionIgnoredMzText, regionIgnoredMzTolerance],
+  );
 
   // UV↔MS alignment
   const [uvOffsetText, setUvOffsetText] = useStoredState(`${LCMS_STORAGE_PREFIX}.uvOffsetText`, "0.000");
@@ -2537,13 +2618,20 @@ export function LCMSView() {
     (data: LCMSRegionSpectrumData, rtMin: number, rtMax: number): SpectrumData => {
       const lo = Math.min(rtMin, rtMax);
       const hi = Math.max(rtMin, rtMax);
-      const maxIntensity = Math.max(...data.intensity, 0);
-      const labels = data.mz
-        .map((mz, index) => ({ mz, intensity: data.intensity[index] }))
+      const polymerLabels = data.polymer_labels ?? [];
+      const filtered = filterIgnoredRegionSpectrum(
+        data.mz,
+        data.intensity,
+        [],
+        polymerLabels,
+        regionIgnoredMasses,
+      );
+      const maxIntensity = Math.max(...filtered.intensity, 0);
+      const labels = filtered.mz
+        .map((mz, index) => ({ mz, intensity: filtered.intensity[index] }))
         .filter((point) => maxIntensity > 0 && point.intensity >= spectrumMinRel * maxIntensity)
         .sort((a, b) => b.intensity - a.intensity)
         .slice(0, Math.max(1, spectrumTopN));
-      const polymerLabels = data.polymer_labels ?? [];
       return {
         meta: {
           spectrum_id: `summed:${lo.toFixed(4)}-${hi.toFixed(4)}`,
@@ -2551,20 +2639,52 @@ export function LCMSView() {
           rt_max: hi,
           rt_start: lo,
           rt_end: hi,
-          tic: data.intensity.reduce((sum, value) => sum + value, 0),
+          tic: filtered.intensity.reduce((sum, value) => sum + value, 0),
           polarity: pol ?? null,
-          n_peaks: data.mz.length,
+          n_peaks: filtered.mz.length,
           n_scans: data.n_scans,
           bin_width: data.bin_width,
           merge_mode: "sum",
+          ignored_mz: regionIgnoredMasses.map((item) => item.mz),
+          ignored_tolerance: regionIgnoredMasses.length ? regionIgnoredMzTolerance : undefined,
+          ignored_peak_count: filtered.ignoredPeakCount,
         },
-        mz: data.mz,
-        intensity: data.intensity,
-        labels: [...labels, ...polymerLabels],
-        polymer_labels: polymerLabels,
+        mz: filtered.mz,
+        intensity: filtered.intensity,
+        labels: [...labels, ...filtered.polymerLabels],
+        polymer_labels: filtered.polymerLabels,
       };
     },
-    [pol, spectrumMinRel, spectrumTopN],
+    [pol, regionIgnoredMasses, regionIgnoredMzTolerance, spectrumMinRel, spectrumTopN],
+  );
+
+  const applyRegionIgnoredMassesToSpectrum = useCallback(
+    (sp: SpectrumData): SpectrumData => {
+      if (!sp.meta.spectrum_id.startsWith("summed:") || regionIgnoredMasses.length === 0) return sp;
+      const filtered = filterIgnoredRegionSpectrum(
+        sp.mz,
+        sp.intensity,
+        sp.labels ?? [],
+        sp.polymer_labels ?? [],
+        regionIgnoredMasses,
+      );
+      return {
+        ...sp,
+        meta: {
+          ...sp.meta,
+          tic: filtered.intensity.reduce((sum, value) => sum + value, 0),
+          n_peaks: filtered.mz.length,
+          ignored_mz: regionIgnoredMasses.map((item) => item.mz),
+          ignored_tolerance: regionIgnoredMzTolerance,
+          ignored_peak_count: filtered.ignoredPeakCount,
+        },
+        mz: filtered.mz,
+        intensity: filtered.intensity,
+        labels: filtered.labels,
+        polymer_labels: filtered.polymerLabels,
+      };
+    },
+    [regionIgnoredMasses, regionIgnoredMzTolerance],
   );
 
   const loadSummedRegionSpectrum = async () => {
@@ -3181,10 +3301,11 @@ export function LCMSView() {
       return { enabled };
     });
     on("lcms.show_summed_region_spectrum", (args) => {
-      const sp = obj(args.spectrum) as unknown as SpectrumData;
-      if (!Array.isArray(sp.mz) || !Array.isArray(sp.intensity)) {
+      const rawSpectrum = obj(args.spectrum) as unknown as SpectrumData;
+      if (!Array.isArray(rawSpectrum.mz) || !Array.isArray(rawSpectrum.intensity)) {
         throw new Error("Spectrum payload is missing mz/intensity arrays.");
       }
+      const sp = applyRegionIgnoredMassesToSpectrum(rawSpectrum);
       const sessionId = str(args.session_id);
       if (sessionId && sessionId !== activeSid) setActiveSid(sessionId);
       setSpectrum(sp);
@@ -3201,6 +3322,7 @@ export function LCMSView() {
     active,
     activePolymerSettings,
     activeSid,
+    applyRegionIgnoredMassesToSpectrum,
     browserAutomation,
     eicPlots.length,
     featureRows,
@@ -3556,6 +3678,11 @@ export function LCMSView() {
           setShowUV={setShowUV}
           regionSelect={regionSelect}
           setRegionSelect={handleSetRegionSelect}
+          regionIgnoredMzText={regionIgnoredMzText}
+          setRegionIgnoredMzText={setRegionIgnoredMzText}
+          regionIgnoredMzTolerance={regionIgnoredMzTolerance}
+          setRegionIgnoredMzTolerance={setRegionIgnoredMzTolerance}
+          regionIgnoredCount={regionIgnoredMasses.length}
           overlayTicEnabled={overlayTicEnabled}
           setOverlayTicEnabled={setOverlayTicEnabled}
           overlayUvEnabled={overlayUvEnabled}
@@ -4473,6 +4600,11 @@ interface ToolsPanelProps {
   setShowUV: (v: boolean) => void;
   regionSelect: boolean;
   setRegionSelect: (v: boolean) => void;
+  regionIgnoredMzText: string;
+  setRegionIgnoredMzText: (v: string) => void;
+  regionIgnoredMzTolerance: number;
+  setRegionIgnoredMzTolerance: (v: number) => void;
+  regionIgnoredCount: number;
   overlayTicEnabled: boolean;
   setOverlayTicEnabled: (v: boolean) => void;
   overlayUvEnabled: boolean;
@@ -4999,6 +5131,33 @@ function ViewTab(p: ToolsPanelProps) {
           checked={p.regionSelect}
           onChange={p.setRegionSelect}
         />
+        <Row label="Ignore m/z">
+          <input
+            className="input w-full"
+            value={p.regionIgnoredMzText}
+            onChange={(e) => p.setRegionIgnoredMzText(e.target.value)}
+            placeholder="91.1, 113.0"
+            spellCheck={false}
+          />
+        </Row>
+        <Row label="± m/z">
+          <input
+            type="number"
+            min={0.001}
+            step="0.01"
+            className="input w-24"
+            value={p.regionIgnoredMzTolerance}
+            onChange={(e) => {
+              const value = parseFloat(e.target.value);
+              p.setRegionIgnoredMzTolerance(Number.isFinite(value) && value > 0 ? value : 0.01);
+            }}
+          />
+        </Row>
+        <p className="text-[11px] text-ink-500">
+          {p.regionIgnoredCount > 0
+            ? `${p.regionIgnoredCount} mass${p.regionIgnoredCount === 1 ? "" : "es"} hidden from summed region MS1 scaling.`
+            : "Hide dominant contaminants from summed region MS1 scaling."}
+        </p>
         <button
           className="mt-2 rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!p.regionSelect}
@@ -5524,9 +5683,26 @@ function TICChart(props: {
       line: { color: "rgba(85,115,185,0.45)", width: 1 },
     });
   }
+  const savePublication = useCallback(
+    (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
+      if (!plotRef.current || !props.tic) return;
+      const base = sanitizeFilenamePart(props.settings.title || "lcms_tic", "lcms_tic");
+      void exportPlotlyPublicationImage(plotRef.current, {
+        format,
+        filename: `${base}_tic_${publicationFilenameSuffix(exportSettings, format)}`,
+        ...exportSettings,
+      }, {
+        layoutOverrides: {
+          font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
+          margin: { l: 58, r: 18, t: props.settings.title ? 28 : 12, b: 46 },
+        },
+      });
+    },
+    [props.settings.title, props.tic],
+  );
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
-      <div className="flex items-baseline justify-between px-1 pb-1">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
         <h3 className="text-sm font-semibold">Total Ion Chromatogram</h3>
         <div className="flex items-center gap-2 text-xs text-ink-500">
           {props.regionSelect && props.selectedRegion != null ? (
@@ -5544,6 +5720,11 @@ function TICChart(props: {
               ? "Drag on the plot to select an RT region"
               : "Click a point to load the spectrum at that RT"}
           </span>
+          <PaperFigureExportToolbar
+            disabled={!props.tic}
+            storageKey="mfp-publication-plot-export-lcms-tic"
+            onExport={savePublication}
+          />
         </div>
       </div>
       {!props.tic ? (
@@ -5724,6 +5905,24 @@ function EICChart(props: {
           },
         ]
       : [];
+  const savePublication = useCallback(
+    (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
+      if (!plotRef.current || props.eics.length === 0) return;
+      const mzPart = primary ? `mz_${primary.target_mz.toFixed(4)}` : "overlay";
+      const base = sanitizeFilenamePart(props.settings.title || `lcms_eic_${mzPart}`, "lcms_eic");
+      void exportPlotlyPublicationImage(plotRef.current, {
+        format,
+        filename: `${base}_${publicationFilenameSuffix(exportSettings, format)}`,
+        ...exportSettings,
+      }, {
+        layoutOverrides: {
+          font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
+          margin: { l: 58, r: 18, t: props.settings.title ? 28 : 12, b: 46 },
+        },
+      });
+    },
+    [primary, props.eics.length, props.settings.title],
+  );
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
@@ -5759,6 +5958,11 @@ function EICChart(props: {
           >
             {props.clearLabel ?? "Clear"}
           </button>
+          <PaperFigureExportToolbar
+            disabled={props.eics.length === 0}
+            storageKey="mfp-publication-plot-export-lcms-eic"
+            onExport={savePublication}
+          />
         </div>
       </div>
       <div
@@ -6059,6 +6263,21 @@ function UVChromatogramChart(props: {
       scale: 1,
     });
   };
+
+  const saveUvPaper = async (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
+    if (!uvPlotRef.current) return;
+    const baseName = sanitizeFilenamePart(meta?.filename ?? "uv_chromatogram", "uv_chromatogram");
+    await exportPlotlyPublicationImage(uvPlotRef.current, {
+      format,
+      filename: `${baseName}_uv_chromatogram_${publicationFilenameSuffix(exportSettings, format)}`,
+      ...exportSettings,
+    }, {
+      layoutOverrides: {
+        font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
+        margin: { l: 58, r: 18, t: settings.title ? 28 : 12, b: 46 },
+      },
+    });
+  };
   const handleRelayout = (event: Readonly<Record<string, unknown>>) => {
     if (bunchLabels) return;
     labels.forEach((label, index) => {
@@ -6144,6 +6363,12 @@ function UVChromatogramChart(props: {
               Save SVG
             </button>
           )}
+          <PaperFigureExportToolbar
+            disabled={busy || !available}
+            storageKey="mfp-publication-plot-export-lcms-uv"
+            onExport={saveUvPaper}
+          />
+
           <button
             className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={onPickFile}
@@ -6401,12 +6626,32 @@ function SpectrumChart(props: {
     props.settings.labels.fontSize,
     props.showOverlayLabels,
   ]);
+  const savePublication = useCallback(
+    (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
+      if (!specPlotRef.current || !s) return;
+      const rtPart = s.meta.rt_start != null
+        ? `region_${s.meta.rt_start.toFixed(3)}_${s.meta.rt_end?.toFixed(3) ?? ""}`
+        : `rt_${s.meta.rt_min.toFixed(3)}`;
+      const base = sanitizeFilenamePart(props.settings.title || `lcms_ms1_${rtPart}`, "lcms_ms1_spectrum");
+      void exportPlotlyPublicationImage(specPlotRef.current, {
+        format,
+        filename: `${base}_${publicationFilenameSuffix(exportSettings, format)}`,
+        ...exportSettings,
+      }, {
+        layoutOverrides: {
+          font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
+          margin: { l: 58, r: 18, t: props.settings.title ? 28 : 14, b: 46 },
+        },
+      });
+    },
+    [props.settings.title, s],
+  );
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
-      <div className="flex items-baseline justify-between px-1 pb-1">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
         <h3 className="text-sm font-semibold">MS1 Spectrum</h3>
         {(s || props.selectedRt != null) && (
-          <div className="flex items-center gap-2 text-xs text-ink-500">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
             {s?.meta.rt_start != null && s.meta.rt_end != null ? (
               <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
                 Region {formatRt(s.meta.rt_start, props.rtUnit)} - {formatRt(s.meta.rt_end, props.rtUnit)}
@@ -6428,12 +6673,23 @@ function SpectrumChart(props: {
               </span>
             )}
             {s && props.onPeakClick ? <span>Click a peak to create an EIC</span> : null}
+            <PaperFigureExportToolbar
+              disabled={!s}
+              storageKey="mfp-publication-plot-export-lcms-spectrum"
+              onExport={savePublication}
+            />
             {s?.meta.n_scans != null && (
               <span>
                 {s.meta.n_scans.toLocaleString()} scans, {s.meta.merge_mode ?? "sum"} merge
                 {s.meta.bin_width != null ? `, ${s.meta.bin_width} m/z bins` : ""}
               </span>
             )}
+            {s?.meta.ignored_peak_count ? (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+                ignored {s.meta.ignored_peak_count} peak{s.meta.ignored_peak_count === 1 ? "" : "s"}
+                {s.meta.ignored_mz?.length ? ` near ${s.meta.ignored_mz.join(", ")}` : ""}
+              </span>
+            ) : null}
           </div>
         )}
       </div>
@@ -7378,6 +7634,22 @@ function KendrickDialog({
       dash: "dot" as const,
     },
   }));
+  const savePublication = useCallback(
+    (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
+      if (!plotRef.current || result.points.length === 0) return;
+      void exportPlotlyPublicationImage(plotRef.current, {
+        format,
+        filename: `lcms_kendrick_${publicationFilenameSuffix(exportSettings, format)}`,
+        ...exportSettings,
+      }, {
+        layoutOverrides: {
+          font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
+          margin: { l: 58, r: 18, t: 16, b: 46 },
+        },
+      });
+    },
+    [result.points.length],
+  );
 
   return (
     <Modal
@@ -7473,6 +7745,11 @@ function KendrickDialog({
             />
             Label series points
           </label>
+          <PaperFigureExportToolbar
+            disabled={!spectrum || result.points.length === 0}
+            storageKey="mfp-publication-plot-export-lcms-kendrick"
+            onExport={savePublication}
+          />
         </div>
         {!spectrum ? (
           <div className="rounded-md border border-dashed border-ink-200 p-6 text-center text-sm text-ink-500">
