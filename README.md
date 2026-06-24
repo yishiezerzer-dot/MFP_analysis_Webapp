@@ -149,7 +149,7 @@ Root `requirements.txt` includes `MFP_analysis_app/web/backend/requirements.txt`
 | --- | --- |
 | `fastapi`, `uvicorn[standard]`, `python-multipart` | Web API, file uploads |
 | `numpy`, `pandas`, `scipy` | Numerical analysis (FTIR peaks, baselines, tables) |
-| `pyteomics` | mzML parsing (LCMS) |
+| `pyteomics`, `psims` | mzML parsing (LCMS; psims required by pyteomics 5+) |
 | `openpyxl` | Modern Excel (`.xlsx`) read/write |
 | `xlrd` | Legacy Excel (`.xls`) via pandas |
 | `lxml` | Optional pandas/HTML engine support |
@@ -225,7 +225,7 @@ Verified against actual imports in `web/backend/app/` and the `lab_gui` modules 
 | fastapi / uvicorn / multipart | ✓ | API layer |
 | numpy / pandas | ✓ | All modules |
 | scipy | ✓ | FTIR peak picking, Savitzky–Golay, baselines (`ftir_analysis.py`) |
-| pyteomics | ✓ | mzML (LCMS) |
+| pyteomics / psims | ✓ | mzML (LCMS) |
 | openpyxl | ✓ | `.xlsx` in Data Studio & Plate Reader |
 | xlrd | ✓ | Legacy `.xls` in `load_table` / plate reader |
 | lxml | ✓ | Not directly imported; safe optional pandas extra |
