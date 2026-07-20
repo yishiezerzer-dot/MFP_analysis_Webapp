@@ -1,0 +1,8 @@
+MFP_analysis_app/web/frontend/node_modules
+MFP_analysis_app/web/.mfp_uploads
+MFP_analysis_app/pytest-cache-files-*
+MFP_analysis_app/web/shared_fixtures
+.venv
+**/__pycache__
+**/.pytest_cache
+.git
