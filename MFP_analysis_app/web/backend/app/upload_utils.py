@@ -36,9 +36,6 @@ async def read_upload_bytes(
     if len(data) > VERCEL_PAYLOAD_LIMIT and not blob_enabled():
         raise HTTPException(
             status_code=413,
-            detail=(
-                "File exceeds Vercel's 4.5 MB request limit. "
-                "Use client-side blob upload for larger lab files."
-            ),
+            detail="File is too large for this deployment's upload limit.",
         )
     return data, name

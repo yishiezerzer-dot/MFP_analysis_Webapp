@@ -2,32 +2,13 @@
  * Thin typed wrapper around the FastAPI backend.
  */
 
-import { upload } from "@vercel/blob/client";
-
-const VERCEL_BODY_LIMIT = 4 * 1024 * 1024;
-
 async function postFileUpload(
   endpoint: string,
   file: File,
   extraFields: Record<string, string> = {},
 ): Promise<Response> {
-  if (file.size <= VERCEL_BODY_LIMIT) {
-    const fd = new FormData();
-    fd.append("file", file);
-    for (const [key, value] of Object.entries(extraFields)) {
-      fd.append(key, value);
-    }
-    return fetch(endpoint, { method: "POST", body: fd });
-  }
-
-  const blob = await upload(file.name, file, {
-    access: "public",
-    handleUploadUrl: "/api/blob-upload",
-  });
-
   const fd = new FormData();
-  fd.append("blob_url", blob.url);
-  fd.append("blob_filename", file.name);
+  fd.append("file", file);
   for (const [key, value] of Object.entries(extraFields)) {
     fd.append(key, value);
   }
@@ -194,8 +175,7 @@ async function handle<T>(res: Response): Promise<T> {
       // ignore
     }
     if (res.status === 413) {
-      detail =
-        "File exceeds Vercel's 4.5 MB upload limit. Large files should upload via blob storage automatically — refresh and try again.";
+      detail = "File is too large for the server to accept in one request.";
     }
     if (res.status === 404 && String(detail).toLowerCase().includes("session")) {
       detail = "Session not found or expired. Re-upload your file to continue.";
