@@ -3,11 +3,9 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import File, Form, HTTPException, UploadFile
+from fastapi import HTTPException, UploadFile
 
-from .blob_store import blob_enabled, download_bytes, filename_from_blob_url
-
-VERCEL_PAYLOAD_LIMIT = 4 * 1024 * 1024
+from .blob_store import download_bytes, filename_from_blob_url
 
 
 async def read_upload_bytes(
@@ -33,9 +31,4 @@ async def read_upload_bytes(
 
     name = file.filename or "upload.bin"
     data = await file.read()
-    if len(data) > VERCEL_PAYLOAD_LIMIT and not blob_enabled():
-        raise HTTPException(
-            status_code=413,
-            detail="File is too large for this deployment's upload limit.",
-        )
     return data, name
