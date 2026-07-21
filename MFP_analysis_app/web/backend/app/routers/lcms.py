@@ -22,6 +22,8 @@ from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 import numpy as np
 from pydantic import BaseModel, Field
 
+from ..blob_store import manifest_key, put_json
+from ..upload_utils import read_upload_bytes
 from ..services.lcms_service import (
     LCMSSessionState,
     attach_uv_from_csv,
@@ -30,6 +32,7 @@ from ..services.lcms_service import (
     extracted_ion_chromatogram,
     fetch_spectrum_at_rt,
     find_mz_across_scans,
+    get_or_restore,
     iter_ms1_spectra,
     polymer_match_labels,
     registry,
@@ -159,13 +162,14 @@ def _tic_payload(state: LCMSSessionState, polarity: Optional[str] = None) -> Dic
 
 @router.post("/sessions")
 async def create_session(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    blob_url: str | None = Form(None),
+    blob_filename: str | None = Form(None),
     rt_unit: str = Form("minutes"),
 ) -> Dict[str, Any]:
-    name = file.filename or "upload.mzML"
+    data, name = await read_upload_bytes(file, blob_url, blob_filename)
     if not name.lower().endswith((".mzml", ".mzml.gz")):
         raise HTTPException(status_code=400, detail="Expected a .mzML file.")
-    data = await file.read()
     dest = _persistent_upload_path(_MZML_UPLOAD_DIR, name, data)
     dest.write_bytes(data)
     try:
@@ -174,6 +178,16 @@ async def create_session(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"mzML parse failed: {exc}")
+    if blob_url:
+        await put_json(
+            manifest_key("lcms", state.session_id),
+            {
+                "blob_url": blob_url,
+                "filename": name,
+                "display_name": state.display_name,
+                "rt_unit": rt_unit,
+            },
+        )
     return _session_summary(state)
 
 
@@ -200,19 +214,21 @@ def list_sessions() -> List[Dict[str, Any]]:
     return [_session_summary(s) for s in registry.list()]
 
 
-@router.get("/sessions/{sid}")
-def get_session(sid: str) -> Dict[str, Any]:
-    state = registry.get(sid)
+async def _require_session(sid: str) -> LCMSSessionState:
+    state = await get_or_restore(sid)
     if state is None:
         raise HTTPException(status_code=404, detail="session not found")
-    return _session_summary(state)
+    return state
+
+
+@router.get("/sessions/{sid}")
+async def get_session(sid: str) -> Dict[str, Any]:
+    return _session_summary(await _require_session(sid))
 
 
 @router.get("/sessions/{sid}/tic")
-def get_tic(sid: str, polarity: Optional[str] = None) -> Dict[str, Any]:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+async def get_tic(sid: str, polarity: Optional[str] = None) -> Dict[str, Any]:
+    state = await _require_session(sid)
     payload = _tic_payload(state, polarity)
     return {
         "rt_min": payload["rt_min"],
@@ -222,7 +238,7 @@ def get_tic(sid: str, polarity: Optional[str] = None) -> Dict[str, Any]:
 
 
 @router.get("/sessions/{sid}/spectrum")
-def get_spectrum(
+async def get_spectrum(
     sid: str,
     rt_min: float,
     polarity: Optional[str] = None,
@@ -230,9 +246,7 @@ def get_spectrum(
     min_rel: float = 0.01,
     polymer_settings: Optional[str] = None,
 ) -> Dict[str, Any]:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    state = await _require_session(sid)
     try:
         meta, mz, intensity = fetch_spectrum_at_rt(
             state, float(rt_min), polarity=polarity
@@ -270,15 +284,13 @@ def get_spectrum(
 
 
 @router.get("/sessions/{sid}/find-mz")
-def find_mz(
+async def find_mz(
     sid: str,
     mz: float,
     tolerance: float = 0.01,
     polarity: Optional[str] = None,
 ) -> Dict[str, Any]:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    state = await _require_session(sid)
     try:
         return find_mz_across_scans(
             state,
@@ -291,10 +303,8 @@ def find_mz(
 
 
 @router.post("/sessions/{sid}/eic")
-def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+async def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
+    state = await _require_session(sid)
     try:
         return extracted_ion_chromatogram(
             state,
@@ -307,10 +317,8 @@ def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/region-spectrum")
-def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+async def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]:
+    state = await _require_session(sid)
     try:
         payload = summed_spectrum_in_rt_range(
             state,
@@ -340,11 +348,11 @@ def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]
 
 
 @router.post("/overlays/tic")
-def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
+async def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
     traces = []
     missing = []
     for sid in body.session_ids:
-        state = registry.get(sid)
+        state = await get_or_restore(sid)
         if state is None:
             missing.append(sid)
             continue
@@ -353,10 +361,10 @@ def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
 
 
 @router.post("/exports/tic-overlay.csv")
-def export_tic_overlay(body: OverlayRequest) -> Response:
+async def export_tic_overlay(body: OverlayRequest) -> Response:
     rows: List[List[Any]] = [["session_id", "display_name", "rt_min", "tic", "polarity"]]
     for sid in body.session_ids:
-        state = registry.get(sid)
+        state = await get_or_restore(sid)
         if state is None:
             continue
         payload = _tic_payload(state, body.polarity)
@@ -366,14 +374,12 @@ def export_tic_overlay(body: OverlayRequest) -> Response:
 
 
 @router.get("/sessions/{sid}/exports/spectrum.csv")
-def export_spectrum_csv(
+async def export_spectrum_csv(
     sid: str,
     rt_min: float,
     polarity: Optional[str] = None,
 ) -> Response:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    state = await _require_session(sid)
     try:
         meta, mz, intensity = fetch_spectrum_at_rt(
             state,
@@ -389,15 +395,13 @@ def export_spectrum_csv(
 
 
 @router.get("/sessions/{sid}/exports/labels.csv")
-def export_labels_csv(
+async def export_labels_csv(
     sid: str,
     polarity: Optional[str] = None,
     top_n: int = 10,
     min_rel: float = 0.01,
 ) -> Response:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    state = await _require_session(sid)
     rows: List[List[Any]] = [
         ["spectrum_id", "rt_min", "polarity", "label_source", "mz", "intensity", "text"]
     ]
@@ -424,10 +428,8 @@ def export_labels_csv(
 
 
 @router.get("/sessions/{sid}/exports/uv.csv")
-def export_uv_csv(sid: str) -> Response:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+async def export_uv_csv(sid: str) -> Response:
+    state = await _require_session(sid)
     uv = state.uv
     if uv is None:
         raise HTTPException(status_code=400, detail="No UV chromatogram attached.")
@@ -439,9 +441,7 @@ def export_uv_csv(sid: str) -> Response:
 
 @router.post("/sessions/{sid}/uv")
 async def attach_uv(sid: str, file: UploadFile = File(...)) -> Dict[str, Any]:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    state = await _require_session(sid)
     name = file.filename or "upload.csv"
     if not name.lower().endswith((".csv", ".tsv", ".txt")):
         raise HTTPException(status_code=400, detail="Expected a .csv/.tsv/.txt UV chromatogram file.")
@@ -458,10 +458,8 @@ async def attach_uv(sid: str, file: UploadFile = File(...)) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/uv/from_path")
-def attach_uv_from_path_endpoint(sid: str, body: AttachUVFromPathRequest) -> Dict[str, Any]:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+async def attach_uv_from_path_endpoint(sid: str, body: AttachUVFromPathRequest) -> Dict[str, Any]:
+    state = await _require_session(sid)
     p = Path(body.path)
     if not p.exists():
         raise HTTPException(status_code=404, detail=f"UV file not found: {body.path}")
@@ -475,15 +473,13 @@ def attach_uv_from_path_endpoint(sid: str, body: AttachUVFromPathRequest) -> Dic
 
 
 @router.get("/sessions/{sid}/uv")
-def get_uv(
+async def get_uv(
     sid: str,
     top_n: int = 8,
     min_rel: float = 0.05,
     min_distance_min: Optional[float] = None,
 ) -> Dict[str, Any]:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+    state = await _require_session(sid)
     uv = state.uv
     if uv is None:
         return {
@@ -507,10 +503,8 @@ def get_uv(
 
 
 @router.delete("/sessions/{sid}/uv")
-def delete_uv(sid: str) -> Dict[str, bool]:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+async def delete_uv(sid: str) -> Dict[str, bool]:
+    state = await _require_session(sid)
     had = clear_uv(state)
     return {"deleted": bool(had)}
 

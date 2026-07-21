@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field
 
 from lab_gui.ftir_io import FTIRLoadError
 
+from ..blob_store import manifest_key, put_json
+from ..upload_utils import read_upload_bytes
 from ..services.ftir_service import (
     FTIRSession,
     assign_peaks_with_library,
@@ -28,6 +30,7 @@ from ..services.ftir_service import (
     compute_preprocessed,
     decimate,
     fit_peak_region,
+    get_or_restore,
     integrate_region,
     library_categories,
     library_meta,
@@ -131,13 +134,14 @@ class FitRequest(SpectrumRequest):
 
 @router.post("/sessions")
 async def create_session(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    blob_url: str | None = Form(None),
+    blob_filename: str | None = Form(None),
     y_mode: YMode = Form("absorbance"),
 ) -> Dict[str, Any]:
-    name = file.filename or "upload.csv"
+    data, name = await read_upload_bytes(file, blob_url, blob_filename)
     tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_ftir_"))
     dest = tmp_dir / name
-    data = await file.read()
     dest.write_bytes(data)
     try:
         state = registry.add_from_path(dest, display_name=name, y_mode=y_mode)
@@ -145,6 +149,16 @@ async def create_session(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"FTIR parse failed: {exc}")
+    if blob_url:
+        await put_json(
+            manifest_key("ftir", state.session_id),
+            {
+                "blob_url": blob_url,
+                "filename": name,
+                "display_name": state.display_name,
+                "y_mode": y_mode,
+            },
+        )
     return session_summary(state)
 
 
@@ -154,10 +168,8 @@ def list_sessions() -> List[Dict[str, Any]]:
 
 
 @router.get("/sessions/{sid}")
-def get_session(sid: str) -> Dict[str, Any]:
-    state = registry.get(sid)
-    if state is None:
-        raise HTTPException(status_code=404, detail="session not found")
+async def get_session(sid: str) -> Dict[str, Any]:
+    state = await _require_session(sid)
     return session_summary(state)
 
 
@@ -170,8 +182,8 @@ def delete_session(sid: str) -> Dict[str, bool]:
 
 
 @router.post("/sessions/{sid}/spectrum")
-def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
-    state = _require(sid)
+async def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
+    state = await _require_session(sid)
     x, y_proc = compute_preprocessed(
         state,
         mode=body.mode,
@@ -207,8 +219,8 @@ def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/peaks")
-def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
-    state = _require(sid)
+async def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
+    state = await _require_session(sid)
     # Peaks are always picked on the full-resolution preprocessed array.
     x, y_proc = compute_preprocessed(
         state,
@@ -261,8 +273,8 @@ def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/integrate")
-def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
-    state = _require(sid)
+async def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
+    state = await _require_session(sid)
     try:
         return integrate_region(
             state,
@@ -275,9 +287,9 @@ def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/subtract")
-def subtract_spectrum(sid: str, body: SubtractRequest) -> Dict[str, Any]:
-    state_a = _require(sid)
-    state_b = _require(body.sid_b)
+async def subtract_spectrum(sid: str, body: SubtractRequest) -> Dict[str, Any]:
+    state_a = await _require_session(sid)
+    state_b = await _require_session(body.sid_b)
     try:
         return subtract_sessions(
             state_a,
@@ -296,8 +308,8 @@ def subtract_spectrum(sid: str, body: SubtractRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/match")
-def match_references(sid: str, body: MatchRequest) -> Dict[str, Any]:
-    state = _require(sid)
+async def match_references(sid: str, body: MatchRequest) -> Dict[str, Any]:
+    state = await _require_session(sid)
     return match_session_references(
         state,
         region=None if body.region is None else (body.region[0], body.region[1]),
@@ -308,8 +320,8 @@ def match_references(sid: str, body: MatchRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/fit")
-def fit_region(sid: str, body: FitRequest) -> Dict[str, Any]:
-    state = _require(sid)
+async def fit_region(sid: str, body: FitRequest) -> Dict[str, Any]:
+    state = await _require_session(sid)
     try:
         return fit_peak_region(
             state,
@@ -333,8 +345,8 @@ def get_library_categories() -> Dict[str, Any]:
 
 
 @router.put("/sessions/{sid}/peak-labels")
-def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> Dict[str, Any]:
-    state = _require(sid)
+async def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> Dict[str, Any]:
+    state = await _require_session(sid)
     override = body.override.model_dump() if body.override is not None else None
     return set_peak_label_override(state, body.wn, override)
 
@@ -342,8 +354,8 @@ def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> Dict[st
 # ------------------------------ util ------------------------------
 
 
-def _require(sid: str) -> FTIRSession:
-    state = registry.get(sid)
+async def _require_session(sid: str) -> FTIRSession:
+    state = await get_or_restore(sid)
     if state is None:
         raise HTTPException(status_code=404, detail="session not found")
     return state

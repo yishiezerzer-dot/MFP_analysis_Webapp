@@ -1,2 +1,5 @@
 .DS_Store
 MFP_analysis_app/web/backend/.automation/
+
+.vercel
+.env*

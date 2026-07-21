@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # Ensure the project root is on sys.path so we can import `lab_gui.*`
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -48,3 +49,7 @@ app.include_router(data_studio.router, prefix="/api/data-studio", tags=["data-st
 app.include_router(ftir.router, prefix="/api/ftir", tags=["ftir"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(automation.router, prefix="/api/automation", tags=["automation"])
+
+_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")

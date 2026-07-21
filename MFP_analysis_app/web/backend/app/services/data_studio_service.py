@@ -120,6 +120,26 @@ class DataStudioRegistry:
             self._sessions[s.session_id] = s
         return s
 
+    def restore_from_path(
+        self,
+        session_id: str,
+        path: Path,
+        *,
+        display_name: Optional[str] = None,
+    ) -> DataStudioSession:
+        suffix = path.suffix.lower()
+        sheets = get_sheet_names(path) if suffix in (".xlsx", ".xlsm", ".xls") else []
+        s = DataStudioSession(
+            session_id=session_id,
+            display_name=display_name or path.name,
+            path=path,
+            sheet_name=(sheets[0] if sheets else None),
+            sheets=sheets,
+        )
+        with self._lock:
+            self._sessions[session_id] = s
+        return s
+
     def get(self, sid: str) -> Optional[DataStudioSession]:
         with self._lock:
             return self._sessions.get(sid)
@@ -134,6 +154,31 @@ class DataStudioRegistry:
 
 
 registry = DataStudioRegistry()
+
+
+async def get_or_restore(session_id: str) -> Optional[DataStudioSession]:
+    existing = registry.get(session_id)
+    if existing is not None:
+        return existing
+
+    import tempfile
+
+    from ..blob_store import download_bytes, get_json, manifest_key
+
+    manifest = await get_json(manifest_key("data_studio", session_id))
+    if manifest is None:
+        return None
+
+    data = await download_bytes(str(manifest["blob_url"]))
+    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_ds_restore_"))
+    filename = str(manifest.get("filename") or "upload.csv")
+    dest = tmp_dir / filename
+    dest.write_bytes(data)
+    return registry.restore_from_path(
+        session_id,
+        dest,
+        display_name=str(manifest.get("display_name") or filename),
+    )
 
 
 # ------------------------------ helpers ------------------------------

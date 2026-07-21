@@ -17,7 +17,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from ..services.plate_reader_service import preview, registry, run_mic_wizard
+from ..blob_store import manifest_key, put_json
+from ..upload_utils import read_upload_bytes
+from ..services.plate_reader_service import get_or_restore, preview, registry, run_mic_wizard
 
 router = APIRouter()
 
@@ -40,8 +42,12 @@ _ALLOWED = {".xlsx", ".xlsm", ".xls", ".csv", ".txt", ".tsv"}
 
 
 @router.post("/sessions")
-async def create_session(file: UploadFile = File(...)) -> Dict[str, Any]:
-    name = file.filename or "upload.xlsx"
+async def create_session(
+    file: UploadFile | None = File(None),
+    blob_url: str | None = Form(None),
+    blob_filename: str | None = Form(None),
+) -> Dict[str, Any]:
+    data, name = await read_upload_bytes(file, blob_url, blob_filename)
     suf = Path(name).suffix.lower()
     if suf not in _ALLOWED:
         raise HTTPException(
@@ -50,11 +56,20 @@ async def create_session(file: UploadFile = File(...)) -> Dict[str, Any]:
         )
     tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_plate_"))
     dest = tmp_dir / name
-    dest.write_bytes(await file.read())
+    dest.write_bytes(data)
     try:
         session = registry.add_from_path(dest, display_name=name)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to register file: {exc}")
+    if blob_url:
+        await put_json(
+            manifest_key("plate_reader", session.session_id),
+            {
+                "blob_url": blob_url,
+                "filename": name,
+                "display_name": session.display_name,
+            },
+        )
     return _summary(session)
 
 
@@ -63,12 +78,16 @@ def list_sessions() -> List[Dict[str, Any]]:
     return [_summary(s) for s in registry.list()]
 
 
-@router.get("/sessions/{sid}")
-def get_session(sid: str) -> Dict[str, Any]:
-    s = registry.get(sid)
+async def _require_session(sid: str):
+    s = await get_or_restore(sid)
     if s is None:
         raise HTTPException(status_code=404, detail="session not found")
-    return _summary(s)
+    return s
+
+
+@router.get("/sessions/{sid}")
+async def get_session(sid: str) -> Dict[str, Any]:
+    return _summary(await _require_session(sid))
 
 
 class LoadRequest(BaseModel):
@@ -78,10 +97,8 @@ class LoadRequest(BaseModel):
 
 
 @router.post("/sessions/{sid}/load")
-def load_sheet(sid: str, req: LoadRequest) -> Dict[str, Any]:
-    s = registry.get(sid)
-    if s is None:
-        raise HTTPException(status_code=404, detail="session not found")
+async def load_sheet(sid: str, req: LoadRequest) -> Dict[str, Any]:
+    s = await _require_session(sid)
     try:
         df = s.load_dataframe(
             sheet_name=req.sheet_name,
@@ -110,10 +127,8 @@ class MICRequest(BaseModel):
 
 
 @router.post("/sessions/{sid}/mic")
-def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
-    s = registry.get(sid)
-    if s is None:
-        raise HTTPException(status_code=404, detail="session not found")
+async def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
+    s = await _require_session(sid)
     try:
         df = s.load_dataframe(
             sheet_name=req.sheet_name,

@@ -82,6 +82,38 @@ class FTIRRegistry:
             self._sessions[session.session_id] = session
         return session
 
+    def restore_from_path(
+        self,
+        session_id: str,
+        path: Path,
+        *,
+        display_name: Optional[str] = None,
+        y_mode: str = "absorbance",
+    ) -> FTIRSession:
+        try:
+            x, y, meta = _parse_ftir_xy_numpy(str(path))
+        except Exception as exc:  # noqa: BLE001
+            raise FTIRLoadError(f"Failed to parse FTIR file: {exc}")
+        if x.size < 5:
+            raise FTIRLoadError("No usable numeric XY data found")
+
+        order = np.argsort(x)
+        x = np.asarray(x[order], dtype=float)
+        y = np.asarray(y[order], dtype=float)
+
+        session = FTIRSession(
+            session_id=session_id,
+            display_name=display_name or path.name,
+            path=path,
+            x=x,
+            y=y,
+            meta=dict(meta or {}),
+            y_mode=str(y_mode or "absorbance"),
+        )
+        with self._lock:
+            self._sessions[session_id] = session
+        return session
+
     def get(self, sid: str) -> Optional[FTIRSession]:
         with self._lock:
             return self._sessions.get(sid)
@@ -96,6 +128,35 @@ class FTIRRegistry:
 
 
 registry = FTIRRegistry()
+
+
+async def get_or_restore(session_id: str) -> Optional[FTIRSession]:
+    existing = registry.get(session_id)
+    if existing is not None:
+        return existing
+
+    import tempfile
+
+    from ..blob_store import download_bytes, get_json, manifest_key
+
+    manifest = await get_json(manifest_key("ftir", session_id))
+    if manifest is None:
+        return None
+
+    data = await download_bytes(str(manifest["blob_url"]))
+    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_ftir_restore_"))
+    filename = str(manifest.get("filename") or "upload.csv")
+    dest = tmp_dir / filename
+    dest.write_bytes(data)
+    try:
+        return registry.restore_from_path(
+            session_id,
+            dest,
+            display_name=str(manifest.get("display_name") or filename),
+            y_mode=str(manifest.get("y_mode") or "absorbance"),
+        )
+    except FTIRLoadError:
+        return None
 
 
 # ---------------------------- helpers ----------------------------

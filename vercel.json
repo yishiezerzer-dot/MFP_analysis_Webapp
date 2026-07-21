@@ -1,16 +1,20 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "cd MFP_analysis_app/web/frontend && npm install && npm run build",
-  "installCommand": "cd MFP_analysis_app/web/frontend && npm install",
+  "installCommand": "npm install && cd MFP_analysis_app/web/frontend && npm install",
   "outputDirectory": "MFP_analysis_app/web/frontend/dist",
   "framework": "vite",
   "functions": {
     "api/index.py": {
       "maxDuration": 60,
       "memory": 2048
+    },
+    "api/blob-upload.ts": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
+    { "source": "/api/blob-upload", "destination": "/api/blob-upload" },
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

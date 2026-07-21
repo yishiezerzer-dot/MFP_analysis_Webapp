@@ -2,6 +2,38 @@
  * Thin typed wrapper around the FastAPI backend.
  */
 
+import { upload } from "@vercel/blob/client";
+
+const VERCEL_BODY_LIMIT = 4 * 1024 * 1024;
+
+async function postFileUpload(
+  endpoint: string,
+  file: File,
+  extraFields: Record<string, string> = {},
+): Promise<Response> {
+  if (file.size <= VERCEL_BODY_LIMIT) {
+    const fd = new FormData();
+    fd.append("file", file);
+    for (const [key, value] of Object.entries(extraFields)) {
+      fd.append(key, value);
+    }
+    return fetch(endpoint, { method: "POST", body: fd });
+  }
+
+  const blob = await upload(file.name, file, {
+    access: "public",
+    handleUploadUrl: "/api/blob-upload",
+  });
+
+  const fd = new FormData();
+  fd.append("blob_url", blob.url);
+  fd.append("blob_filename", file.name);
+  for (const [key, value] of Object.entries(extraFields)) {
+    fd.append(key, value);
+  }
+  return fetch(endpoint, { method: "POST", body: fd });
+}
+
 export interface LCMSUVMeta {
   available: boolean;
   filename?: string;
@@ -160,6 +192,13 @@ async function handle<T>(res: Response): Promise<T> {
       detail = (j && (j.detail ?? j.message)) || detail;
     } catch {
       // ignore
+    }
+    if (res.status === 413) {
+      detail =
+        "File exceeds Vercel's 4.5 MB upload limit. Large files should upload via blob storage automatically — refresh and try again.";
+    }
+    if (res.status === 404 && String(detail).toLowerCase().includes("session")) {
+      detail = "Session not found or expired. Re-upload your file to continue.";
     }
     throw new Error(`HTTP ${res.status}: ${detail}`);
   }
@@ -625,13 +664,8 @@ export const api = {
   },
 
   dataStudio: {
-    upload: (file: File) => {
-      const fd = new FormData();
-      fd.append("file", file);
-      return fetch("/api/data-studio/sessions", { method: "POST", body: fd }).then((r) =>
-        handle<DSSessionSummary>(r),
-      );
-    },
+    upload: (file: File) =>
+      postFileUpload("/api/data-studio/sessions", file).then((r) => handle<DSSessionSummary>(r)),
     list: () =>
       fetch("/api/data-studio/sessions").then((r) => handle<DSSessionSummary[]>(r)),
     get: (sid: string) =>
@@ -682,14 +716,10 @@ export const api = {
   },
 
   ftir: {
-    upload: (file: File, yMode: FTIRYMode = "transmittance") => {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("y_mode", yMode);
-      return fetch("/api/ftir/sessions", { method: "POST", body: fd }).then((r) =>
+    upload: (file: File, yMode: FTIRYMode = "transmittance") =>
+      postFileUpload("/api/ftir/sessions", file, { y_mode: yMode }).then((r) =>
         handle<FTIRSessionSummary>(r),
-      );
-    },
+      ),
     list: () => fetch("/api/ftir/sessions").then((r) => handle<FTIRSessionSummary[]>(r)),
     get: (sid: string) =>
       fetch(`/api/ftir/sessions/${sid}`).then((r) => handle<FTIRSessionSummary>(r)),
@@ -746,13 +776,10 @@ export const api = {
   },
 
   plateReader: {
-    upload: (file: File) => {
-      const fd = new FormData();
-      fd.append("file", file);
-      return fetch("/api/plate-reader/sessions", { method: "POST", body: fd }).then((r) =>
+    upload: (file: File) =>
+      postFileUpload("/api/plate-reader/sessions", file).then((r) =>
         handle<PlateSessionSummary>(r),
-      );
-    },
+      ),
     list: () => fetch("/api/plate-reader/sessions").then((r) => handle<PlateSessionSummary[]>(r)),
     get: (sid: string) =>
       fetch(`/api/plate-reader/sessions/${sid}`).then((r) => handle<PlateSessionSummary>(r)),
@@ -778,14 +805,10 @@ export const api = {
   },
 
   lcms: {
-    upload: (file: File, rtUnit: "minutes" | "seconds" = "minutes") => {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("rt_unit", rtUnit);
-      return fetch("/api/lcms/sessions", { method: "POST", body: fd }).then((r) =>
+    upload: (file: File, rtUnit: "minutes" | "seconds" = "minutes") =>
+      postFileUpload("/api/lcms/sessions", file, { rt_unit: rtUnit }).then((r) =>
         handle<LCMSSessionSummary>(r),
-      );
-    },
+      ),
     loadFromPath: (path: string, displayName?: string, rtUnit?: "minutes" | "seconds") =>
       fetch("/api/lcms/sessions/from_path", {
         method: "POST",
@@ -904,14 +927,10 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),
       }).then((r) => handle<LCMSSessionSummary>(r)),
-    uploadUV: (sid: string, file: File) => {
-      const fd = new FormData();
-      fd.append("file", file);
-      return fetch(`/api/lcms/sessions/${sid}/uv`, {
-        method: "POST",
-        body: fd,
-      }).then((r) => handle<LCMSSessionSummary>(r));
-    },
+    uploadUV: (sid: string, file: File) =>
+      postFileUpload(`/api/lcms/sessions/${sid}/uv`, file).then((r) =>
+        handle<LCMSSessionSummary>(r),
+      ),
     uv: (
       sid: string,
       opts?: { top_n?: number; min_rel?: number; min_distance_min?: number },

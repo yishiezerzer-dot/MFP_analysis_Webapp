@@ -6,6 +6,7 @@ subsequent requests can fetch spectra without re-parsing the whole file.
 from __future__ import annotations
 
 import threading
+import tempfile
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -95,9 +96,33 @@ class LCMSRegistry:
         if fatal and not idx.ms1:
             raise LCMSLoadError(str(fatal))
         session_id = uuid.uuid4().hex
+        return self._store(session_id, display_name or path.name, path, idx)
+
+    def restore_from_path(
+        self,
+        session_id: str,
+        path: Path,
+        *,
+        display_name: Optional[str] = None,
+        rt_unit: str = "minutes",
+    ) -> LCMSSessionState:
+        idx = MzMLTICIndex(path, rt_unit=rt_unit)
+        idx.build()
+        fatal = idx.stats.get("fatal_error")
+        if fatal and not idx.ms1:
+            raise LCMSLoadError(str(fatal))
+        return self._store(session_id, display_name or path.name, path, idx)
+
+    def _store(
+        self,
+        session_id: str,
+        display_name: str,
+        path: Path,
+        idx: MzMLTICIndex,
+    ) -> LCMSSessionState:
         state = LCMSSessionState(
             session_id=session_id,
-            display_name=display_name or path.name,
+            display_name=display_name,
             path=path,
             index=idx,
             _reader_lock=threading.Lock(),
@@ -120,6 +145,33 @@ class LCMSRegistry:
 
 
 registry = LCMSRegistry()
+
+
+async def get_or_restore(session_id: str) -> Optional[LCMSSessionState]:
+    existing = registry.get(session_id)
+    if existing is not None:
+        return existing
+
+    from ..blob_store import download_bytes, get_json, manifest_key
+
+    manifest = await get_json(manifest_key("lcms", session_id))
+    if manifest is None:
+        return None
+
+    data = await download_bytes(str(manifest["blob_url"]))
+    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_lcms_restore_"))
+    filename = str(manifest.get("filename") or "upload.mzML")
+    dest = tmp_dir / filename
+    dest.write_bytes(data)
+    try:
+        return registry.restore_from_path(
+            session_id,
+            dest,
+            display_name=str(manifest.get("display_name") or filename),
+            rt_unit=str(manifest.get("rt_unit") or "minutes"),
+        )
+    except LCMSLoadError:
+        return None
 
 
 def _ms1_candidates(

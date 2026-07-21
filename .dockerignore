@@ -1,0 +1,12 @@
+.git
+.mfp_uploads
+**/__pycache__
+**/.pytest_cache
+**/pytest-cache-files-*
+**/node_modules
+**/.venv
+**/dist
+.vercel
+.cursor
+*.md
+MFP_analysis_app/web/frontend/node_modules
