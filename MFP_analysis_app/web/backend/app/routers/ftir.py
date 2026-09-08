@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from lab_gui.ftir_io import FTIRLoadError
 
 from ..blob_store import manifest_key, put_json
-from ..db import get_upload_dir
+from ..db import get_upload_dir, save_session_record
 from ..upload_utils import read_upload_bytes, stream_upload_to_file
 from ..services.ftir_service import (
     FTIRSession,
@@ -155,6 +155,7 @@ async def create_session(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"FTIR parse failed: {exc}")
+    save_session_record(state.session_id, state.workspace_id, "ftir", state.display_name, str(state.path))
     if blob_url:
         await put_json(
             manifest_key("ftir", state.session_id),

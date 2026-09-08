@@ -23,7 +23,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from ..blob_store import manifest_key, put_json
-from ..db import get_upload_dir
+from ..db import get_session_record, get_upload_dir, save_session_record
 from ..upload_utils import read_upload_bytes, stream_upload_to_file
 from ..services.lcms_service import (
     LCMSSessionState,
@@ -149,11 +149,13 @@ def _session_summary(state: LCMSSessionState) -> Dict[str, Any]:
     metas = state.index.ms1
     rts = [float(m.rt_min) for m in metas]
     polarities = sorted({m.polarity for m in metas if m.polarity})
+    rec = get_session_record(state.session_id)
     return {
         "session_id": state.session_id,
         "workspace_id": state.workspace_id,
         "display_name": state.display_name,
         "path": str(state.path),
+        "experiment_tag": rec.get("experiment_tag", "") if rec else "",
         "ms1_count": len(metas),
         "rt_min": float(min(rts)) if rts else None,
         "rt_max": float(max(rts)) if rts else None,
@@ -197,6 +199,7 @@ async def create_session(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"mzML parse failed: {exc}")
+    save_session_record(state.session_id, state.workspace_id, "lcms", state.display_name, str(state.path))
     if blob_url:
         await put_json(
             manifest_key("lcms", state.session_id),

@@ -38,6 +38,7 @@ import { useAutomationDispatch } from "../automation/registry";
 import { useStoredState } from "../hooks/useStoredState";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
+import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -3509,6 +3510,12 @@ export function LCMSView() {
     return { truncName, ms1Count, rtRange, polLabel, uvAttached, offset: uvOffset };
   }, [active, polarity, uvOffset]);
 
+  const handleTagUpdated = (newTag: string) => {
+    setSessions((prev) =>
+      prev.map((s) => (s.session_id === activeSid ? { ...s, experiment_tag: newTag } : s)),
+    );
+  };
+
   // --- render ---------------------------------------------------------------
 
   return (
@@ -3548,7 +3555,7 @@ export function LCMSView() {
         />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-6">
-          <DatasetRibbon active={active} />
+          <DatasetRibbon active={active} onTagUpdated={handleTagUpdated} />
 
           {!active && <EmptyState onPick={() => fileRef.current?.click()} />}
 
@@ -4587,11 +4594,27 @@ function IconChevronRight({ className }: { className?: string }) {
 
 // --- Centre: dataset ribbon --------------------------------------------------
 
-function DatasetRibbon(props: { active: LCMSSessionSummary | null }) {
+function DatasetRibbon(props: {
+  active: LCMSSessionSummary | null;
+  onTagUpdated?: (newTag: string) => void;
+}) {
   const a = props.active;
   return (
     <div className="card flex flex-wrap items-center gap-6 px-4 py-3">
       <Field label="Dataset" value={a?.display_name ?? "—"} strong />
+      {a && (
+        <div>
+          <div className="label">Experiment Tag</div>
+          <div className="mt-1">
+            <ExperimentTagEditor
+              sessionId={a.session_id}
+              currentTag={a.experiment_tag}
+              module="lcms"
+              onTagUpdated={props.onTagUpdated}
+            />
+          </div>
+        </div>
+      )}
       <Field label="MS1 scans" value={a?.ms1_count ?? "—"} />
       <Field
         label="RT range (min)"

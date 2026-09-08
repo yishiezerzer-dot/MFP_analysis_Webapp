@@ -26,6 +26,8 @@ import { Tooltip } from "../components/Tooltip";
 import { useStoredState } from "../hooks/useStoredState";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
+import { useUndoRedo } from "../hooks/useUndoRedo";
+import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
 
 type PlotKind = "Line" | "Scatter" | "Line+markers" | "Bar" | "Bar stacked" | "Area" | "Step" | "Histogram";
 
@@ -71,22 +73,24 @@ export function DataStudioView() {
   );
   const [schema, setSchema] = useState<DSSchema | null>(null);
   const [preview, setPreview] = useState<DSPreview | null>(null);
-  const [transforms, setTransformsRaw] = useStoredState<DSTransformStep[]>(
+  const [storedTransforms, setStoredTransforms] = useStoredState<DSTransformStep[]>(
     `${DATA_STUDIO_STORAGE_PREFIX}.transforms`,
     [],
     (value) => (Array.isArray(value) ? value : []),
   );
-  const transformHistory = useRef<DSTransformStep[][]>([]);
+  const {
+    state: transforms,
+    set: setTransforms,
+    undo: undoTransform,
+    redo: redoTransform,
+    canUndo,
+    canRedo,
+    reset: resetTransforms,
+  } = useUndoRedo<DSTransformStep[]>(storedTransforms, { enableKeyShortcuts: true });
 
-  const setTransforms = (next: DSTransformStep[]) => {
-    transformHistory.current = [...transformHistory.current.slice(-9), transforms];
-    setTransformsRaw(next);
-  };
-
-  const undoTransform = () => {
-    const prev = transformHistory.current.pop();
-    if (prev !== undefined) setTransformsRaw(prev);
-  };
+  useEffect(() => {
+    setStoredTransforms(transforms);
+  }, [transforms, setStoredTransforms]);
   const [plotKind, setPlotKind] = useStoredState<PlotKind>(
     `${DATA_STUDIO_STORAGE_PREFIX}.plotKind`,
     "Line",
@@ -151,7 +155,7 @@ export function DataStudioView() {
       setPreview(null);
       setXCol(null);
       setYCols([]);
-      transformHistory.current = [];
+      resetTransforms([]);
       return;
     }
     setBusy(true);
@@ -322,6 +326,12 @@ export function DataStudioView() {
     />,
   );
 
+  const handleTagUpdated = (sid: string, newTag: string) => {
+    setSessions((prev) =>
+      prev.map((s) => (s.session_id === sid ? { ...s, experiment_tag: newTag } : s)),
+    );
+  };
+
   return (
     <div className="flex h-full flex-col">
       {error && (
@@ -359,7 +369,12 @@ export function DataStudioView() {
 
           {active && (
             <>
-              <LoadCard active={active} schema={schema} onChange={onLoadOptionsChange} />
+              <LoadCard
+                active={active}
+                schema={schema}
+                onChange={onLoadOptionsChange}
+                onTagUpdated={(newTag) => handleTagUpdated(active.session_id, newTag)}
+              />
 
               {preview && (
                 <PreviewCard preview={preview} />
@@ -370,7 +385,9 @@ export function DataStudioView() {
                 transforms={transforms}
                 setTransforms={setTransforms}
                 onUndo={undoTransform}
-                canUndo={transformHistory.current.length > 0}
+                canUndo={canUndo}
+                onRedo={redoTransform}
+                canRedo={canRedo}
                 warnings={preview?.warnings ?? []}
               />
 
@@ -476,14 +493,26 @@ function LoadCard(props: {
     header_row?: number;
     decimal_comma?: boolean;
   }) => void;
+  onTagUpdated?: (newTag: string) => void;
 }) {
-  const { active, schema } = props;
+  const { active, schema, onTagUpdated } = props;
   const hasSheets = active.sheets.length > 0;
   return (
     <div className="card flex shrink-0 flex-wrap items-end gap-4 px-4 py-3">
       <div>
         <div className="label">File</div>
         <div className="text-sm font-medium">{active.display_name}</div>
+      </div>
+      <div>
+        <div className="label">Experiment Tag</div>
+        <div className="mt-1">
+          <ExperimentTagEditor
+            sessionId={active.session_id}
+            currentTag={active.experiment_tag}
+            module="data-studio"
+            onTagUpdated={onTagUpdated}
+          />
+        </div>
       </div>
       {hasSheets && (
         <div>
@@ -602,9 +631,11 @@ function TransformCard(props: {
   setTransforms: (t: DSTransformStep[]) => void;
   onUndo: () => void;
   canUndo: boolean;
+  onRedo: () => void;
+  canRedo: boolean;
   warnings: string[];
 }) {
-  const { schema, transforms, setTransforms, onUndo, canUndo, warnings } = props;
+  const { schema, transforms, setTransforms, onUndo, canUndo, onRedo, canRedo, warnings } = props;
 
   const addStep = (t: DSTransformStep["type"]) => {
     const base: DSTransformStep = { type: t };
@@ -679,7 +710,15 @@ function TransformCard(props: {
                 disabled={!canUndo}
                 title="Undo last change (Ctrl+Z)"
               >
-                ↩ Undo
+                ↶ Undo
+              </button>
+              <button
+                className="rounded border border-ink-300 bg-white px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-40"
+                onClick={onRedo}
+                disabled={!canRedo}
+                title="Redo change (Ctrl+Y or Ctrl+Shift+Z)"
+              >
+                ↷ Redo
               </button>
               <button
                 className="rounded border border-red-300 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100"

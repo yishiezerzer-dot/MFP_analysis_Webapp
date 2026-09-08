@@ -224,11 +224,14 @@ async def get_or_restore(session_id: str) -> Optional[FTIRSession]:
 
 
 def session_summary(s: FTIRSession) -> Dict[str, Any]:
+    from ..db import get_session_record
+    rec = get_session_record(s.session_id)
     return {
         "session_id": s.session_id,
         "workspace_id": s.workspace_id,
         "display_name": s.display_name,
         "path": str(s.path),
+        "experiment_tag": rec.get("experiment_tag", "") if rec else "",
         "n_points": int(s.x.size),
         "wn_min": float(s.x.min()) if s.x.size else None,
         "wn_max": float(s.x.max()) if s.x.size else None,

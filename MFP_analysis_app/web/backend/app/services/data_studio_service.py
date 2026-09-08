@@ -250,11 +250,14 @@ def session_summary(s: DataStudioSession) -> Dict[str, Any]:
     shape: Optional[Tuple[int, int]] = None
     if s._raw is not None:
         shape = (int(s._raw.shape[0]), int(s._raw.shape[1]))
+    from ..db import get_session_record
+    rec = get_session_record(s.session_id)
     return {
         "session_id": s.session_id,
         "workspace_id": s.workspace_id,
         "display_name": s.display_name,
         "path": str(s.path),
+        "experiment_tag": rec.get("experiment_tag", "") if rec else "",
         "sheets": list(s.sheets),
         "sheet_name": s.sheet_name,
         "header_row": int(s.header_row),

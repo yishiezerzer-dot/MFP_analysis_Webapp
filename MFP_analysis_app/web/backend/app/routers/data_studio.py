@@ -22,7 +22,7 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from ..blob_store import manifest_key, put_json
-from ..db import get_upload_dir
+from ..db import get_upload_dir, save_session_record
 from ..upload_utils import read_upload_bytes, stream_upload_to_file
 from ..services.data_studio_service import (
     DataStudioSession,
@@ -100,6 +100,7 @@ async def create_session(
     upload_dir = get_upload_dir("data_studio")
     dest, name = await stream_upload_to_file(file, blob_url, blob_filename, upload_dir)
     s = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name)
+    save_session_record(s.session_id, getattr(s, "workspace_id", x_workspace_id), "data_studio", s.display_name, str(s.path))
     if blob_url:
         await put_json(
             manifest_key("data_studio", s.session_id),

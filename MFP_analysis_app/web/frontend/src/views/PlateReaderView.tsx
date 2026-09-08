@@ -22,6 +22,7 @@ import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar
 import { useStoredState } from "../hooks/useStoredState";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
+import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -612,6 +613,12 @@ export function PlateReaderView() {
     />,
   );
 
+  const handleTagUpdated = (newTag: string) => {
+    setSessions((prev) =>
+      prev.map((s) => (s.session_id === activeSid ? { ...s, experiment_tag: newTag } : s)),
+    );
+  };
+
   return (
     <div className="flex h-full flex-col">
       {error && (
@@ -685,6 +692,7 @@ export function PlateReaderView() {
                 setSheet={setSheet}
                 useHeader={useHeader}
                 setUseHeader={setUseHeader}
+                onTagUpdated={handleTagUpdated}
               />
 
               {preview && (
@@ -813,6 +821,7 @@ function LoadControls(props: {
   setSheet: (s: string | null) => void;
   useHeader: boolean;
   setUseHeader: (b: boolean) => void;
+  onTagUpdated?: (newTag: string) => void;
 }) {
   const hasSheets = props.active.sheets.length > 0;
   return (
@@ -820,6 +829,17 @@ function LoadControls(props: {
       <div>
         <div className="label">File</div>
         <div className="text-sm font-medium">{props.displayName}</div>
+      </div>
+      <div>
+        <div className="label">Experiment Tag</div>
+        <div className="mt-1">
+          <ExperimentTagEditor
+            sessionId={props.active.session_id}
+            currentTag={props.active.experiment_tag}
+            module="plate-reader"
+            onTagUpdated={props.onTagUpdated}
+          />
+        </div>
       </div>
       {hasSheets && (
         <div>

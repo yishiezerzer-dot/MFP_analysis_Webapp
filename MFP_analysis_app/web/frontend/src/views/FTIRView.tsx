@@ -31,6 +31,8 @@ import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar
 import { Tooltip } from "../components/Tooltip";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
+import { useUndoRedo } from "../hooks/useUndoRedo";
+import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -436,11 +438,23 @@ export function FTIRView() {
     null,
     (value) => (typeof value === "string" ? value : null),
   );
-  const [pre, setPre] = useStoredState<FTIRPreprocessOptions>(
+  const [storedPre, setStoredPre] = useStoredState<FTIRPreprocessOptions>(
     `${FTIR_STORAGE_PREFIX}.preprocess`,
     DEFAULT_PRE,
     (value) => ({ ...DEFAULT_PRE, ...value }),
   );
+  const {
+    state: pre,
+    set: setPre,
+    undo: undoPre,
+    redo: redoPre,
+    canUndo: canUndoPre,
+    canRedo: canRedoPre,
+  } = useUndoRedo<FTIRPreprocessOptions>(storedPre, { enableKeyShortcuts: true });
+
+  useEffect(() => {
+    setStoredPre(pre);
+  }, [pre, setStoredPre]);
   const [pk, setPk] = useStoredState<PeakPickOptions>(
     `${FTIR_STORAGE_PREFIX}.peakPick`,
     DEFAULT_PEAK,
@@ -1229,6 +1243,12 @@ export function FTIRView() {
     setControlPanels((prev) => ({ ...prev, [key]: open }));
   };
 
+  const handleTagUpdated = (newTag: string) => {
+    setSessions((prev) =>
+      prev.map((s) => (s.session_id === activeSid ? { ...s, experiment_tag: newTag } : s)),
+    );
+  };
+
   return (
     <div
       className="flex h-full flex-col"
@@ -1261,7 +1281,7 @@ export function FTIRView() {
 
           {active && (
             <>
-              <SummaryCard active={active} spectrum={spectrum} peaks={peaks} />
+              <SummaryCard active={active} spectrum={spectrum} peaks={peaks} onTagUpdated={handleTagUpdated} />
 
               <div className="flex shrink-0 flex-col gap-2">
                 <CollapsiblePanel
@@ -1269,6 +1289,30 @@ export function FTIRView() {
                   summary={`${pre.mode}, ${pre.baseline} baseline, ${pre.normalize} normalize`}
                   open={controlPanels.preprocess}
                   onOpenChange={(open) => setControlPanelOpen("preprocess", open)}
+                  headerRight={
+                    <div className="flex items-center gap-1">
+                      <Tooltip content="Undo preprocessing change (Ctrl+Z)" placement="bottom">
+                        <button
+                          type="button"
+                          className="btn-ghost rounded p-1 text-xs disabled:opacity-30"
+                          disabled={!canUndoPre}
+                          onClick={(e) => { e.stopPropagation(); undoPre(); }}
+                        >
+                          ↩
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Redo preprocessing change (Ctrl+Y)" placement="bottom">
+                        <button
+                          type="button"
+                          className="btn-ghost rounded p-1 text-xs disabled:opacity-30"
+                          disabled={!canRedoPre}
+                          onClick={(e) => { e.stopPropagation(); redoPre(); }}
+                        >
+                          ↪
+                        </button>
+                      </Tooltip>
+                    </div>
+                  }
                 >
                   <PreprocessCard pre={pre} setPre={setPre} />
                 </CollapsiblePanel>
@@ -1423,6 +1467,7 @@ function CollapsiblePanel(props: {
   summary?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  headerRight?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -1439,14 +1484,17 @@ function CollapsiblePanel(props: {
             <span className="mt-0.5 block truncate text-xs text-ink-500">{props.summary}</span>
           ) : null}
         </span>
-        <span
-          className={clsx(
-            "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-ink-200 text-xs text-ink-600 transition-transform",
-            props.open && "rotate-90",
-          )}
-          aria-hidden="true"
-        >
-          {">"}
+        <span className="flex items-center gap-2">
+          {props.headerRight}
+          <span
+            className={clsx(
+              "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-ink-200 text-xs text-ink-600 transition-transform",
+              props.open && "rotate-90",
+            )}
+            aria-hidden="true"
+          >
+            {">"}
+          </span>
         </span>
       </button>
       {props.open && <div className="mt-2">{props.children}</div>}
@@ -1521,13 +1569,25 @@ function SummaryCard(props: {
   active: FTIRSessionSummary;
   spectrum: FTIRSpectrumResponse | null;
   peaks: FTIRPeak[];
+  onTagUpdated?: (newTag: string) => void;
 }) {
-  const { active, spectrum, peaks } = props;
+  const { active, spectrum, peaks, onTagUpdated } = props;
   return (
     <div className="card flex shrink-0 flex-wrap items-end gap-6 px-4 py-3">
       <div>
         <div className="label">File</div>
         <div className="text-sm font-medium">{active.display_name}</div>
+      </div>
+      <div>
+        <div className="label">Experiment Tag</div>
+        <div className="mt-1">
+          <ExperimentTagEditor
+            sessionId={active.session_id}
+            currentTag={active.experiment_tag}
+            module="ftir"
+            onTagUpdated={onTagUpdated}
+          />
+        </div>
       </div>
       <div>
         <div className="label">Points</div>

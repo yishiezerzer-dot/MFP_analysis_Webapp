@@ -70,6 +70,7 @@ export interface LCMSSessionSummary {
   session_id: string;
   display_name: string;
   path: string;
+  experiment_tag?: string;
   ms1_count: number;
   rt_min: number | null;
   rt_max: number | null;
@@ -291,6 +292,7 @@ export interface PlateSessionSummary {
   session_id: string;
   display_name: string;
   path: string;
+  experiment_tag?: string;
   sheets: string[];
 }
 
@@ -375,6 +377,7 @@ export interface FTIRSessionSummary {
   session_id: string;
   display_name: string;
   path: string;
+  experiment_tag?: string;
   n_points: number;
   wn_min: number | null;
   wn_max: number | null;
@@ -593,6 +596,7 @@ export interface DSSessionSummary {
   session_id: string;
   display_name: string;
   path: string;
+  experiment_tag?: string;
   sheets: string[];
   sheet_name: string | null;
   header_row: number;
@@ -1072,4 +1076,72 @@ export const api = {
         body: JSON.stringify({ state }),
       }).then((r) => handle<{ status: string; workspace_id: string; module: string }>(r)),
   },
+
+  experiments: {
+    listTags: (workspaceId?: string) => {
+      const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+      return apiFetch(`/api/experiments/tags${qs}`).then((r) => handle<string[]>(r));
+    },
+    getBundle: (tag: string, workspaceId?: string) => {
+      const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+      return apiFetch(`/api/experiments/bundle/${encodeURIComponent(tag)}${qs}`).then((r) =>
+        handle<ExperimentBundle>(r),
+      );
+    },
+    updateSessionTag: (sessionId: string, experimentTag: string) =>
+      apiFetch(`/api/experiments/sessions/${sessionId}/tag`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ experiment_tag: experimentTag }),
+      }).then((r) => handle<SessionTagResponse>(r)),
+    batchTag: (sessionIds: string[], experimentTag: string) =>
+      apiFetch("/api/experiments/batch-tag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_ids: sessionIds, experiment_tag: experimentTag }),
+      }).then((r) =>
+        handle<{ status: string; experiment_tag: string; tagged_count: number; total_requested: number }>(r),
+      ),
+    getSessionInfo: (sessionId: string) =>
+      apiFetch(`/api/experiments/sessions/${sessionId}`).then((r) => handle<SessionExperimentInfo>(r)),
+  },
 };
+
+export interface LinkedSessionItem {
+  session_id: string;
+  workspace_id: string;
+  module: "lcms" | "ftir" | "plate_reader" | "data_studio";
+  display_name: string;
+  file_path: string;
+  experiment_tag: string;
+  extra?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExperimentBundle {
+  experiment_tag: string;
+  sessions: LinkedSessionItem[];
+  counts: {
+    lcms: number;
+    ftir: number;
+    plate_reader: number;
+    data_studio: number;
+  };
+}
+
+export interface SessionTagResponse {
+  status: string;
+  session_id: string;
+  experiment_tag: string;
+  linked: ExperimentBundle;
+}
+
+export interface SessionExperimentInfo {
+  session_id: string;
+  experiment_tag: string;
+  display_name: string;
+  module: string;
+  workspace_id: string;
+  linked: ExperimentBundle;
+}

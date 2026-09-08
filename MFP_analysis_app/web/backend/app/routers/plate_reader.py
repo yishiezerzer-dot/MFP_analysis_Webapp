@@ -18,7 +18,7 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from ..blob_store import manifest_key, put_json
-from ..db import get_upload_dir
+from ..db import get_session_record, get_upload_dir, save_session_record
 from ..upload_utils import read_upload_bytes, stream_upload_to_file
 from ..services.plate_reader_service import get_or_restore, preview, registry, run_mic_wizard
 
@@ -26,11 +26,13 @@ router = APIRouter()
 
 
 def _summary(s) -> Dict[str, Any]:
+    rec = get_session_record(s.session_id)
     return {
         "session_id": s.session_id,
         "workspace_id": getattr(s, "workspace_id", "general"),
         "display_name": s.display_name,
         "path": str(s.path),
+        "experiment_tag": rec.get("experiment_tag", "") if rec else "",
         "sheets": list(s.sheets),
     }
 
@@ -59,6 +61,7 @@ async def create_session(
         session = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to register file: {exc}")
+    save_session_record(session.session_id, getattr(session, "workspace_id", x_workspace_id), "plate_reader", session.display_name, str(session.path))
     if blob_url:
         await put_json(
             manifest_key("plate_reader", session.session_id),

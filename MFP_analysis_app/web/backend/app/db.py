@@ -86,6 +86,12 @@ def _init_db_locked(conn: sqlite3.Connection) -> None:
             )
         """)
 
+        # Ensure experiment_tag column exists in sessions
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()]
+        if "experiment_tag" not in cols:
+            conn.execute("ALTER TABLE sessions ADD COLUMN experiment_tag TEXT DEFAULT ''")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_experiment_tag ON sessions(experiment_tag)")
+
         # Seed default workspace if empty
         cur = conn.execute("SELECT COUNT(*) as cnt FROM workspaces")
         if cur.fetchone()["cnt"] == 0:
@@ -191,24 +197,28 @@ def save_session_record(
     display_name: str,
     file_path: str,
     extra: Optional[Dict[str, Any]] = None,
+    experiment_tag: Optional[str] = None,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
-    extra_json = json.dumps(extra or {})
+    extra_dict = dict(extra or {})
+    clean_tag = (experiment_tag or extra_dict.get("experiment_tag") or "").strip()
+    extra_json = json.dumps(extra_dict)
     with _DB_LOCK:
         conn = get_db_connection()
         try:
             with conn:
                 conn.execute(
                     """
-                    INSERT INTO sessions (session_id, workspace_id, module, display_name, file_path, extra_json, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO sessions (session_id, workspace_id, module, display_name, file_path, extra_json, experiment_tag, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(session_id) DO UPDATE SET
                         display_name = excluded.display_name,
                         file_path = excluded.file_path,
                         extra_json = excluded.extra_json,
+                        experiment_tag = CASE WHEN excluded.experiment_tag != '' THEN excluded.experiment_tag ELSE sessions.experiment_tag END,
                         updated_at = excluded.updated_at
                     """,
-                    (session_id, workspace_id, module, display_name, file_path, extra_json, now, now),
+                    (session_id, workspace_id, module, display_name, file_path, extra_json, clean_tag, now, now),
                 )
         finally:
             conn.close()
@@ -229,7 +239,7 @@ def get_session_record(session_id: str) -> Optional[Dict[str, Any]]:
         conn = get_db_connection()
         try:
             cur = conn.execute(
-                "SELECT session_id, workspace_id, module, display_name, file_path, extra_json, created_at, updated_at FROM sessions WHERE session_id = ?",
+                "SELECT session_id, workspace_id, module, display_name, file_path, experiment_tag, extra_json, created_at, updated_at FROM sessions WHERE session_id = ?",
                 (session_id,),
             )
             row = cur.fetchone()
@@ -242,8 +252,12 @@ def get_session_record(session_id: str) -> Optional[Dict[str, Any]]:
             conn.close()
 
 
-def list_session_records(workspace_id: Optional[str] = None, module: Optional[str] = None) -> List[Dict[str, Any]]:
-    query = "SELECT session_id, workspace_id, module, display_name, file_path, extra_json, created_at, updated_at FROM sessions WHERE 1=1"
+def list_session_records(
+    workspace_id: Optional[str] = None,
+    module: Optional[str] = None,
+    experiment_tag: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    query = "SELECT session_id, workspace_id, module, display_name, file_path, experiment_tag, extra_json, created_at, updated_at FROM sessions WHERE 1=1"
     params: List[Any] = []
     if workspace_id:
         query += " AND workspace_id = ?"
@@ -251,6 +265,9 @@ def list_session_records(workspace_id: Optional[str] = None, module: Optional[st
     if module:
         query += " AND module = ?"
         params.append(module)
+    if experiment_tag:
+        query += " AND experiment_tag = ?"
+        params.append(experiment_tag.strip())
     query += " ORDER BY created_at DESC"
 
     with _DB_LOCK:
@@ -265,6 +282,75 @@ def list_session_records(workspace_id: Optional[str] = None, module: Optional[st
             return results
         finally:
             conn.close()
+
+
+def set_session_experiment_tag(session_id: str, experiment_tag: str) -> bool:
+    """Set or update the experiment tag for a session."""
+    now = datetime.now(timezone.utc).isoformat()
+    clean_tag = experiment_tag.strip()
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            with conn:
+                cur = conn.execute(
+                    "UPDATE sessions SET experiment_tag = ?, updated_at = ? WHERE session_id = ?",
+                    (clean_tag, now, session_id),
+                )
+                return cur.rowcount > 0
+        finally:
+            conn.close()
+
+
+def list_experiment_tags(workspace_id: Optional[str] = None) -> List[str]:
+    """Return all distinct non-empty experiment tags."""
+    query = "SELECT DISTINCT experiment_tag FROM sessions WHERE experiment_tag IS NOT NULL AND experiment_tag != ''"
+    params: List[Any] = []
+    if workspace_id:
+        query += " AND workspace_id = ?"
+        params.append(workspace_id)
+    query += " ORDER BY experiment_tag ASC"
+
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.execute(query, params)
+            return [row[0] for row in cur.fetchall() if row[0]]
+        finally:
+            conn.close()
+
+
+def get_experiment_bundle(tag: str, workspace_id: Optional[str] = None) -> Dict[str, Any]:
+    """Retrieve all sessions across all analytical modules associated with an experiment tag."""
+    clean_tag = tag.strip()
+    query = "SELECT session_id, workspace_id, module, display_name, file_path, experiment_tag, extra_json, created_at, updated_at FROM sessions WHERE experiment_tag = ?"
+    params: List[Any] = [clean_tag]
+    if workspace_id:
+        query += " AND workspace_id = ?"
+        params.append(workspace_id)
+    query += " ORDER BY module ASC, created_at ASC"
+
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            cur = conn.execute(query, params)
+            items = []
+            for row in cur.fetchall():
+                d = dict(row)
+                d["extra"] = json.loads(d.get("extra_json") or "{}")
+                items.append(d)
+            return {
+                "experiment_tag": clean_tag,
+                "sessions": items,
+                "counts": {
+                    "lcms": sum(1 for s in items if s["module"] == "lcms"),
+                    "ftir": sum(1 for s in items if s["module"] == "ftir"),
+                    "plate_reader": sum(1 for s in items if s["module"] == "plate_reader"),
+                    "data_studio": sum(1 for s in items if s["module"] == "data_studio"),
+                },
+            }
+        finally:
+            conn.close()
+
 
 
 # --- Workspace Module State (Auto-save / Restore) -----------------------------
