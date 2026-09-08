@@ -42,11 +42,25 @@ from ..services.lcms_service import (
 )
 from lab_gui.lcms_io import LCMSLoadError, UVLoadError
 from lab_gui.lcms_polymer_match import PolymerSearchTooLarge
+from lab_gui.lcms_deconvolution import deconvolute_spectrum
 
 router = APIRouter()
 _UPLOAD_ROOT = get_upload_dir("lcms")
 _MZML_UPLOAD_DIR = _UPLOAD_ROOT / "mzml"
 _UV_UPLOAD_DIR = _UPLOAD_ROOT / "uv"
+
+
+class DeconvoluteRequest(BaseModel):
+    rt_min: Optional[float] = None
+    rt_max: Optional[float] = None
+    polarity: Optional[str] = "positive"
+    min_charge: int = Field(default=1, ge=1, le=25)
+    max_charge: int = Field(default=8, ge=1, le=25)
+    tolerance: float = Field(default=0.02, gt=0)
+    tolerance_unit: str = Field(default="da")
+    min_rel_intensity: float = Field(default=0.01, ge=0.0, le=1.0)
+    mz_min: Optional[float] = None
+    mz_max: Optional[float] = None
 
 
 class EICRequest(BaseModel):
@@ -359,6 +373,54 @@ async def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str
         raise HTTPException(status_code=400, detail=str(exc))
     except (ValueError, KeyError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=f"Polymer matching failed: {exc}")
+
+
+@router.post("/sessions/{sid}/deconvolute")
+async def deconvolute_session_spectrum(
+    sid: str, body: DeconvoluteRequest
+) -> Dict[str, Any]:
+    state = await _require_session(sid)
+    try:
+        if body.rt_min is not None and body.rt_max is not None:
+            region = summed_spectrum_in_rt_range(
+                state,
+                rt_min=float(body.rt_min),
+                rt_max=float(body.rt_max),
+                polarity=body.polarity,
+            )
+            mzs = region["mz"]
+            ints = region["intensity"]
+        elif body.rt_min is not None:
+            meta, mzs_arr, ints_arr = fetch_spectrum_at_rt(
+                state,
+                rt_min=float(body.rt_min),
+                polarity=body.polarity,
+            )
+            mzs = mzs_arr.tolist()
+            ints = ints_arr.tolist()
+        else:
+            if len(state.tic_index.rt_min) == 0:
+                raise HTTPException(status_code=400, detail="Empty TIC index")
+            highest_idx = int(np.argmax(state.tic_index.tic))
+            rt = float(state.tic_index.rt_min[highest_idx])
+            meta, mzs_arr, ints_arr = fetch_spectrum_at_rt(state, rt_min=rt)
+            mzs = mzs_arr.tolist()
+            ints = ints_arr.tolist()
+
+        return deconvolute_spectrum(
+            mz_array=mzs,
+            intensity_array=ints,
+            min_charge=body.min_charge,
+            max_charge=body.max_charge,
+            tolerance=body.tolerance,
+            tolerance_unit=body.tolerance_unit,
+            polarity=body.polarity or "positive",
+            min_rel_intensity=body.min_rel_intensity,
+            mz_min=body.mz_min,
+            mz_max=body.mz_max,
+        )
+    except LCMSLoadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/overlays/tic")

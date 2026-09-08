@@ -158,6 +158,52 @@ export interface SpectrumData {
   polymer_labels?: SpectrumLabel[];
 }
 
+export interface DeconvolutedChargeState {
+  charge: number;
+  observed_mz: number;
+  theoretical_mz: number;
+  intensity: number;
+  error_da: number;
+  error_ppm: number;
+}
+
+export interface DeconvolutedComponent {
+  mass: number;
+  total_intensity: number;
+  score: number;
+  method: string;
+  charges: number[];
+  charge_states: DeconvolutedChargeState[];
+}
+
+export interface LCMSDeconvolutionResult {
+  components: DeconvolutedComponent[];
+  zero_charge_spectrum: {
+    mass: number[];
+    intensity: number[];
+  };
+  summary: {
+    total_components: number;
+    deconvoluted_intensity: number;
+    polarity: string;
+    min_charge: number;
+    max_charge: number;
+  };
+}
+
+export interface DeconvoluteRequest {
+  rt_min?: number;
+  rt_max?: number;
+  polarity?: "positive" | "negative";
+  min_charge?: number;
+  max_charge?: number;
+  tolerance?: number;
+  tolerance_unit?: "da" | "ppm";
+  min_rel_intensity?: number;
+  mz_min?: number;
+  mz_max?: number;
+}
+
 export interface LCMSFindMzResponse {
   target_mz: number;
   tolerance: number;
@@ -915,6 +961,12 @@ export const api = {
           polymer_settings: body.polymer?.enabled ? body.polymer : undefined,
         }),
       }).then((r) => handle<LCMSRegionSpectrumData>(r)),
+    deconvolute: (sid: string, body: DeconvoluteRequest) =>
+      apiFetch(`/api/lcms/sessions/${sid}/deconvolute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then((r) => handle<LCMSDeconvolutionResult>(r)),
     ticOverlay: (body: { session_ids: string[]; polarity?: "positive" | "negative" }) =>
       apiFetch("/api/lcms/overlays/tic", {
         method: "POST",

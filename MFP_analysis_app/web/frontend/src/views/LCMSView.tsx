@@ -98,6 +98,7 @@ import { KendrickDialog } from "../components/lcms/KendrickDialog";
 import { ExpectedProductsDialog } from "../components/lcms/ExpectedProductsDialog";
 import { GraphSettingsDialog } from "../components/lcms/GraphSettingsDialog";
 import { PolymerDialog } from "../components/lcms/PolymerDialog";
+import { DeconvolutionDialog } from "../components/lcms/DeconvolutionDialog";
 
 let pendingPlotResizeFrame: number | null = null;
 
@@ -1324,6 +1325,7 @@ export function LCMSView() {
   const [polymerDialogOpen, setPolymerDialogOpen] = useState(false);
   const [expectedProductsOpen, setExpectedProductsOpen] = useState(false);
   const [kendrickOpen, setKendrickOpen] = useState(false);
+  const [deconvolutionOpen, setDeconvolutionOpen] = useState(false);
   const [featureTableOpen, setFeatureTableOpen] = useState(false);
   const [comparisonMatrixOpen, setComparisonMatrixOpen] = useState(false);
   const [highlightedEicPlotId, setHighlightedEicPlotId] = useState<string | null>(null);
@@ -3284,6 +3286,7 @@ export function LCMSView() {
       else if (dialog === "find_mz") setFindMzOpen(true);
       else if (dialog === "eic") setEicOpen(true);
       else if (dialog === "graph_settings") setGraphSettingsOpen(true);
+      else if (dialog === "deconvolution") setDeconvolutionOpen(true);
       else throw new Error("Unknown dialog.");
       return { dialog };
     });
@@ -3657,6 +3660,7 @@ export function LCMSView() {
                   settings={graphSettings.spectrum}
                   polymerEnabled={Boolean(activePolymerSettings)}
                   onPeakClick={onSpectrumPeakClick}
+                  onDeconvolution={() => setDeconvolutionOpen(true)}
                 />
               )}
             </>
@@ -3878,6 +3882,15 @@ export function LCMSView() {
           settings={polymerSettings}
           onCreateEic={(mz, tolerance) => void createEICForMz(mz, "spectrum", tolerance)}
           onClose={() => setKendrickOpen(false)}
+        />
+      )}
+      {deconvolutionOpen && (
+        <DeconvolutionDialog
+          activeSid={activeSid}
+          spectrum={spectrum}
+          polarity={polarity === "negative" ? "negative" : "positive"}
+          onCreateEic={(mz, tolerance, metadata) => void createEICForMz(mz, "spectrum", tolerance, metadata)}
+          onClose={() => setDeconvolutionOpen(false)}
         />
       )}
       {featureTableOpen && (
@@ -6651,6 +6664,7 @@ function SpectrumChart(props: {
   settings: ChartSettings;
   polymerEnabled: boolean;
   onPeakClick?: (mz: number) => void;
+  onDeconvolution?: () => void;
 }) {
   const s = props.spectrum;
   const specContainerRef = useRef<HTMLDivElement>(null);
@@ -6781,6 +6795,17 @@ function SpectrumChart(props: {
               </span>
             )}
             {s && props.onPeakClick ? <span>Click a peak to create an EIC</span> : null}
+            {props.onDeconvolution && (
+              <button
+                type="button"
+                className="rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={props.onDeconvolution}
+                disabled={!s}
+                title="Deconvolute multi-charged ESI envelope and isotopic spacing to true neutral mass"
+              >
+                ⚛ Deconvolute
+              </button>
+            )}
             <PaperFigureExportToolbar
               disabled={!s}
               storageKey="mfp-publication-plot-export-lcms-spectrum"
