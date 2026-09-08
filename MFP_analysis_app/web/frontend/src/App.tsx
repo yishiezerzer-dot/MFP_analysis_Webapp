@@ -6,6 +6,7 @@ import { LCMSView } from "./views/LCMSView";
 import { PlateReaderView } from "./views/PlateReaderView";
 import { DataStudioView } from "./views/DataStudioView";
 import { FTIRView } from "./views/FTIRView";
+import { FigureBuilderView } from "./views/FigureBuilderView";
 import { AIView } from "./views/AIView";
 import type { PageHeaderContextValue } from "./layout/PageHeader";
 import { UserMenu, type AppUser } from "./layout/UserMenu";
@@ -35,6 +36,7 @@ const TABS: TabDef[] = [
   { to: "/ftir", label: "FTIR", hint: "spectra + peaks", status: "ready", icon: IconFTIR },
   { to: "/plate-reader", label: "Plate Reader", hint: "MIC wizard", status: "ready", icon: IconPlate },
   { to: "/data-studio", label: "Data Studio", hint: "plot builder", status: "ready", icon: IconTable },
+  { to: "/figures", label: "Figures & SI", hint: "paper figure engine", status: "ready", icon: IconFigures },
   { to: "/ai", label: "AI Assistant", hint: "analysis helper", status: "ready", icon: IconSparkle },
 ];
 
@@ -357,6 +359,7 @@ export default function App() {
             <Route path="/ftir" element={<FTIRView />} />
             <Route path="/plate-reader" element={<PlateReaderView />} />
             <Route path="/data-studio" element={<DataStudioView />} />
+            <Route path="/figures" element={<FigureBuilderView />} />
             <Route path="/ai" element={<AIView />} />
           </Route>
         </Routes>
@@ -427,6 +430,17 @@ function IconSparkle({ className }: { className?: string }) {
     <svg {...svgProps(className)}>
       <path d="M4 5h12a3 3 0 0 1 3 3v5a3 3 0 0 1 -3 3H9l-4 3v-3H4a1 1 0 0 1 -1 -1V8a3 3 0 0 1 1 -3z" />
       <path d="M13 8l0.7 1.6L15.3 10.3L13.7 11L13 12.6L12.3 11L10.7 10.3L12.3 9.6z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function IconFigures({ className }: { className?: string }) {
+  return (
+    <svg {...svgProps(className)}>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   );
 }

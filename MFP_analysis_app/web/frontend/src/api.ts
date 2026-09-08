@@ -1105,7 +1105,53 @@ export const api = {
     getSessionInfo: (sessionId: string) =>
       apiFetch(`/api/experiments/sessions/${sessionId}`).then((r) => handle<SessionExperimentInfo>(r)),
   },
+  publication: {
+    renderFigurePdf: async (req: FigureRenderRequest): Promise<Blob> => {
+      const res = await apiFetch("/api/publication/render-figure-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.blob();
+    },
+    downloadSIPackage: async (req: SIPackageRequest): Promise<Blob> => {
+      const res = await apiFetch("/api/publication/si-package", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.blob();
+    },
+  },
 };
+
+export interface FigurePanelSpec {
+  panel_label: string;
+  title?: string;
+  image_data?: string;
+  caption?: string;
+  source_module?: string;
+}
+
+export interface FigureRenderRequest {
+  title?: string;
+  journal_preset?: "acs_single" | "acs_double" | "nature_single" | "nature_double" | "rsc_single" | "rsc_double" | "custom";
+  width_mm?: number;
+  height_mm?: number;
+  layout_columns?: number;
+  font_family?: string;
+  panels: FigurePanelSpec[];
+}
+
+export interface SIPackageRequest {
+  experiment_tag?: string;
+  session_ids?: string[];
+  include_tables?: boolean;
+  include_methodology?: boolean;
+  figures?: FigurePanelSpec[];
+}
 
 export interface LinkedSessionItem {
   session_id: string;

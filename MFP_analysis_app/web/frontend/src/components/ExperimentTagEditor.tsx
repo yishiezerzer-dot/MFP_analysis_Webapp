@@ -24,6 +24,7 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [bundle, setBundle] = useState<ExperimentBundle | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDownloadingSI, setIsDownloadingSI] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -86,6 +87,26 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
     },
     [sessionId, onTagUpdated],
   );
+
+  const handleDownloadSI = useCallback(async () => {
+    if (!currentTag) return;
+    setIsDownloadingSI(true);
+    try {
+      const blob = await api.publication.downloadSIPackage({ experiment_tag: currentTag });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${currentTag}_SI_Package.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to download SI package:", err);
+    } finally {
+      setIsDownloadingSI(false);
+    }
+  }, [currentTag]);
 
   if (!sessionId) return null;
 
@@ -236,6 +257,27 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
                     </div>
                   );
                 })}
+              </div>
+
+              <div className="mt-2.5 flex items-center gap-1.5 pt-2 border-t border-ink-100 dark:border-ink-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    navigate(`/figures?experiment=${encodeURIComponent(currentTag)}`);
+                  }}
+                  className="flex-1 rounded border border-ink-200 bg-surface px-2 py-1 text-[11px] font-medium text-ink-700 hover:bg-ink-100 dark:border-ink-700 dark:text-ink-200"
+                >
+                  Assemble Figure 🎨
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadSI()}
+                  disabled={isDownloadingSI}
+                  className="flex-1 rounded bg-brand-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                >
+                  {isDownloadingSI ? "Packaging…" : "Download SI 📦"}
+                </button>
               </div>
             </div>
           )}
