@@ -37,6 +37,7 @@ import { useBrowserAutomation } from "../automation/BrowserBridge";
 import { useAutomationDispatch } from "../automation/registry";
 import { useStoredState } from "../hooks/useStoredState";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { useRegisterFileIngest } from "../context/FileIngestionContext";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -2281,6 +2282,8 @@ export function LCMSView() {
       setBusy(false);
     }
   };
+
+  useRegisterFileIngest("/lcms", onUpload);
 
   const onRemove = async (sid: string) => {
     await api.lcms.remove(sid).catch((err) => setError(String(err)));

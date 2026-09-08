@@ -12,6 +12,8 @@ import { UserMenu, type AppUser } from "./layout/UserMenu";
 import { Tooltip } from "./components/Tooltip";
 import { BrowserBridgeProvider } from "./automation/BrowserBridge";
 import { useWorkspace } from "./context/WorkspaceContext";
+import { FileIngestionProvider } from "./context/FileIngestionContext";
+import { GlobalDropOverlay } from "./components/GlobalDropOverlay";
 import mfpLogo from "./assets/mfp-logo.png";
 
 const CURRENT_USER: AppUser = {
@@ -330,6 +332,7 @@ function Layout() {
 
   return (
     <div className="flex h-full w-full flex-col">
+      <GlobalDropOverlay />
       <header className="shrink-0 border-b border-ink-200/70 shadow-sm" style={{ backgroundColor: "rgb(var(--surface))" }}>
         {headerNode ?? <div className="h-12" aria-hidden="true" />}
       </header>
@@ -346,16 +349,18 @@ function Layout() {
 export default function App() {
   return (
     <BrowserBridgeProvider>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Navigate to="/lcms" replace />} />
-          <Route path="/lcms" element={<LCMSView />} />
-          <Route path="/ftir" element={<FTIRView />} />
-          <Route path="/plate-reader" element={<PlateReaderView />} />
-          <Route path="/data-studio" element={<DataStudioView />} />
-          <Route path="/ai" element={<AIView />} />
-        </Route>
-      </Routes>
+      <FileIngestionProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<Navigate to="/lcms" replace />} />
+            <Route path="/lcms" element={<LCMSView />} />
+            <Route path="/ftir" element={<FTIRView />} />
+            <Route path="/plate-reader" element={<PlateReaderView />} />
+            <Route path="/data-studio" element={<DataStudioView />} />
+            <Route path="/ai" element={<AIView />} />
+          </Route>
+        </Routes>
+      </FileIngestionProvider>
     </BrowserBridgeProvider>
   );
 }

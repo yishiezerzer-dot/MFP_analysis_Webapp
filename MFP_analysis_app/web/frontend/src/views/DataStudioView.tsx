@@ -25,6 +25,7 @@ import { IconButton } from "../components/ui/IconButton";
 import { Tooltip } from "../components/Tooltip";
 import { useStoredState } from "../hooks/useStoredState";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { useRegisterFileIngest } from "../context/FileIngestionContext";
 
 type PlotKind = "Line" | "Scatter" | "Line+markers" | "Bar" | "Bar stacked" | "Area" | "Step" | "Histogram";
 
@@ -239,6 +240,10 @@ export function DataStudioView() {
       setBusy(false);
     }
   };
+
+  useRegisterFileIngest("/data-studio", (files) => {
+    if (files[0]) void onUpload(files[0]);
+  });
 
   const onRemove = async (sid: string) => {
     await api.dataStudio.remove(sid).catch((e) => setError(String(e)));

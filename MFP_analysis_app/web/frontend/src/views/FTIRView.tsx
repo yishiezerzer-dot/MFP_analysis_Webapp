@@ -30,6 +30,7 @@ import { AlertBanner } from "../components/AlertBanner";
 import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
 import { Tooltip } from "../components/Tooltip";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { useRegisterFileIngest } from "../context/FileIngestionContext";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -708,6 +709,8 @@ export function FTIRView() {
       setBusy(false);
     }
   };
+
+  useRegisterFileIngest("/ftir", onUpload);
 
   const onRemove = async (sid: string) => {
     await api.ftir.remove(sid).catch((e) => setError(String(e)));

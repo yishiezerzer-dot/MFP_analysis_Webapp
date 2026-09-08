@@ -21,6 +21,7 @@ import { Tooltip } from "../components/Tooltip";
 import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
 import { useStoredState } from "../hooks/useStoredState";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { useRegisterFileIngest } from "../context/FileIngestionContext";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -320,6 +321,10 @@ export function PlateReaderView() {
       setBusy(false);
     }
   };
+
+  useRegisterFileIngest("/plate-reader", (files) => {
+    if (files[0]) void onUpload(files[0]);
+  });
 
   const sampleRows = useMemo(
     () =>
