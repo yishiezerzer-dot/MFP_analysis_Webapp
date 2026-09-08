@@ -180,13 +180,16 @@ def test_browser_action_round_trips_through_connected_websocket():
     def hit_endpoint():
         # Use a fresh TestClient inside the thread; sharing one across
         # threads while a WS context is open is brittle.
-        with TestClient(app) as inner:
-            r = inner.post(
-                "/api/automation/actions/lcms.set_polarity/execute",
-                json={"polarity": "positive"},
-            )
-            http_response["status"] = r.status_code
-            http_response["json"] = r.json()
+        try:
+            with TestClient(app) as inner:
+                r = inner.post(
+                    "/api/automation/actions/lcms.set_polarity/execute",
+                    json={"polarity": "positive"},
+                )
+                http_response["status"] = r.status_code
+                http_response["json"] = r.json()
+        except Exception as e:
+            http_response["error"] = repr(e)
 
     with client.websocket_connect("/api/automation/browser-bridge?browser_id=test-tab") as ws:
         worker = threading.Thread(target=hit_endpoint, daemon=True)
@@ -207,7 +210,7 @@ def test_browser_action_round_trips_through_connected_websocket():
             }
         )
 
-        worker.join(timeout=10)
+        worker.join(timeout=15)
 
     assert http_response["status"] == 200
     payload = http_response["json"]

@@ -2,6 +2,34 @@
  * Thin typed wrapper around the FastAPI backend.
  */
 
+let activeWorkspaceId: string =
+  typeof window !== "undefined"
+    ? window.localStorage.getItem("mfp_active_workspace") || "general"
+    : "general";
+
+export function getActiveWorkspaceId(): string {
+  return activeWorkspaceId;
+}
+
+export function setActiveWorkspaceId(id: string): void {
+  activeWorkspaceId = id;
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem("mfp_active_workspace", id);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("X-Workspace-Id")) {
+    headers.set("X-Workspace-Id", activeWorkspaceId);
+  }
+  return window.fetch(input, { ...init, headers });
+}
+
 async function postFileUpload(
   endpoint: string,
   file: File,
@@ -12,7 +40,15 @@ async function postFileUpload(
   for (const [key, value] of Object.entries(extraFields)) {
     fd.append(key, value);
   }
-  return fetch(endpoint, { method: "POST", body: fd });
+  return apiFetch(endpoint, { method: "POST", body: fd });
+}
+
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  created_at: string;
+  last_active_at: string;
+  session_count: number;
 }
 
 export interface LCMSUVMeta {
@@ -630,13 +666,13 @@ export interface AIChatResponse {
 }
 
 export const api = {
-  health: () => fetch("/api/health").then((r) => handle<{ status: string }>(r)),
+  health: () => apiFetch("/api/health").then((r) => handle<{ status: string }>(r)),
 
   ai: {
-    status: () => fetch("/api/ai/status").then((r) => handle<AIProviderStatus>(r)),
-    context: () => fetch("/api/ai/context").then((r) => handle<AIContextSnapshot>(r)),
+    status: () => apiFetch("/api/ai/status").then((r) => handle<AIProviderStatus>(r)),
+    context: () => apiFetch("/api/ai/context").then((r) => handle<AIContextSnapshot>(r)),
     chat: (body: AIChatRequest) =>
-      fetch("/api/ai/chat", {
+      apiFetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -647,23 +683,23 @@ export const api = {
     upload: (file: File) =>
       postFileUpload("/api/data-studio/sessions", file).then((r) => handle<DSSessionSummary>(r)),
     list: () =>
-      fetch("/api/data-studio/sessions").then((r) => handle<DSSessionSummary[]>(r)),
+      apiFetch("/api/data-studio/sessions").then((r) => handle<DSSessionSummary[]>(r)),
     get: (sid: string) =>
-      fetch(`/api/data-studio/sessions/${sid}`).then((r) => handle<DSSessionSummary>(r)),
+      apiFetch(`/api/data-studio/sessions/${sid}`).then((r) => handle<DSSessionSummary>(r)),
     remove: (sid: string) =>
-      fetch(`/api/data-studio/sessions/${sid}`, { method: "DELETE" }).then((r) =>
+      apiFetch(`/api/data-studio/sessions/${sid}`, { method: "DELETE" }).then((r) =>
         handle<{ deleted: boolean }>(r),
       ),
     updateLoad: (sid: string, body: DSLoadOptions) =>
-      fetch(`/api/data-studio/sessions/${sid}/load`, {
+      apiFetch(`/api/data-studio/sessions/${sid}/load`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => handle<DSSessionSummary>(r)),
     schema: (sid: string) =>
-      fetch(`/api/data-studio/sessions/${sid}/schema`).then((r) => handle<DSSchema>(r)),
+      apiFetch(`/api/data-studio/sessions/${sid}/schema`).then((r) => handle<DSSchema>(r)),
     preview: (sid: string, body: { transforms: DSTransformStep[]; max_rows?: number }) =>
-      fetch(`/api/data-studio/sessions/${sid}/preview`, {
+      apiFetch(`/api/data-studio/sessions/${sid}/preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -679,7 +715,7 @@ export const api = {
         max_points?: number;
       },
     ) =>
-      fetch(`/api/data-studio/sessions/${sid}/plot`, {
+      apiFetch(`/api/data-studio/sessions/${sid}/plot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -688,7 +724,7 @@ export const api = {
       sid: string,
       body: { transforms: DSTransformStep[]; y_cols: string[]; bins?: number },
     ) =>
-      fetch(`/api/data-studio/sessions/${sid}/histogram`, {
+      apiFetch(`/api/data-studio/sessions/${sid}/histogram`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -700,55 +736,55 @@ export const api = {
       postFileUpload("/api/ftir/sessions", file, { y_mode: yMode }).then((r) =>
         handle<FTIRSessionSummary>(r),
       ),
-    list: () => fetch("/api/ftir/sessions").then((r) => handle<FTIRSessionSummary[]>(r)),
+    list: () => apiFetch("/api/ftir/sessions").then((r) => handle<FTIRSessionSummary[]>(r)),
     get: (sid: string) =>
-      fetch(`/api/ftir/sessions/${sid}`).then((r) => handle<FTIRSessionSummary>(r)),
+      apiFetch(`/api/ftir/sessions/${sid}`).then((r) => handle<FTIRSessionSummary>(r)),
     remove: (sid: string) =>
-      fetch(`/api/ftir/sessions/${sid}`, { method: "DELETE" }).then((r) =>
+      apiFetch(`/api/ftir/sessions/${sid}`, { method: "DELETE" }).then((r) =>
         handle<{ deleted: boolean }>(r),
       ),
     spectrum: (sid: string, body: FTIRSpectrumRequest) =>
-      fetch(`/api/ftir/sessions/${sid}/spectrum`, {
+      apiFetch(`/api/ftir/sessions/${sid}/spectrum`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => handle<FTIRSpectrumResponse>(r)),
     peaks: (sid: string, body: FTIRPeaksRequest) =>
-      fetch(`/api/ftir/sessions/${sid}/peaks`, {
+      apiFetch(`/api/ftir/sessions/${sid}/peaks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => handle<FTIRPeaksResponse>(r)),
     library: () =>
-      fetch("/api/ftir/library").then((r) => handle<{ version: string; n_entries: number }>(r)),
+      apiFetch("/api/ftir/library").then((r) => handle<{ version: string; n_entries: number }>(r)),
     libraryCategories: () =>
-      fetch("/api/ftir/library/categories").then((r) => handle<FTIRLibraryCategories>(r)),
+      apiFetch("/api/ftir/library/categories").then((r) => handle<FTIRLibraryCategories>(r)),
     updatePeakLabel: (sid: string, wn: number, override: FTIRPeakLabelOverride | null) =>
-      fetch(`/api/ftir/sessions/${sid}/peak-labels`, {
+      apiFetch(`/api/ftir/sessions/${sid}/peak-labels`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wn, override }),
       }).then((r) => handle<{ wn: number; key: string; override: FTIRPeakLabelOverride | null }>(r)),
     integrate: (sid: string, body: FTIRIntegrationRequest) =>
-      fetch(`/api/ftir/sessions/${sid}/integrate`, {
+      apiFetch(`/api/ftir/sessions/${sid}/integrate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => handle<FTIRIntegrationResponse>(r)),
     subtract: (sid: string, body: FTIRSubtractRequest) =>
-      fetch(`/api/ftir/sessions/${sid}/subtract`, {
+      apiFetch(`/api/ftir/sessions/${sid}/subtract`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => handle<FTIRSubtractResponse>(r)),
     match: (sid: string, body: FTIRMatchRequest) =>
-      fetch(`/api/ftir/sessions/${sid}/match`, {
+      apiFetch(`/api/ftir/sessions/${sid}/match`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => handle<FTIRMatchResponse>(r)),
     fit: (sid: string, body: FTIRFitRequest) =>
-      fetch(`/api/ftir/sessions/${sid}/fit`, {
+      apiFetch(`/api/ftir/sessions/${sid}/fit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -760,26 +796,26 @@ export const api = {
       postFileUpload("/api/plate-reader/sessions", file).then((r) =>
         handle<PlateSessionSummary>(r),
       ),
-    list: () => fetch("/api/plate-reader/sessions").then((r) => handle<PlateSessionSummary[]>(r)),
+    list: () => apiFetch("/api/plate-reader/sessions").then((r) => handle<PlateSessionSummary[]>(r)),
     get: (sid: string) =>
-      fetch(`/api/plate-reader/sessions/${sid}`).then((r) => handle<PlateSessionSummary>(r)),
+      apiFetch(`/api/plate-reader/sessions/${sid}`).then((r) => handle<PlateSessionSummary>(r)),
     loadSheet: (
       sid: string,
       body: { sheet_name?: string | null; use_first_row_as_header: boolean; max_rows?: number },
     ) =>
-      fetch(`/api/plate-reader/sessions/${sid}/load`, {
+      apiFetch(`/api/plate-reader/sessions/${sid}/load`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => handle<PlatePreview>(r)),
     runMIC: (sid: string, body: MICRequestBody) =>
-      fetch(`/api/plate-reader/sessions/${sid}/mic`, {
+      apiFetch(`/api/plate-reader/sessions/${sid}/mic`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => handle<MICResult>(r)),
     remove: (sid: string) =>
-      fetch(`/api/plate-reader/sessions/${sid}`, { method: "DELETE" }).then((r) =>
+      apiFetch(`/api/plate-reader/sessions/${sid}`, { method: "DELETE" }).then((r) =>
         handle<{ deleted: boolean }>(r),
       ),
   },
@@ -790,17 +826,17 @@ export const api = {
         handle<LCMSSessionSummary>(r),
       ),
     loadFromPath: (path: string, displayName?: string, rtUnit?: "minutes" | "seconds") =>
-      fetch("/api/lcms/sessions/from_path", {
+      apiFetch("/api/lcms/sessions/from_path", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path, display_name: displayName, rt_unit: rtUnit ?? "minutes" }),
       }).then((r) => handle<LCMSSessionSummary>(r)),
-    list: () => fetch("/api/lcms/sessions").then((r) => handle<LCMSSessionSummary[]>(r)),
+    list: () => apiFetch("/api/lcms/sessions").then((r) => handle<LCMSSessionSummary[]>(r)),
     get: (sid: string) =>
-      fetch(`/api/lcms/sessions/${sid}`).then((r) => handle<LCMSSessionSummary>(r)),
+      apiFetch(`/api/lcms/sessions/${sid}`).then((r) => handle<LCMSSessionSummary>(r)),
     tic: (sid: string, polarity?: "positive" | "negative") => {
       const qs = polarity ? `?polarity=${polarity}` : "";
-      return fetch(`/api/lcms/sessions/${sid}/tic${qs}`).then((r) => handle<TICData>(r));
+      return apiFetch(`/api/lcms/sessions/${sid}/tic${qs}`).then((r) => handle<TICData>(r));
     },
     spectrum: (
       sid: string,
@@ -818,7 +854,7 @@ export const api = {
       if (opts.min_rel !== undefined) params.set("min_rel", String(opts.min_rel));
       if (opts.polymer?.enabled)
         params.set("polymer_settings", JSON.stringify(opts.polymer));
-      return fetch(`/api/lcms/sessions/${sid}/spectrum?${params.toString()}`).then((r) =>
+      return apiFetch(`/api/lcms/sessions/${sid}/spectrum?${params.toString()}`).then((r) =>
         handle<SpectrumData>(r),
       );
     },
@@ -829,7 +865,7 @@ export const api = {
       const params = new URLSearchParams({ mz: String(opts.mz) });
       if (opts.tolerance !== undefined) params.set("tolerance", String(opts.tolerance));
       if (opts.polarity) params.set("polarity", opts.polarity);
-      return fetch(`/api/lcms/sessions/${sid}/find-mz?${params.toString()}`).then((r) =>
+      return apiFetch(`/api/lcms/sessions/${sid}/find-mz?${params.toString()}`).then((r) =>
         handle<LCMSFindMzResponse>(r),
       );
     },
@@ -837,7 +873,7 @@ export const api = {
       sid: string,
       body: { mz: number; tolerance?: number; polarity?: "positive" | "negative" },
     ) =>
-      fetch(`/api/lcms/sessions/${sid}/eic`, {
+      apiFetch(`/api/lcms/sessions/${sid}/eic`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -854,7 +890,7 @@ export const api = {
         polymer?: PolymerSettings;
       },
     ) =>
-      fetch(`/api/lcms/sessions/${sid}/region-spectrum`, {
+      apiFetch(`/api/lcms/sessions/${sid}/region-spectrum`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -864,7 +900,7 @@ export const api = {
         }),
       }).then((r) => handle<LCMSRegionSpectrumData>(r)),
     ticOverlay: (body: { session_ids: string[]; polarity?: "positive" | "negative" }) =>
-      fetch("/api/lcms/overlays/tic", {
+      apiFetch("/api/lcms/overlays/tic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -873,7 +909,7 @@ export const api = {
       session_ids: string[];
       polarity?: "positive" | "negative";
     }) =>
-      fetch("/api/lcms/exports/tic-overlay.csv", {
+      apiFetch("/api/lcms/exports/tic-overlay.csv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -884,7 +920,7 @@ export const api = {
     ) => {
       const params = new URLSearchParams({ rt_min: String(opts.rt_min) });
       if (opts.polarity) params.set("polarity", opts.polarity);
-      return fetch(`/api/lcms/sessions/${sid}/exports/spectrum.csv?${params.toString()}`).then(
+      return apiFetch(`/api/lcms/sessions/${sid}/exports/spectrum.csv?${params.toString()}`).then(
         handleBlob,
       );
     },
@@ -897,12 +933,12 @@ export const api = {
       if (opts?.min_rel !== undefined) params.set("min_rel", String(opts.min_rel));
       if (opts?.polarity) params.set("polarity", opts.polarity);
       const qs = params.toString() ? `?${params.toString()}` : "";
-      return fetch(`/api/lcms/sessions/${sid}/exports/labels.csv${qs}`).then(handleBlob);
+      return apiFetch(`/api/lcms/sessions/${sid}/exports/labels.csv${qs}`).then(handleBlob);
     },
     exportUV: (sid: string) =>
-      fetch(`/api/lcms/sessions/${sid}/exports/uv.csv`).then(handleBlob),
+      apiFetch(`/api/lcms/sessions/${sid}/exports/uv.csv`).then(handleBlob),
     attachUVFromPath: (sid: string, path: string) =>
-      fetch(`/api/lcms/sessions/${sid}/uv/from_path`, {
+      apiFetch(`/api/lcms/sessions/${sid}/uv/from_path`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),
@@ -921,17 +957,38 @@ export const api = {
       if (opts?.min_distance_min !== undefined)
         params.set("min_distance_min", String(opts.min_distance_min));
       const qs = params.toString() ? `?${params.toString()}` : "";
-      return fetch(`/api/lcms/sessions/${sid}/uv${qs}`).then((r) =>
+      return apiFetch(`/api/lcms/sessions/${sid}/uv${qs}`).then((r) =>
         handle<UVChromatogramResponse>(r),
       );
     },
     removeUV: (sid: string) =>
-      fetch(`/api/lcms/sessions/${sid}/uv`, { method: "DELETE" }).then((r) =>
+      apiFetch(`/api/lcms/sessions/${sid}/uv`, { method: "DELETE" }).then((r) =>
         handle<{ deleted: boolean }>(r),
       ),
     remove: (sid: string) =>
-      fetch(`/api/lcms/sessions/${sid}`, { method: "DELETE" }).then((r) =>
+      apiFetch(`/api/lcms/sessions/${sid}`, { method: "DELETE" }).then((r) =>
         handle<{ deleted: boolean }>(r),
       ),
+  },
+
+  workspaces: {
+    list: () => apiFetch("/api/workspaces").then((r) => handle<WorkspaceSummary[]>(r)),
+    get: (id: string) => apiFetch(`/api/workspaces/${id}`).then((r) => handle<WorkspaceSummary>(r)),
+    create: (name: string, id?: string) =>
+      apiFetch("/api/workspaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, id }),
+      }).then((r) => handle<WorkspaceSummary>(r)),
+    getState: (id: string, module: string) =>
+      apiFetch(`/api/workspaces/${id}/state/${module}`).then((r) =>
+        handle<{ workspace_id: string; module: string; state: any }>(r),
+      ),
+    saveState: (id: string, module: string, state: any) =>
+      apiFetch(`/api/workspaces/${id}/state/${module}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state }),
+      }).then((r) => handle<{ status: string; workspace_id: string; module: string }>(r)),
   },
 };

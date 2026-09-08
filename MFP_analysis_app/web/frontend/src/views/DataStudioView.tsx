@@ -24,6 +24,7 @@ import { Spinner } from "../components/Spinner";
 import { IconButton } from "../components/ui/IconButton";
 import { Tooltip } from "../components/Tooltip";
 import { useStoredState } from "../hooks/useStoredState";
+import { useWorkspace } from "../context/WorkspaceContext";
 
 type PlotKind = "Line" | "Scatter" | "Line+markers" | "Bar" | "Bar stacked" | "Area" | "Step" | "Histogram";
 
@@ -60,6 +61,7 @@ function isNormMode(value: unknown): value is DSNormMode {
 }
 
 export function DataStudioView() {
+  const { activeWorkspaceId } = useWorkspace();
   const [sessions, setSessions] = useState<DSSessionSummary[]>([]);
   const [activeSid, setActiveSid] = useStoredState<string | null>(
     `${DATA_STUDIO_STORAGE_PREFIX}.activeSessionId`,
@@ -139,7 +141,7 @@ export function DataStudioView() {
         );
       })
       .catch((e) => setError(String(e)));
-  }, []);
+  }, [activeWorkspaceId]);
 
   // When a session is activated, fetch its schema + a preview.
   useEffect(() => {

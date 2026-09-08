@@ -40,6 +40,7 @@ class DataStudioSession:
     header_row: int = 0
     decimal_comma: bool = False
     sheets: List[str] = field(default_factory=list)
+    workspace_id: str = "general"
     # raw + transformed dataframe caches
     _raw: Optional[pd.DataFrame] = None
     _transformed: Optional[pd.DataFrame] = None
@@ -67,9 +68,9 @@ class DataStudioSession:
     ) -> None:
         with self._lock:
             changed = (
-                (self.sheet_name != sheet_name)
-                or (int(self.header_row) != int(header_row))
-                or (bool(self.decimal_comma) != bool(decimal_comma))
+                sheet_name != self.sheet_name
+                or int(header_row) != int(self.header_row)
+                or bool(decimal_comma) != bool(self.decimal_comma)
             )
             if changed:
                 self.sheet_name = sheet_name
@@ -106,7 +107,13 @@ class DataStudioRegistry:
         self._sessions: Dict[str, DataStudioSession] = {}
         self._lock = threading.Lock()
 
-    def add_from_path(self, path: Path, *, display_name: Optional[str] = None) -> DataStudioSession:
+    def add_from_path(
+        self,
+        path: Path,
+        *,
+        workspace_id: str = "general",
+        display_name: Optional[str] = None,
+    ) -> DataStudioSession:
         suffix = path.suffix.lower()
         sheets = get_sheet_names(path) if suffix in (".xlsx", ".xlsm", ".xls") else []
         s = DataStudioSession(
@@ -115,9 +122,20 @@ class DataStudioRegistry:
             path=path,
             sheet_name=(sheets[0] if sheets else None),
             sheets=sheets,
+            workspace_id=workspace_id,
         )
         with self._lock:
             self._sessions[s.session_id] = s
+
+        from ..db import save_session_record
+        save_session_record(
+            session_id=s.session_id,
+            workspace_id=workspace_id,
+            module="data_studio",
+            display_name=s.display_name,
+            file_path=str(path),
+            extra={"sheets": sheets},
+        )
         return s
 
     def restore_from_path(
@@ -125,6 +143,7 @@ class DataStudioRegistry:
         session_id: str,
         path: Path,
         *,
+        workspace_id: str = "general",
         display_name: Optional[str] = None,
     ) -> DataStudioSession:
         suffix = path.suffix.lower()
@@ -135,6 +154,7 @@ class DataStudioRegistry:
             path=path,
             sheet_name=(sheets[0] if sheets else None),
             sheets=sheets,
+            workspace_id=workspace_id,
         )
         with self._lock:
             self._sessions[session_id] = s
@@ -142,14 +162,54 @@ class DataStudioRegistry:
 
     def get(self, sid: str) -> Optional[DataStudioSession]:
         with self._lock:
-            return self._sessions.get(sid)
+            state = self._sessions.get(sid)
+        if state is not None:
+            return state
+
+        from ..db import get_session_record
+        rec = get_session_record(sid)
+        if rec and rec.get("module") == "data_studio":
+            p = Path(rec["file_path"])
+            if p.exists():
+                try:
+                    return self.restore_from_path(
+                        sid,
+                        p,
+                        workspace_id=rec.get("workspace_id", "general"),
+                        display_name=rec.get("display_name"),
+                    )
+                except Exception:
+                    pass
+        return None
 
     def remove(self, sid: str) -> bool:
+        from ..db import delete_session_record
+        delete_session_record(sid)
         with self._lock:
             return self._sessions.pop(sid, None) is not None
 
-    def list(self) -> List[DataStudioSession]:
+    def list(self, workspace_id: Optional[str] = None) -> List[DataStudioSession]:
+        from ..db import list_session_records
+        records = list_session_records(workspace_id=workspace_id, module="data_studio")
+        for rec in records:
+            sid = rec["session_id"]
+            with self._lock:
+                already = sid in self._sessions
+            if not already:
+                p = Path(rec["file_path"])
+                if p.exists():
+                    try:
+                        self.restore_from_path(
+                            sid,
+                            p,
+                            workspace_id=rec.get("workspace_id", "general"),
+                            display_name=rec.get("display_name"),
+                        )
+                    except Exception:
+                        pass
         with self._lock:
+            if workspace_id:
+                return [s for s in self._sessions.values() if s.workspace_id == workspace_id]
             return list(self._sessions.values())
 
 
@@ -192,6 +252,7 @@ def session_summary(s: DataStudioSession) -> Dict[str, Any]:
         shape = (int(s._raw.shape[0]), int(s._raw.shape[1]))
     return {
         "session_id": s.session_id,
+        "workspace_id": s.workspace_id,
         "display_name": s.display_name,
         "path": str(s.path),
         "sheets": list(s.sheets),

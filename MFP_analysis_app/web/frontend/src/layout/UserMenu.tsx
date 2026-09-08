@@ -10,6 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { useTheme, ThemeName } from "../theme/ThemeProvider";
+import { useWorkspace } from "../context/WorkspaceContext";
 
 export interface AppUser {
   name: string;
@@ -125,6 +126,9 @@ interface PopoverProps {
 }
 
 function UserMenuPopover({ anchor, popoverRef, user, onClose }: PopoverProps) {
+  const { workspaces, activeWorkspaceId, selectWorkspace, createWorkspace } = useWorkspace();
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
   const [mounted, setMounted] = useState(false);
   const POPOVER_WIDTH = 296;
@@ -225,6 +229,87 @@ function UserMenuPopover({ anchor, popoverRef, user, onClose }: PopoverProps) {
             <div className="truncate text-[12px] text-ink-500">{user.secondary}</div>
           )}
         </div>
+      </div>
+
+      <DividerThin />
+
+      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">
+        Lab Member Profiles
+      </div>
+      <div className="max-h-40 overflow-y-auto p-1">
+        {workspaces.map((ws) => (
+          <button
+            key={ws.id}
+            type="button"
+            onClick={() => {
+              selectWorkspace(ws.id);
+              onClose();
+            }}
+            className={clsx(
+              "flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[12px] transition-colors",
+              ws.id === activeWorkspaceId
+                ? "bg-brand-500/15 font-semibold text-brand-700 dark:text-brand-300"
+                : "text-ink-800 hover:bg-ink-100/60",
+            )}
+          >
+            <div className="min-w-0 flex-1 truncate">
+              <span>{ws.name}</span>
+              {ws.session_count > 0 && (
+                <span className="ml-1.5 text-[11px] text-ink-400">({ws.session_count})</span>
+              )}
+            </div>
+            {ws.id === activeWorkspaceId && (
+              <span className="font-bold text-brand-600 dark:text-brand-400">✓</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-1">
+        {adding ? (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newName.trim()) return;
+              await createWorkspace(newName.trim());
+              setNewName("");
+              setAdding(false);
+              onClose();
+            }}
+            className="flex items-center gap-1.5 p-1"
+          >
+            <input
+              type="text"
+              autoFocus
+              placeholder="Member name..."
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="min-w-0 flex-1 rounded border border-ink-300 px-2 py-1 text-[12px] bg-surface text-ink-900 focus:border-brand-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="rounded bg-brand-500 px-2 py-1 text-[12px] font-medium text-white hover:bg-brand-600"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdding(false)}
+              className="rounded px-1.5 py-1 text-[12px] text-ink-500 hover:bg-ink-100"
+            >
+              ✕
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[12px] font-medium text-brand-600 hover:bg-brand-500/10 dark:text-brand-400"
+          >
+            <span className="text-sm font-bold">+</span>
+            <span>Add New Member</span>
+          </button>
+        )}
       </div>
 
       <DividerThin />

@@ -20,6 +20,7 @@ import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
 import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
 import { useStoredState } from "../hooks/useStoredState";
+import { useWorkspace } from "../context/WorkspaceContext";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -137,6 +138,7 @@ function downloadCsv(rows: unknown[][], filename: string) {
 }
 
 export function PlateReaderView() {
+  const { activeWorkspaceId } = useWorkspace();
   const [sessions, setSessions] = useState<PlateSessionSummary[]>([]);
   const [sessionNames, setSessionNames] = useStoredState<Record<string, string>>(
     `${PLATE_STORAGE_PREFIX}.sessionNames`,
@@ -226,7 +228,7 @@ export function PlateReaderView() {
         );
       })
       .catch((err) => setError(String(err)));
-  }, []); // eslint-disable-line
+  }, [activeWorkspaceId]); // eslint-disable-line
 
   useEffect(() => {
     if (!active) return;

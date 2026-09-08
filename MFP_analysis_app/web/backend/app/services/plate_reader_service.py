@@ -32,6 +32,7 @@ class PlateSession:
     display_name: str
     path: Path
     sheets: List[str]
+    workspace_id: str = "general"
     # Cached per (sheet_name, use_first_row_as_header) DataFrame
     _df_cache: Dict[tuple, pd.DataFrame] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
@@ -57,7 +58,13 @@ class PlateReaderRegistry:
         self._sessions: Dict[str, PlateSession] = {}
         self._lock = threading.Lock()
 
-    def add_from_path(self, path: Path, *, display_name: Optional[str] = None) -> PlateSession:
+    def add_from_path(
+        self,
+        path: Path,
+        *,
+        workspace_id: str = "general",
+        display_name: Optional[str] = None,
+    ) -> PlateSession:
         suf = path.suffix.lower()
         sheets: List[str] = list_excel_sheets(path) if suf in (".xlsx", ".xlsm", ".xls") else []
         session = PlateSession(
@@ -65,9 +72,20 @@ class PlateReaderRegistry:
             display_name=display_name or path.name,
             path=path,
             sheets=sheets,
+            workspace_id=workspace_id,
         )
         with self._lock:
             self._sessions[session.session_id] = session
+
+        from ..db import save_session_record
+        save_session_record(
+            session_id=session.session_id,
+            workspace_id=workspace_id,
+            module="plate_reader",
+            display_name=session.display_name,
+            file_path=str(path),
+            extra={"sheets": sheets},
+        )
         return session
 
     def restore_from_path(
@@ -75,6 +93,7 @@ class PlateReaderRegistry:
         session_id: str,
         path: Path,
         *,
+        workspace_id: str = "general",
         display_name: Optional[str] = None,
     ) -> PlateSession:
         suf = path.suffix.lower()
@@ -84,6 +103,7 @@ class PlateReaderRegistry:
             display_name=display_name or path.name,
             path=path,
             sheets=sheets,
+            workspace_id=workspace_id,
         )
         with self._lock:
             self._sessions[session_id] = session
@@ -91,14 +111,54 @@ class PlateReaderRegistry:
 
     def get(self, sid: str) -> Optional[PlateSession]:
         with self._lock:
-            return self._sessions.get(sid)
+            state = self._sessions.get(sid)
+        if state is not None:
+            return state
+
+        from ..db import get_session_record
+        rec = get_session_record(sid)
+        if rec and rec.get("module") == "plate_reader":
+            p = Path(rec["file_path"])
+            if p.exists():
+                try:
+                    return self.restore_from_path(
+                        sid,
+                        p,
+                        workspace_id=rec.get("workspace_id", "general"),
+                        display_name=rec.get("display_name"),
+                    )
+                except Exception:
+                    pass
+        return None
 
     def remove(self, sid: str) -> bool:
+        from ..db import delete_session_record
+        delete_session_record(sid)
         with self._lock:
             return self._sessions.pop(sid, None) is not None
 
-    def list(self) -> List[PlateSession]:
+    def list(self, workspace_id: Optional[str] = None) -> List[PlateSession]:
+        from ..db import list_session_records
+        records = list_session_records(workspace_id=workspace_id, module="plate_reader")
+        for rec in records:
+            sid = rec["session_id"]
+            with self._lock:
+                already = sid in self._sessions
+            if not already:
+                p = Path(rec["file_path"])
+                if p.exists():
+                    try:
+                        self.restore_from_path(
+                            sid,
+                            p,
+                            workspace_id=rec.get("workspace_id", "general"),
+                            display_name=rec.get("display_name"),
+                        )
+                    except Exception:
+                        pass
         with self._lock:
+            if workspace_id:
+                return [s for s in self._sessions.values() if s.workspace_id == workspace_id]
             return list(self._sessions.values())
 
 

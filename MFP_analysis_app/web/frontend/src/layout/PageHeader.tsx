@@ -1,5 +1,6 @@
 import { ReactNode, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
+import { MemberSelector } from "../components/MemberSelector";
 
 export interface PageHeaderContextValue {
   setHeader: (node: ReactNode) => void;
@@ -23,9 +24,10 @@ export function PageHeaderContent({
           <span className="text-[12px] text-ink-500 truncate">{subtitle}</span>
         )}
       </div>
-      {actions && (
-        <div className="flex flex-wrap items-center gap-1.5">{actions}</div>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {actions}
+        <MemberSelector />
+      </div>
     </div>
   );
 }

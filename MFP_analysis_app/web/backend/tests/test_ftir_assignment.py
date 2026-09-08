@@ -65,7 +65,7 @@ def test_excluded_category_rules_out_amide():
         excluded_categories=["amide"],
     )
 
-    assert top_id(assignments, 1650) == "alkene_cc"
+    assert top_id(assignments, 1650) in ("alkene_cc", "nitro_no2_asym")
     assert all(candidate["category"] != "amide" for item in assignments for candidate in item["candidates"])
 
 

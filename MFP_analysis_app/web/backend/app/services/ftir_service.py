@@ -41,6 +41,7 @@ class FTIRSession:
     y: np.ndarray
     meta: Dict[str, str] = field(default_factory=dict)
     y_mode: str = "absorbance"
+    workspace_id: str = "general"
     peak_label_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
@@ -53,6 +54,7 @@ class FTIRRegistry:
         self,
         path: Path,
         *,
+        workspace_id: str = "general",
         display_name: Optional[str] = None,
         y_mode: str = "absorbance",
     ) -> FTIRSession:
@@ -77,9 +79,20 @@ class FTIRRegistry:
             y=y,
             meta=dict(meta or {}),
             y_mode=str(y_mode or "absorbance"),
+            workspace_id=workspace_id,
         )
         with self._lock:
             self._sessions[session.session_id] = session
+
+        from ..db import save_session_record
+        save_session_record(
+            session_id=session.session_id,
+            workspace_id=workspace_id,
+            module="ftir",
+            display_name=session.display_name,
+            file_path=str(path),
+            extra={"y_mode": session.y_mode, "meta": session.meta},
+        )
         return session
 
     def restore_from_path(
@@ -87,6 +100,7 @@ class FTIRRegistry:
         session_id: str,
         path: Path,
         *,
+        workspace_id: str = "general",
         display_name: Optional[str] = None,
         y_mode: str = "absorbance",
     ) -> FTIRSession:
@@ -109,6 +123,7 @@ class FTIRRegistry:
             y=y,
             meta=dict(meta or {}),
             y_mode=str(y_mode or "absorbance"),
+            workspace_id=workspace_id,
         )
         with self._lock:
             self._sessions[session_id] = session
@@ -116,14 +131,57 @@ class FTIRRegistry:
 
     def get(self, sid: str) -> Optional[FTIRSession]:
         with self._lock:
-            return self._sessions.get(sid)
+            state = self._sessions.get(sid)
+        if state is not None:
+            return state
+
+        from ..db import get_session_record
+        rec = get_session_record(sid)
+        if rec and rec.get("module") == "ftir":
+            p = Path(rec["file_path"])
+            if p.exists():
+                extra = rec.get("extra") or {}
+                try:
+                    return self.restore_from_path(
+                        sid,
+                        p,
+                        workspace_id=rec.get("workspace_id", "general"),
+                        display_name=rec.get("display_name"),
+                        y_mode=extra.get("y_mode", "absorbance"),
+                    )
+                except Exception:
+                    pass
+        return None
 
     def remove(self, sid: str) -> bool:
+        from ..db import delete_session_record
+        delete_session_record(sid)
         with self._lock:
             return self._sessions.pop(sid, None) is not None
 
-    def list(self) -> List[FTIRSession]:
+    def list(self, workspace_id: Optional[str] = None) -> List[FTIRSession]:
+        from ..db import list_session_records
+        records = list_session_records(workspace_id=workspace_id, module="ftir")
+        for rec in records:
+            sid = rec["session_id"]
+            with self._lock:
+                already = sid in self._sessions
+            if not already:
+                p = Path(rec["file_path"])
+                if p.exists():
+                    try:
+                        self.restore_from_path(
+                            sid,
+                            p,
+                            workspace_id=rec.get("workspace_id", "general"),
+                            display_name=rec.get("display_name"),
+                            y_mode=(rec.get("extra") or {}).get("y_mode", "absorbance"),
+                        )
+                    except Exception:
+                        pass
         with self._lock:
+            if workspace_id:
+                return [s for s in self._sessions.values() if s.workspace_id == workspace_id]
             return list(self._sessions.values())
 
 
@@ -165,6 +223,7 @@ async def get_or_restore(session_id: str) -> Optional[FTIRSession]:
 def session_summary(s: FTIRSession) -> Dict[str, Any]:
     return {
         "session_id": s.session_id,
+        "workspace_id": s.workspace_id,
         "display_name": s.display_name,
         "path": str(s.path),
         "n_points": int(s.x.size),

@@ -64,6 +64,7 @@ class LCMSSessionState:
     path: Path
     index: MzMLTICIndex
     _reader_lock: threading.Lock
+    workspace_id: str = "general"
     uv: Optional[UVSessionState] = None
 
     def ms1_meta(self) -> List[Dict[str, Any]]:
@@ -79,30 +80,17 @@ class LCMSSessionState:
 
 
 class LCMSRegistry:
-    """Process-local registry of loaded mzML sessions.
-
-    Simple in-memory store — fine for a single-user local dev server; would be
-    swapped for Redis / disk in a multi-user deployment.
-    """
+    """Process-local registry of loaded mzML sessions with SQLite persistence."""
 
     def __init__(self) -> None:
         self._sessions: Dict[str, LCMSSessionState] = {}
         self._lock = threading.Lock()
 
-    def add_from_path(self, path: Path, *, display_name: Optional[str] = None, rt_unit: str = "minutes") -> LCMSSessionState:
-        idx = MzMLTICIndex(path, rt_unit=rt_unit)
-        idx.build()
-        fatal = idx.stats.get("fatal_error")
-        if fatal and not idx.ms1:
-            raise LCMSLoadError(str(fatal))
-        session_id = uuid.uuid4().hex
-        return self._store(session_id, display_name or path.name, path, idx)
-
-    def restore_from_path(
+    def add_from_path(
         self,
-        session_id: str,
         path: Path,
         *,
+        workspace_id: str = "general",
         display_name: Optional[str] = None,
         rt_unit: str = "minutes",
     ) -> LCMSSessionState:
@@ -111,7 +99,34 @@ class LCMSRegistry:
         fatal = idx.stats.get("fatal_error")
         if fatal and not idx.ms1:
             raise LCMSLoadError(str(fatal))
-        return self._store(session_id, display_name or path.name, path, idx)
+        session_id = uuid.uuid4().hex
+        state = self._store(session_id, display_name or path.name, path, idx, workspace_id=workspace_id)
+        from ..db import save_session_record
+        save_session_record(
+            session_id=session_id,
+            workspace_id=workspace_id,
+            module="lcms",
+            display_name=state.display_name,
+            file_path=str(path),
+            extra={"rt_unit": rt_unit},
+        )
+        return state
+
+    def restore_from_path(
+        self,
+        session_id: str,
+        path: Path,
+        *,
+        workspace_id: str = "general",
+        display_name: Optional[str] = None,
+        rt_unit: str = "minutes",
+    ) -> LCMSSessionState:
+        idx = MzMLTICIndex(path, rt_unit=rt_unit)
+        idx.build()
+        fatal = idx.stats.get("fatal_error")
+        if fatal and not idx.ms1:
+            raise LCMSLoadError(str(fatal))
+        return self._store(session_id, display_name or path.name, path, idx, workspace_id=workspace_id)
 
     def _store(
         self,
@@ -119,6 +134,7 @@ class LCMSRegistry:
         display_name: str,
         path: Path,
         idx: MzMLTICIndex,
+        workspace_id: str = "general",
     ) -> LCMSSessionState:
         state = LCMSSessionState(
             session_id=session_id,
@@ -126,6 +142,7 @@ class LCMSRegistry:
             path=path,
             index=idx,
             _reader_lock=threading.Lock(),
+            workspace_id=workspace_id,
         )
         with self._lock:
             self._sessions[session_id] = state
@@ -133,14 +150,74 @@ class LCMSRegistry:
 
     def get(self, session_id: str) -> Optional[LCMSSessionState]:
         with self._lock:
-            return self._sessions.get(session_id)
+            state = self._sessions.get(session_id)
+        if state is not None:
+            return state
+
+        from ..db import get_session_record
+        rec = get_session_record(session_id)
+        if rec and rec.get("module") == "lcms":
+            p = Path(rec["file_path"])
+            if p.exists():
+                extra = rec.get("extra") or {}
+                try:
+                    state = self.restore_from_path(
+                        session_id,
+                        p,
+                        workspace_id=rec.get("workspace_id", "general"),
+                        display_name=rec.get("display_name"),
+                        rt_unit=extra.get("rt_unit", "minutes"),
+                    )
+                    uv_path_str = extra.get("uv_path")
+                    if uv_path_str:
+                        uv_p = Path(uv_path_str)
+                        if uv_p.exists():
+                            try:
+                                attach_uv_from_csv(state, uv_p)
+                            except Exception:
+                                pass
+                    return state
+                except Exception:
+                    pass
+        return None
 
     def remove(self, session_id: str) -> bool:
+        from ..db import delete_session_record
+        delete_session_record(session_id)
         with self._lock:
             return self._sessions.pop(session_id, None) is not None
 
-    def list(self) -> List[LCMSSessionState]:
+    def list(self, workspace_id: Optional[str] = None) -> List[LCMSSessionState]:
+        from ..db import list_session_records
+        records = list_session_records(workspace_id=workspace_id, module="lcms")
+        for rec in records:
+            sid = rec["session_id"]
+            with self._lock:
+                already = sid in self._sessions
+            if not already:
+                p = Path(rec["file_path"])
+                if p.exists():
+                    try:
+                        restored = self.restore_from_path(
+                            sid,
+                            p,
+                            workspace_id=rec.get("workspace_id", "general"),
+                            display_name=rec.get("display_name"),
+                            rt_unit=(rec.get("extra") or {}).get("rt_unit", "minutes"),
+                        )
+                        uv_path_str = (rec.get("extra") or {}).get("uv_path")
+                        if uv_path_str:
+                            uv_p = Path(uv_path_str)
+                            if uv_p.exists():
+                                try:
+                                    attach_uv_from_csv(restored, uv_p)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
         with self._lock:
+            if workspace_id:
+                return [s for s in self._sessions.values() if s.workspace_id == workspace_id]
             return list(self._sessions.values())
 
 
@@ -452,12 +529,41 @@ def attach_uv_from_csv(state: LCMSSessionState, csv_path: Path, *, filename: str
         warnings=list(warnings),
     )
     state.uv = uv
+    from ..db import get_session_record, save_session_record
+    rec = get_session_record(state.session_id)
+    if rec:
+        extra = rec.get("extra") or {}
+        extra["uv_path"] = str(csv_path)
+        extra["uv_filename"] = filename
+        save_session_record(
+            session_id=state.session_id,
+            workspace_id=state.workspace_id,
+            module="lcms",
+            display_name=state.display_name,
+            file_path=str(state.path),
+            extra=extra,
+        )
     return uv
 
 
 def clear_uv(state: LCMSSessionState) -> bool:
     had = state.uv is not None
     state.uv = None
+    if had:
+        from ..db import get_session_record, save_session_record
+        rec = get_session_record(state.session_id)
+        if rec:
+            extra = rec.get("extra") or {}
+            extra.pop("uv_path", None)
+            extra.pop("uv_filename", None)
+            save_session_record(
+                session_id=state.session_id,
+                workspace_id=state.workspace_id,
+                module="lcms",
+                display_name=state.display_name,
+                file_path=str(state.path),
+                extra=extra,
+            )
     return had
 
 

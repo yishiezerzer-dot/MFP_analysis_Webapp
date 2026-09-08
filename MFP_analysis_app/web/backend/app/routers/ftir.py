@@ -16,12 +16,13 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from lab_gui.ftir_io import FTIRLoadError
 
 from ..blob_store import manifest_key, put_json
+from ..db import get_upload_dir
 from ..upload_utils import read_upload_bytes
 from ..services.ftir_service import (
     FTIRSession,
@@ -138,13 +139,18 @@ async def create_session(
     blob_url: str | None = Form(None),
     blob_filename: str | None = Form(None),
     y_mode: YMode = Form("absorbance"),
+    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
+    import hashlib
     data, name = await read_upload_bytes(file, blob_url, blob_filename)
-    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_ftir_"))
-    dest = tmp_dir / name
+    upload_dir = get_upload_dir("ftir")
+    stem = Path(name).stem or "upload"
+    suffix = "".join(Path(name).suffixes)
+    digest = hashlib.sha256(data).hexdigest()[:12]
+    dest = upload_dir / f"{stem}.{digest}{suffix}"
     dest.write_bytes(data)
     try:
-        state = registry.add_from_path(dest, display_name=name, y_mode=y_mode)
+        state = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name, y_mode=y_mode)
     except FTIRLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -163,8 +169,10 @@ async def create_session(
 
 
 @router.get("/sessions")
-def list_sessions() -> List[Dict[str, Any]]:
-    return [session_summary(s) for s in registry.list()]
+def list_sessions(
+    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
+) -> List[Dict[str, Any]]:
+    return [session_summary(s) for s in registry.list(workspace_id=x_workspace_id)]
 
 
 @router.get("/sessions/{sid}")

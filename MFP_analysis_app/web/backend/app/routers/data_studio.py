@@ -18,10 +18,11 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from ..blob_store import manifest_key, put_json
+from ..db import get_upload_dir
 from ..upload_utils import read_upload_bytes
 from ..services.data_studio_service import (
     DataStudioSession,
@@ -70,9 +71,14 @@ class PlotBody(BaseModel):
     transforms: List[Dict[str, Any]] = Field(default_factory=list)
     x_col: Optional[str] = None
     y_cols: List[str] = Field(default_factory=list)
-    y_normalize: str = "none"
-    x_normalize: str = "none"
-    max_points: int = Field(default=10000, ge=100, le=200000)
+    plot_type: str = "line"
+    mode: str = "lines"
+    marker_size: int = Field(default=6, ge=1, le=30)
+    line_width: int = Field(default=2, ge=1, le=10)
+    normalize: Optional[str] = None
+    x_range: Optional[List[float]] = None
+    y_range: Optional[List[float]] = None
+    max_points: int = Field(default=5000, ge=100, le=50000)
 
 
 class HistogramBody(BaseModel):
@@ -89,12 +95,17 @@ async def create_session(
     file: UploadFile | None = File(None),
     blob_url: str | None = Form(None),
     blob_filename: str | None = Form(None),
+    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
+    import hashlib
     data, name = await read_upload_bytes(file, blob_url, blob_filename)
-    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_ds_"))
-    dest = tmp_dir / name
+    upload_dir = get_upload_dir("data_studio")
+    stem = Path(name).stem or "upload"
+    suffix = "".join(Path(name).suffixes)
+    digest = hashlib.sha256(data).hexdigest()[:12]
+    dest = upload_dir / f"{stem}.{digest}{suffix}"
     dest.write_bytes(data)
-    s = registry.add_from_path(dest, display_name=name)
+    s = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name)
     if blob_url:
         await put_json(
             manifest_key("data_studio", s.session_id),
@@ -108,8 +119,10 @@ async def create_session(
 
 
 @router.get("/sessions")
-def list_sessions() -> List[Dict[str, Any]]:
-    return [session_summary(s) for s in registry.list()]
+def list_sessions(
+    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
+) -> List[Dict[str, Any]]:
+    return [session_summary(s) for s in registry.list(workspace_id=x_workspace_id)]
 
 
 @router.get("/sessions/{sid}")

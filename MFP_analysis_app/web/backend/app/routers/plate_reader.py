@@ -14,10 +14,11 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from ..blob_store import manifest_key, put_json
+from ..db import get_upload_dir
 from ..upload_utils import read_upload_bytes
 from ..services.plate_reader_service import get_or_restore, preview, registry, run_mic_wizard
 
@@ -27,6 +28,7 @@ router = APIRouter()
 def _summary(s) -> Dict[str, Any]:
     return {
         "session_id": s.session_id,
+        "workspace_id": getattr(s, "workspace_id", "general"),
         "display_name": s.display_name,
         "path": str(s.path),
         "sheets": list(s.sheets),
@@ -46,7 +48,9 @@ async def create_session(
     file: UploadFile | None = File(None),
     blob_url: str | None = Form(None),
     blob_filename: str | None = Form(None),
+    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
+    import hashlib
     data, name = await read_upload_bytes(file, blob_url, blob_filename)
     suf = Path(name).suffix.lower()
     if suf not in _ALLOWED:
@@ -54,11 +58,13 @@ async def create_session(
             status_code=400,
             detail=f"Unsupported file type '{suf}'. Allowed: {sorted(_ALLOWED)}",
         )
-    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_plate_"))
-    dest = tmp_dir / name
+    upload_dir = get_upload_dir("plate_reader")
+    stem = Path(name).stem or "upload"
+    digest = hashlib.sha256(data).hexdigest()[:12]
+    dest = upload_dir / f"{stem}.{digest}{suf}"
     dest.write_bytes(data)
     try:
-        session = registry.add_from_path(dest, display_name=name)
+        session = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to register file: {exc}")
     if blob_url:
@@ -74,8 +80,10 @@ async def create_session(
 
 
 @router.get("/sessions")
-def list_sessions() -> List[Dict[str, Any]]:
-    return [_summary(s) for s in registry.list()]
+def list_sessions(
+    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
+) -> List[Dict[str, Any]]:
+    return [_summary(s) for s in registry.list(workspace_id=x_workspace_id)]
 
 
 async def _require_session(sid: str):

@@ -29,6 +29,7 @@ import { usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
 import { Tooltip } from "../components/Tooltip";
+import { useWorkspace } from "../context/WorkspaceContext";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -427,6 +428,7 @@ function mergeQuantState(value: Partial<FTIRQuantState>): FTIRQuantState {
 }
 
 export function FTIRView() {
+  const { activeWorkspaceId } = useWorkspace();
   const [sessions, setSessions] = useState<FTIRSessionSummary[]>([]);
   const [activeSid, setActiveSid] = useStoredState<string | null>(
     `${FTIR_STORAGE_PREFIX}.activeSessionId`,
@@ -520,20 +522,52 @@ export function FTIRView() {
   );
 
   useEffect(() => {
+    let cancelled = false;
     api.ftir
       .list()
-      .then((list) => {
+      .then(async (list) => {
+        if (cancelled) return;
         setSessions(list);
-        setActiveSid((current) =>
-          current && list.some((session) => session.session_id === current)
+
+        let restoredSid: string | null = null;
+        try {
+          const res = await api.workspaces.getState(activeWorkspaceId, "ftir");
+          if (res?.state?.activeSid && list.some((s) => s.session_id === res.state.activeSid)) {
+            restoredSid = res.state.activeSid;
+          }
+        } catch {
+          // ignore
+        }
+
+        setActiveSid((current) => {
+          if (restoredSid) return restoredSid;
+          return current && list.some((session) => session.session_id === current)
             ? current
-            : list[0]?.session_id ?? null,
-        );
+            : list[0]?.session_id ?? null;
+        });
       })
-      .catch((e) => setError(String(e)));
-    api.ftir.library().then(setLibMeta).catch(() => undefined);
-    api.ftir.libraryCategories().then(setLibraryCategories).catch(() => undefined);
-  }, []);
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      });
+    api.ftir.library().then((m) => { if (!cancelled) setLibMeta(m); }).catch(() => undefined);
+    api.ftir.libraryCategories().then((c) => { if (!cancelled) setLibraryCategories(c); }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const timer = window.setTimeout(() => {
+      api.workspaces
+        .saveState(activeWorkspaceId, "ftir", {
+          activeSid,
+          mode: pre.mode,
+        })
+        .catch(() => undefined);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [activeWorkspaceId, activeSid, pre.mode]);
 
   // Retry library categories if the initial fetch failed (e.g. backend not ready on mount).
   useEffect(() => {

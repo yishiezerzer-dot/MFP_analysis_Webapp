@@ -11,6 +11,7 @@ import type { PageHeaderContextValue } from "./layout/PageHeader";
 import { UserMenu, type AppUser } from "./layout/UserMenu";
 import { Tooltip } from "./components/Tooltip";
 import { BrowserBridgeProvider } from "./automation/BrowserBridge";
+import { useWorkspace } from "./context/WorkspaceContext";
 import mfpLogo from "./assets/mfp-logo.png";
 
 const CURRENT_USER: AppUser = {
@@ -190,6 +191,16 @@ function Sidebar() {
   }, [pinned]);
 
   const expanded = pinned || hovered;
+  const { activeWorkspace } = useWorkspace();
+
+  const currentUser: AppUser = useMemo(
+    () => ({
+      name: activeWorkspace?.name || "Lab Profile",
+      secondary: "Lab Member",
+      presence: "online",
+    }),
+    [activeWorkspace],
+  );
 
   return (
     <aside
@@ -291,7 +302,7 @@ function Sidebar() {
         })}
       </nav>
 
-      <UserMenu user={CURRENT_USER} expanded={expanded} />
+      <UserMenu user={currentUser} expanded={expanded} />
     </aside>
   );
 }

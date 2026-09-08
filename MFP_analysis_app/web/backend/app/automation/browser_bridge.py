@@ -64,13 +64,18 @@ class BrowserConnectionRegistry:
                     # Transfer in-flight requests so they survive the reconnect.
                     # Do NOT close the old WebSocket — closing it would fire the frontend
                     # onclose handler, scheduling yet another reconnect and creating a loop.
-                    to_resend = {rid: req for rid, req in old.pending.items() if not req.future.done()}
+                    to_resend = {
+                        rid: req
+                        for rid, req in old.pending.items()
+                        if hasattr(req, "future") and not req.future.done()
+                    }
                     old.pending.clear()
                 else:
                     # Genuinely different browser tab: fail pending futures and close old socket.
                     for req in old.pending.values():
-                        if not req.future.done():
-                            req.future.set_exception(
+                        fut = req.future if hasattr(req, "future") else req
+                        if not fut.done():
+                            fut.set_exception(
                                 BrowserConnectionRequired("browser superseded by a newer tab")
                             )
                     old.pending.clear()
@@ -183,8 +188,9 @@ class BrowserConnectionRegistry:
         if connection.heartbeat_task and connection.heartbeat_task is not asyncio.current_task():
             connection.heartbeat_task.cancel()
         for req in list(connection.pending.values()):
-            if not req.future.done():
-                req.future.set_exception(error)
+            fut = req.future if hasattr(req, "future") else req
+            if not fut.done():
+                fut.set_exception(error)
         connection.pending.clear()
 
 

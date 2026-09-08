@@ -18,11 +18,12 @@ import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Response, UploadFile
 import numpy as np
 from pydantic import BaseModel, Field
 
 from ..blob_store import manifest_key, put_json
+from ..db import get_upload_dir
 from ..upload_utils import read_upload_bytes
 from ..services.lcms_service import (
     LCMSSessionState,
@@ -43,8 +44,7 @@ from lab_gui.lcms_io import LCMSLoadError, UVLoadError
 from lab_gui.lcms_polymer_match import PolymerSearchTooLarge
 
 router = APIRouter()
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_UPLOAD_ROOT = _PROJECT_ROOT / ".mfp_uploads" / "lcms"
+_UPLOAD_ROOT = get_upload_dir("lcms")
 _MZML_UPLOAD_DIR = _UPLOAD_ROOT / "mzml"
 _UV_UPLOAD_DIR = _UPLOAD_ROOT / "uv"
 
@@ -136,6 +136,7 @@ def _session_summary(state: LCMSSessionState) -> Dict[str, Any]:
     polarities = sorted({m.polarity for m in metas if m.polarity})
     return {
         "session_id": state.session_id,
+        "workspace_id": state.workspace_id,
         "display_name": state.display_name,
         "path": str(state.path),
         "ms1_count": len(metas),
@@ -166,6 +167,7 @@ async def create_session(
     blob_url: str | None = Form(None),
     blob_filename: str | None = Form(None),
     rt_unit: str = Form("minutes"),
+    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
     data, name = await read_upload_bytes(file, blob_url, blob_filename)
     if not name.lower().endswith((".mzml", ".mzml.gz")):
@@ -173,7 +175,7 @@ async def create_session(
     dest = _persistent_upload_path(_MZML_UPLOAD_DIR, name, data)
     dest.write_bytes(data)
     try:
-        state = registry.add_from_path(dest, display_name=name, rt_unit=rt_unit)
+        state = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name, rt_unit=rt_unit)
     except LCMSLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -192,13 +194,17 @@ async def create_session(
 
 
 @router.post("/sessions/from_path")
-def load_session_from_path(body: LoadFromPathRequest) -> Dict[str, Any]:
+def load_session_from_path(
+    body: LoadFromPathRequest,
+    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
+) -> Dict[str, Any]:
     p = Path(body.path)
     if not p.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {body.path}")
     try:
         state = registry.add_from_path(
             p,
+            workspace_id=x_workspace_id,
             display_name=body.display_name or p.name,
             rt_unit=body.rt_unit,
         )
@@ -210,8 +216,10 @@ def load_session_from_path(body: LoadFromPathRequest) -> Dict[str, Any]:
 
 
 @router.get("/sessions")
-def list_sessions() -> List[Dict[str, Any]]:
-    return [_session_summary(s) for s in registry.list()]
+def list_sessions(
+    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
+) -> List[Dict[str, Any]]:
+    return [_session_summary(s) for s in registry.list(workspace_id=x_workspace_id)]
 
 
 async def _require_session(sid: str) -> LCMSSessionState:

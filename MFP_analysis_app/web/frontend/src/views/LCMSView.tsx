@@ -36,6 +36,7 @@ import { Tooltip } from "../components/Tooltip";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
 import { useAutomationDispatch } from "../automation/registry";
 import { useStoredState } from "../hooks/useStoredState";
+import { useWorkspace } from "../context/WorkspaceContext";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -1118,6 +1119,7 @@ function filterIgnoredRegionSpectrum(
 export function LCMSView() {
   const browserAutomation = useBrowserAutomation();
   const actionDispatch = useAutomationDispatch();
+  const { activeWorkspaceId } = useWorkspace();
   const persistedProjectState = useMemo(() => loadProjectPersistence(), []);
 
   // Sessions / data
@@ -1557,19 +1559,39 @@ export function LCMSView() {
   // --- data loading ---------------------------------------------------------
 
   useEffect(() => {
+    let cancelled = false;
     api.lcms
       .list()
-      .then((list) => {
+      .then(async (list) => {
+        if (cancelled) return;
         setSessions(list);
         setSessionsHydrated(true);
-        setActiveSid((current) =>
-          current && list.some((session) => session.session_id === current)
+
+        // Try to restore saved workspace state
+        let restoredSid: string | null = null;
+        try {
+          const res = await api.workspaces.getState(activeWorkspaceId, "lcms");
+          if (res?.state?.activeSid && list.some((s) => s.session_id === res.state.activeSid)) {
+            restoredSid = res.state.activeSid;
+          }
+        } catch {
+          // ignore
+        }
+
+        setActiveSid((current) => {
+          if (restoredSid) return restoredSid;
+          return current && list.some((session) => session.session_id === current)
             ? current
-            : list[0]?.session_id ?? null,
-        );
+            : list[0]?.session_id ?? null;
+        });
       })
-      .catch((err) => setError(String(err)));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+      .catch((err) => {
+        if (!cancelled) setError(String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     savePolymerMonomerPresets(polymerSettings.monomers);
@@ -1579,6 +1601,20 @@ export function LCMSView() {
     savePolymerUiSettingsDefault(polymerSettings);
     setInfo("Saved polymer matching defaults.");
   }, [polymerSettings]);
+
+  useEffect(() => {
+    if (!sessionsHydrated || !activeWorkspaceId) return;
+    const timer = window.setTimeout(() => {
+      api.workspaces
+        .saveState(activeWorkspaceId, "lcms", {
+          activeSid,
+          polarity,
+          activeTab,
+        })
+        .catch(() => undefined);
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [activeWorkspaceId, activeSid, polarity, activeTab, sessionsHydrated]);
 
   const createProject = useCallback((providedName?: string) => {
     const name = providedName ?? window.prompt("Project name") ?? "";
