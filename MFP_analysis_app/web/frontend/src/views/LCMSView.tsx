@@ -36,6 +36,7 @@ import { Tooltip } from "../components/Tooltip";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
 import { useAutomationDispatch } from "../automation/registry";
 import { useStoredState } from "../hooks/useStoredState";
+import { useUndoRedo } from "../hooks/useUndoRedo";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
 import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
@@ -1295,7 +1296,15 @@ export function LCMSView() {
 
   // View – region select
   const [regionSelect, setRegionSelect] = useState(false);
-  const [selectedRegion, setSelectedRegion] = useState<{ rtMin: number; rtMax: number } | null>(null);
+  const {
+    state: selectedRegion,
+    set: setSelectedRegion,
+    undo: undoRegion,
+    redo: redoRegion,
+    canUndo: canUndoRegion,
+    canRedo: canRedoRegion,
+    reset: resetRegion,
+  } = useUndoRedo<{ rtMin: number; rtMax: number } | null>(null, { enableKeyShortcuts: true });
   const [regionIntegration, setRegionIntegration] = useState<IntegratedTraceRegion | null>(null);
 
   // RT navigation
@@ -2776,15 +2785,20 @@ export function LCMSView() {
     setRegionSelect(v);
     setSelectedRegion(null);
     setRegionIntegration(null);
-  }, []);
+  }, [setSelectedRegion]);
 
-  const onRegionSelected = useCallback(
-    async (rtMin: number, rtMax: number) => {
-      if (!activeSid) return;
-      const lo = Math.min(rtMin, rtMax);
-      const hi = Math.max(rtMin, rtMax);
-      if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return;
-      setSelectedRegion({ rtMin: lo, rtMax: hi });
+  const loadRegionData = useCallback(
+    async (region: { rtMin: number; rtMax: number } | null) => {
+      if (!activeSid || !region) {
+        setRegionIntegration(null);
+        return;
+      }
+      const lo = Math.min(region.rtMin, region.rtMax);
+      const hi = Math.max(region.rtMin, region.rtMax);
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) {
+        setRegionIntegration(null);
+        return;
+      }
       setSelectedRt((lo + hi) / 2);
 
       // Instantaneous baseline-corrected trapezoidal integration of chromatogram
@@ -2819,8 +2833,35 @@ export function LCMSView() {
         setBusy(false);
       }
     },
-    [activeSid, pol, activePolymerSettings, spectrumFromRegionData, tic],
+    [activeSid, pol, activePolymerSettings, spectrumFromRegionData, tic, setSelectedRt],
   );
+
+  const onRegionSelected = useCallback(
+    (rtMin: number, rtMax: number) => {
+      if (!activeSid) return;
+      const lo = Math.min(rtMin, rtMax);
+      const hi = Math.max(rtMin, rtMax);
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return;
+      const nextRegion = { rtMin: lo, rtMax: hi };
+      setSelectedRegion(nextRegion);
+      void loadRegionData(nextRegion);
+    },
+    [activeSid, setSelectedRegion, loadRegionData],
+  );
+
+  // Sync when selectedRegion is undone or redone
+  const prevRegionRef = useRef<{ rtMin: number; rtMax: number } | null>(null);
+  useEffect(() => {
+    if (selectedRegion !== prevRegionRef.current) {
+      prevRegionRef.current = selectedRegion;
+      void loadRegionData(selectedRegion);
+    }
+  }, [selectedRegion, loadRegionData]);
+
+  // Reset region history on session switch
+  useEffect(() => {
+    resetRegion(null);
+  }, [activeSid, resetRegion]);
 
   const saveWorkspace = () => {
     const uvTextLabelsBySessionId = Object.fromEntries(
@@ -3567,6 +3608,10 @@ export function LCMSView() {
                   overlayTraces={ticOverlay}
                   onClick={onTICClick}
                   onRegionSelected={onRegionSelected}
+                  onUndoRegion={undoRegion}
+                  onRedoRegion={redoRegion}
+                  canUndoRegion={canUndoRegion}
+                  canRedoRegion={canRedoRegion}
                   selectedRt={selectedRt}
                   selectedRegion={selectedRegion}
                   regionIntegration={regionIntegration}
@@ -5673,6 +5718,10 @@ function TICChart(props: {
   overlayTraces: LCMSTICOverlayTrace[];
   onClick: (e: Readonly<PlotMouseEvent>) => void;
   onRegionSelected?: (rtMin: number, rtMax: number) => void;
+  onUndoRegion?: () => void;
+  onRedoRegion?: () => void;
+  canUndoRegion?: boolean;
+  canRedoRegion?: boolean;
   selectedRt: number | null;
   selectedRegion?: { rtMin: number; rtMax: number } | null;
   regionIntegration?: IntegratedTraceRegion | null;
@@ -5844,6 +5893,38 @@ function TICChart(props: {
           )}
         </div>
         <div className="flex items-center gap-2 text-xs text-ink-500">
+          {props.regionSelect && (
+            <div className="flex items-center gap-0.5 mr-1">
+              <Tooltip content="Undo region slice (Ctrl+Z)" placement="bottom">
+                <button
+                  type="button"
+                  className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                  disabled={!props.canUndoRegion}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onUndoRegion?.();
+                  }}
+                  title="Undo region slice (Ctrl+Z)"
+                >
+                  ↩
+                </button>
+              </Tooltip>
+              <Tooltip content="Redo region slice (Ctrl+Y)" placement="bottom">
+                <button
+                  type="button"
+                  className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                  disabled={!props.canRedoRegion}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onRedoRegion?.();
+                  }}
+                  title="Redo region slice (Ctrl+Y)"
+                >
+                  ↪
+                </button>
+              </Tooltip>
+            </div>
+          )}
           {props.regionSelect && props.selectedRegion != null ? (
             <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
               Region {formatRt(props.selectedRegion.rtMin, props.rtUnit)} - {formatRt(props.selectedRegion.rtMax, props.rtUnit)}
