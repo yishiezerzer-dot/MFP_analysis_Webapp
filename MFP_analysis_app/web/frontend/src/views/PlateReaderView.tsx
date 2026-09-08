@@ -20,6 +20,7 @@ import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
 import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
 import { useStoredState } from "../hooks/useStoredState";
+import { useUndoRedo } from "../hooks/useUndoRedo";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
 import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
@@ -163,11 +164,23 @@ export function PlateReaderView() {
   const [busy, setBusy] = useState(false);
 
   // Wizard state
-  const [rowRoles, setRowRoles] = useStoredState<Record<number, RowRole>>(
+  const [storedRowRoles, setStoredRowRoles] = useStoredState<Record<number, RowRole>>(
     `${PLATE_STORAGE_PREFIX}.rowRoles`,
     {},
     (value) => (value && typeof value === "object" ? value : {}),
   );
+  const {
+    state: rowRoles,
+    set: setRowRoles,
+    undo: undoRowRoles,
+    redo: redoRowRoles,
+    canUndo: canUndoRowRoles,
+    canRedo: canRedoRowRoles,
+  } = useUndoRedo<Record<number, RowRole>>(storedRowRoles, { enableKeyShortcuts: true });
+
+  useEffect(() => {
+    setStoredRowRoles(rowRoles);
+  }, [rowRoles, setStoredRowRoles]);
   const [concCols, setConcCols] = useStoredState<string[]>(
     `${PLATE_STORAGE_PREFIX}.concCols`,
     [],
@@ -703,6 +716,10 @@ export function PlateReaderView() {
                   onSetRole={setRole}
                   onToggleCol={toggleConcCol}
                   onMoveConcCol={moveConcCol}
+                  onUndoRoles={undoRowRoles}
+                  onRedoRoles={redoRowRoles}
+                  canUndoRoles={canUndoRowRoles}
+                  canRedoRoles={canRedoRowRoles}
                 />
               )}
 
@@ -890,16 +907,54 @@ function PreviewTable(props: {
   onSetRole: (idx: number, role: RowRole) => void;
   onToggleCol: (col: string) => void;
   onMoveConcCol: (col: string, dir: -1 | 1) => void;
+  onUndoRoles?: () => void;
+  onRedoRoles?: () => void;
+  canUndoRoles?: boolean;
+  canRedoRoles?: boolean;
 }) {
   const { preview, rowRoles, concCols } = props;
   return (
     <div className="card shrink-0">
       <div className="flex items-baseline justify-between border-b border-ink-200 px-4 py-2">
         <h3 className="text-sm font-semibold">Plate preview</h3>
-        <div className="text-xs text-ink-500">
-          {preview.n_rows_preview.toLocaleString()} of{" "}
-          {preview.n_rows_total.toLocaleString()} rows · {preview.n_cols_total} cols
-          <span className="ml-3 text-ink-400">Click column headers to mark concentration. Use row buttons to assign roles.</span>
+        <div className="flex items-center gap-2">
+          {props.onUndoRoles && (
+            <div className="flex items-center gap-0.5 mr-2">
+              <Tooltip content="Undo role assignment (Ctrl+Z)" placement="bottom">
+                <button
+                  type="button"
+                  className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                  disabled={!props.canUndoRoles}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onUndoRoles?.();
+                  }}
+                  title="Undo role (Ctrl+Z)"
+                >
+                  ↩
+                </button>
+              </Tooltip>
+              <Tooltip content="Redo role assignment (Ctrl+Y)" placement="bottom">
+                <button
+                  type="button"
+                  className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                  disabled={!props.canRedoRoles}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onRedoRoles?.();
+                  }}
+                  title="Redo role (Ctrl+Y)"
+                >
+                  ↪
+                </button>
+              </Tooltip>
+            </div>
+          )}
+          <div className="text-xs text-ink-500">
+            {preview.n_rows_preview.toLocaleString()} of{" "}
+            {preview.n_rows_total.toLocaleString()} rows · {preview.n_cols_total} cols
+            <span className="ml-3 text-ink-400">Click column headers to mark concentration. Use row buttons to assign roles.</span>
+          </div>
         </div>
       </div>
 

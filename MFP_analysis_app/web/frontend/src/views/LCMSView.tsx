@@ -1153,7 +1153,14 @@ export function LCMSView() {
   const [tic, setTic] = useState<TICData | null>(null);
   const [spectrum, setSpectrum] = useState<SpectrumData | null>(null);
   const [uv, setUv] = useState<UVChromatogramResponse | null>(null);
-  const [eicPlots, setEicPlots] = useState<LCMSEICPlot[]>([]);
+  const {
+    state: eicPlots,
+    set: setEicPlots,
+    undo: undoEic,
+    redo: redoEic,
+    canUndo: canUndoEic,
+    canRedo: canRedoEic,
+  } = useUndoRedo<LCMSEICPlot[]>([]);
   const [featureRows, setFeatureRows] = useState<LCMSFeatureRow[]>([]);
   const [ticOverlay, setTicOverlay] = useState<LCMSTICOverlayTrace[]>([]);
   const [uvOverlay, setUvOverlay] = useState<LCMSUVOverlayTrace[]>([]);
@@ -3641,6 +3648,10 @@ export function LCMSView() {
                       selected_rt: selectedRt,
                     })
                   }
+                  onUndoEic={undoEic}
+                  onRedoEic={redoEic}
+                  canUndoEic={canUndoEic}
+                  canRedoEic={canRedoEic}
                   clearLabel="Clear file"
                   settings={graphSettings.eic}
                   overlaySettings={graphSettings.eicOverlay}
@@ -3667,6 +3678,10 @@ export function LCMSView() {
                         setEicPlots((prev) => prev.filter((item) => item.id !== plot.id))
                       }
                       onIntegrate={integrateEicPlot}
+                      onUndoEic={undoEic}
+                      onRedoEic={redoEic}
+                      canUndoEic={canUndoEic}
+                      canRedoEic={canRedoEic}
                       settings={graphSettings.eic}
                       overlaySettings={graphSettings.eicOverlay}
                     />
@@ -6040,6 +6055,10 @@ function EICChart(props: {
   onClear: () => void;
   onIntegrate: (plot: LCMSEICPlot) => void;
   onIntegrateAll?: () => void;
+  onUndoEic?: () => void;
+  onRedoEic?: () => void;
+  canUndoEic?: boolean;
+  canRedoEic?: boolean;
   clearLabel?: string;
   selectedRt: number | null;
   rtUnit: RtUnit;
@@ -6186,6 +6205,38 @@ function EICChart(props: {
           >
             {props.clearLabel ?? "Clear"}
           </button>
+          {props.onUndoEic && (
+            <div className="flex items-center gap-0.5">
+              <Tooltip content="Undo EIC action (Ctrl+Z)" placement="bottom">
+                <button
+                  type="button"
+                  className="rounded border border-ink-200 bg-surface px-1.5 py-1 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                  disabled={!props.canUndoEic}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onUndoEic?.();
+                  }}
+                  title="Undo EIC (Ctrl+Z)"
+                >
+                  ↩
+                </button>
+              </Tooltip>
+              <Tooltip content="Redo EIC action (Ctrl+Y)" placement="bottom">
+                <button
+                  type="button"
+                  className="rounded border border-ink-200 bg-surface px-1.5 py-1 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                  disabled={!props.canRedoEic}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onRedoEic?.();
+                  }}
+                  title="Redo EIC (Ctrl+Y)"
+                >
+                  ↪
+                </button>
+              </Tooltip>
+            </div>
+          )}
           <PaperFigureExportToolbar
             disabled={props.eics.length === 0}
             storageKey="mfp-publication-plot-export-lcms-eic"

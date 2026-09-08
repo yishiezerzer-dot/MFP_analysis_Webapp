@@ -455,11 +455,23 @@ export function FTIRView() {
   useEffect(() => {
     setStoredPre(pre);
   }, [pre, setStoredPre]);
-  const [pk, setPk] = useStoredState<PeakPickOptions>(
+  const [storedPk, setStoredPk] = useStoredState<PeakPickOptions>(
     `${FTIR_STORAGE_PREFIX}.peakPick`,
     DEFAULT_PEAK,
     (value) => ({ ...DEFAULT_PEAK, ...value }),
   );
+  const {
+    state: pk,
+    set: setPk,
+    undo: undoPk,
+    redo: redoPk,
+    canUndo: canUndoPk,
+    canRedo: canRedoPk,
+  } = useUndoRedo<PeakPickOptions>(storedPk);
+
+  useEffect(() => {
+    setStoredPk(pk);
+  }, [pk, setStoredPk]);
   const [spectrum, setSpectrum] = useState<FTIRSpectrumResponse | null>(null);
   const [showSecondDerivative, setShowSecondDerivative] = useState<boolean>(false);
   const [showBaselineCurve, setShowBaselineCurve] = useState<boolean>(false);
@@ -1339,6 +1351,30 @@ export function FTIRView() {
                   summary={`${pk.top_n || "all"} peaks, ${pk.assign ? "library on" : "library off"}`}
                   open={controlPanels.peaks}
                   onOpenChange={(open) => setControlPanelOpen("peaks", open)}
+                  headerRight={
+                    <div className="flex items-center gap-1">
+                      <Tooltip content="Undo peak pick adjustment (Ctrl+Z)" placement="bottom">
+                        <button
+                          type="button"
+                          className="btn-ghost rounded p-1 text-xs disabled:opacity-30"
+                          disabled={!canUndoPk}
+                          onClick={(e) => { e.stopPropagation(); undoPk(); }}
+                        >
+                          ↩
+                        </button>
+                      </Tooltip>
+                      <Tooltip content="Redo peak pick adjustment (Ctrl+Y)" placement="bottom">
+                        <button
+                          type="button"
+                          className="btn-ghost rounded p-1 text-xs disabled:opacity-30"
+                          disabled={!canRedoPk}
+                          onClick={(e) => { e.stopPropagation(); redoPk(); }}
+                        >
+                          ↪
+                        </button>
+                      </Tooltip>
+                    </div>
+                  }
                 >
                   <PeakCard
                     pk={pk}
