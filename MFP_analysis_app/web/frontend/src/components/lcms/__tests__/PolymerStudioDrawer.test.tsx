@@ -27,7 +27,7 @@ describe("PolymerStudioDrawer", () => {
     expect(screen.queryByText(/Polymer Studio/i)).toBeNull();
   });
 
-  it("renders when open and handles quick preset clicks", () => {
+  it("renders when open and handles enabling matching", () => {
     const handleChange = vi.fn();
     const settings = loadPolymerUiSettings();
 
@@ -48,14 +48,12 @@ describe("PolymerStudioDrawer", () => {
 
     expect(screen.getByText(/Polymer Studio/i)).toBeDefined();
 
-    // Click PLGA preset
-    const plgaBtn = screen.getByRole("button", { name: /PLGA \(LA\+GA\)/i });
-    fireEvent.click(plgaBtn);
+    const enableCheckbox = screen.getByRole("checkbox", { name: /enable spectrum matching/i });
+    fireEvent.click(enableCheckbox);
 
     expect(handleChange).toHaveBeenCalled();
     const updatedSettings = handleChange.mock.calls[0][0];
     expect(updatedSettings.shared.enabled).toBe(true);
-    expect(updatedSettings.shared.tol_unit).toBe("ppm");
   });
 
   it("switches sub-tabs", () => {
