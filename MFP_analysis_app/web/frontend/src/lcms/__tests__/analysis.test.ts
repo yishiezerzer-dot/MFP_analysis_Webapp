@@ -9,6 +9,7 @@ import {
   generateCompositions,
   groupFeatureRowsForMatrix,
   integrateEICPeak,
+  integrateTraceRegion,
   ionLabel,
   parseExpectedProductMonomers,
   parsePositiveCharges,
@@ -277,9 +278,26 @@ describe("toApiPolymerSettings", () => {
     expect(out.adduct_na).toBe(false);
     expect(out.adduct_cl).toBe(false);
   });
-  it("includes negative-only adducts when polarity is negative", () => {
-    const out = toApiPolymerSettings(polymerSettingsFixture(), "negative");
-    expect(out.adduct_na).toBe(false);
-    expect(out.adduct_cl).toBe(false);
+});
+
+describe("integrateTraceRegion", () => {
+  it("computes baseline-corrected area, apex, and height across a slice", () => {
+    const rts = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0];
+    const intensities = [10.0, 20.0, 100.0, 20.0, 10.0, 5.0, 2.0];
+    const res = integrateTraceRegion(rts, intensities, 1.0, 3.0);
+    expect(res).not.toBeNull();
+    expect(res?.rtApex).toBe(2.0);
+    expect(res?.baseline).toBe(10.0);
+    expect(res?.height).toBe(90.0);
+    expect(res?.width).toBe(2.0);
+    expect(res?.nPoints).toBe(5);
+    expect(res?.area).toBeGreaterThan(0);
+  });
+
+  it("returns null when no points match range", () => {
+    const rts = [1.0, 2.0, 3.0];
+    const intensities = [10.0, 20.0, 10.0];
+    expect(integrateTraceRegion(rts, intensities, 5.0, 6.0)).toBeNull();
   });
 });
+

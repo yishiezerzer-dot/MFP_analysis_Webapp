@@ -30,6 +30,7 @@ export const lcmsActionSchemas = {
   "lcms.find_mz": sessionId.extend({
     mz: z.number().positive(),
     tolerance: z.number().positive().optional(),
+    tolerance_unit: z.enum(["da", "ppm"]).optional(),
     polarity,
   }),
   "lcms.sum_tic_region_spectrum": sessionId.extend({
@@ -43,6 +44,7 @@ export const lcmsActionSchemas = {
   "lcms.create_eic": sessionId.extend({
     mz: z.number().positive(),
     tolerance: z.number().positive().optional(),
+    tolerance_unit: z.enum(["da", "ppm"]).optional(),
     polarity,
   }),
   "lcms.integrate_eic_data": z.object({
@@ -187,6 +189,7 @@ export const lcmsActionSchemas = {
   "lcms.create_eic_and_show": sessionId.extend({
     mz: z.number().positive(),
     tolerance: z.number().positive().optional(),
+    tolerance_unit: z.enum(["da", "ppm"]).optional(),
     polarity,
     source: z.enum(["dialog", "spectrum", "expected", "automation"]).optional(),
     source_file: z.string().optional().nullable(),

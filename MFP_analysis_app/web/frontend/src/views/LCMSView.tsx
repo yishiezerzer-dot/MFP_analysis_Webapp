@@ -54,6 +54,7 @@ import {
   featureMatrixValue,
   groupFeatureRowsForMatrix,
   integrateEICPeak,
+  integrateTraceRegion,
   KENDRICK_POINT_LIMIT,
   parseExpectedProductMonomers,
   polymerMonomerText,
@@ -63,6 +64,7 @@ import {
   type ExpectedProductResolutionMode,
   type FeatureMatrixGroupMode,
   type FeatureMatrixMetric,
+  type IntegratedTraceRegion,
   type KendrickPoint,
   type LCMSFeatureRow,
   type LCMSEICMetadata,
@@ -1284,6 +1286,7 @@ export function LCMSView() {
   // View – region select
   const [regionSelect, setRegionSelect] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<{ rtMin: number; rtMax: number } | null>(null);
+  const [regionIntegration, setRegionIntegration] = useState<IntegratedTraceRegion | null>(null);
 
   // RT navigation
   const [selectedRt, setSelectedRt] = useStoredState<number | null>(
@@ -2400,8 +2403,10 @@ export function LCMSView() {
   // Find m/z: scan every MS1 at current filter for the most intense near m/z
   const [findMzInput, setFindMzInput] = useState("");
   const [findMzTol, setFindMzTol] = useState(0.01);
+  const [findMzUnit, setFindMzUnit] = useState<"da" | "ppm">("da");
   const [eicInput, setEicInput] = useState("");
   const [eicTol, setEicTol] = useState(0.01);
+  const [eicUnit, setEicUnit] = useState<"da" | "ppm">("da");
   const findMz = async () => {
     if (!activeSid) return;
     const target = parseFloat(findMzInput);
@@ -2413,17 +2418,18 @@ export function LCMSView() {
         session_id: activeSid,
         mz: target,
         tolerance: findMzTol,
+        tolerance_unit: findMzUnit,
         polarity: pol,
       }) as unknown as LCMSFindMzResponse;
       const bestRt = result.best.rt_min;
       if (bestRt == null) {
-        setInfo(`No match found for m/z ${target.toFixed(4)} within ${findMzTol.toFixed(3)} Da.`);
+        setInfo(`No match found for m/z ${target.toFixed(4)} within ${findMzTol} ${findMzUnit.toUpperCase()}.`);
         return;
       }
       setFindMzOpen(false);
       loadSpectrum(bestRt);
       setInfo(
-        `Strongest match for m/z ${target.toFixed(4)} ± ${findMzTol.toFixed(3)}: RT ${bestRt.toFixed(3)} min`,
+        `Strongest match for m/z ${target.toFixed(4)} ± ${findMzTol} ${findMzUnit.toUpperCase()}: RT ${bestRt.toFixed(3)} min`,
       );
     } catch (err) {
       setError(String(err));
@@ -2439,6 +2445,7 @@ export function LCMSView() {
       source: "dialog" | "spectrum" | "expected" = "dialog",
       toleranceOverride?: number,
       metadata?: Partial<LCMSEICMetadata>,
+      toleranceUnitOverride?: "da" | "ppm",
     ) => {
       if (!activeSid) return;
       if (!Number.isFinite(target)) {
@@ -2446,6 +2453,7 @@ export function LCMSView() {
         return;
       }
       const tolerance = Math.max(0.000001, toleranceOverride ?? eicTol);
+      const toleranceUnit = toleranceUnitOverride ?? eicUnit;
       const sourceSid = activeSid;
       const sourceFile = active?.display_name ?? "LCMS session";
       setBusy(true);
@@ -2455,6 +2463,7 @@ export function LCMSView() {
           session_id: sourceSid,
           mz: target,
           tolerance,
+          tolerance_unit: toleranceUnit,
           polarity: pol,
           source,
           source_file: sourceFile,
@@ -2466,7 +2475,7 @@ export function LCMSView() {
         });
         if (source === "dialog") setEicOpen(false);
         setInfo(
-          `Generated EIC for ${sourceFile}: m/z ${target.toFixed(4)} +/- ${tolerance.toFixed(4)}.`,
+          `Generated EIC for ${sourceFile}: m/z ${target.toFixed(4)} ± ${tolerance} ${toleranceUnit.toUpperCase()}.`,
         );
       } catch (err) {
         setError(String(err));
@@ -2474,7 +2483,7 @@ export function LCMSView() {
         setBusy(false);
       }
     },
-    [actionDispatch, active?.display_name, activeSid, eicTol, pol],
+    [actionDispatch, active?.display_name, activeSid, eicTol, eicUnit, pol],
   );
 
   const runEIC = async () => {
@@ -2753,6 +2762,7 @@ export function LCMSView() {
   const handleSetRegionSelect = useCallback((v: boolean) => {
     setRegionSelect(v);
     setSelectedRegion(null);
+    setRegionIntegration(null);
   }, []);
 
   const onRegionSelected = useCallback(
@@ -2763,6 +2773,15 @@ export function LCMSView() {
       if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return;
       setSelectedRegion({ rtMin: lo, rtMax: hi });
       setSelectedRt((lo + hi) / 2);
+
+      // Instantaneous baseline-corrected trapezoidal integration of chromatogram
+      if (tic && tic.rt_min && tic.rt_min.length > 0) {
+        const integrated = integrateTraceRegion(tic.rt_min, tic.tic, lo, hi);
+        setRegionIntegration(integrated);
+      } else {
+        setRegionIntegration(null);
+      }
+
       setBusy(true);
       setError(null);
       try {
@@ -2778,7 +2797,7 @@ export function LCMSView() {
         setShowSpectrum(true);
         setInfo(
           data.n_scans > 0
-            ? `Loaded summed MS1 from ${data.n_scans} scans (${lo.toFixed(3)}-${hi.toFixed(3)} min).`
+            ? `Sliced & summed MS1 from ${data.n_scans} scans (${lo.toFixed(3)}-${hi.toFixed(3)} min).`
             : `No MS1 scans found in ${lo.toFixed(3)}-${hi.toFixed(3)} min.`,
         );
       } catch (err) {
@@ -2787,7 +2806,7 @@ export function LCMSView() {
         setBusy(false);
       }
     },
-    [activeSid, pol, activePolymerSettings, spectrumFromRegionData],
+    [activeSid, pol, activePolymerSettings, spectrumFromRegionData, tic],
   );
 
   const saveWorkspace = () => {
@@ -3530,6 +3549,7 @@ export function LCMSView() {
                   onRegionSelected={onRegionSelected}
                   selectedRt={selectedRt}
                   selectedRegion={selectedRegion}
+                  regionIntegration={regionIntegration}
                   selectedScanId={
                     spectrum?.meta.spectrum_id && !spectrum.meta.spectrum_id.startsWith("summed:")
                       ? spectrum.meta.spectrum_id
@@ -3537,6 +3557,7 @@ export function LCMSView() {
                   }
                   rtUnit={rtUnit}
                   regionSelect={regionSelect}
+                  onToggleRegionSelect={handleSetRegionSelect}
                   settings={graphSettings.tic}
                 />
               )}
@@ -3791,6 +3812,8 @@ export function LCMSView() {
           setInput={setFindMzInput}
           tol={findMzTol}
           setTol={setFindMzTol}
+          unit={findMzUnit}
+          setUnit={setFindMzUnit}
           busy={busy}
           onClose={() => setFindMzOpen(false)}
           onRun={findMz}
@@ -3802,6 +3825,8 @@ export function LCMSView() {
           setInput={setEicInput}
           tol={eicTol}
           setTol={setEicTol}
+          unit={eicUnit}
+          setUnit={setEicUnit}
           busy={busy}
           onClose={() => setEicOpen(false)}
           onRun={runEIC}
@@ -5604,9 +5629,11 @@ function TICChart(props: {
   onRegionSelected?: (rtMin: number, rtMax: number) => void;
   selectedRt: number | null;
   selectedRegion?: { rtMin: number; rtMax: number } | null;
+  regionIntegration?: IntegratedTraceRegion | null;
   selectedScanId?: string | null;
   rtUnit: RtUnit;
   regionSelect: boolean;
+  onToggleRegionSelect?: (val: boolean) => void;
   settings: ChartSettings;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -5739,7 +5766,37 @@ function TICChart(props: {
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
-        <h3 className="text-sm font-semibold">Total Ion Chromatogram</h3>
+        <div className="flex items-center gap-2.5">
+          <h3 className="text-sm font-semibold">Total Ion Chromatogram</h3>
+          {props.onToggleRegionSelect && (
+            <div className="inline-flex rounded-md border border-ink-200 bg-ink-50/70 p-0.5 text-xs">
+              <button
+                type="button"
+                className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                  !props.regionSelect
+                    ? "bg-surface text-ink-900 shadow-sm"
+                    : "text-ink-600 hover:text-ink-900"
+                }`}
+                onClick={() => props.onToggleRegionSelect?.(false)}
+                title="Inspect scan at clicked RT point"
+              >
+                Inspect Peak
+              </button>
+              <button
+                type="button"
+                className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                  props.regionSelect
+                    ? "bg-brand-600 text-white shadow-sm"
+                    : "text-ink-600 hover:text-ink-900"
+                }`}
+                onClick={() => props.onToggleRegionSelect?.(true)}
+                title="Click and drag across a peak to slice & integrate"
+              >
+                Slicing Tool
+              </button>
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-2 text-xs text-ink-500">
           {props.regionSelect && props.selectedRegion != null ? (
             <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
@@ -5751,10 +5808,18 @@ function TICChart(props: {
               {props.selectedScanId ? ` · Scan ${formatScanId(props.selectedScanId)}` : ""}
             </span>
           ) : null}
+          {props.regionIntegration && (
+            <span
+              className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-emerald-800"
+              title={`Integrated Area: ${props.regionIntegration.area.toExponential(4)} | Apex: ${props.regionIntegration.rtApex.toFixed(3)} min | Height: ${props.regionIntegration.height.toExponential(3)}`}
+            >
+              Area: {props.regionIntegration.area.toExponential(2)} (Apex {props.regionIntegration.rtApex.toFixed(3)} min, Δ {(props.regionIntegration.width).toFixed(3)} min)
+            </span>
+          )}
           <span>
             {props.regionSelect
-              ? "Drag on the plot to select an RT region"
-              : "Click a point to load the spectrum at that RT"}
+              ? "Drag across chromatogram to slice & integrate"
+              : "Click a point to load spectrum"}
           </span>
           <PaperFigureExportToolbar
             disabled={!props.tic}
@@ -6953,6 +7018,8 @@ function FindMzDialog({
   setInput,
   tol,
   setTol,
+  unit,
+  setUnit,
   busy,
   onClose,
   onRun,
@@ -6961,6 +7028,8 @@ function FindMzDialog({
   setInput: (v: string) => void;
   tol: number;
   setTol: (v: number) => void;
+  unit: "da" | "ppm";
+  setUnit: (v: "da" | "ppm") => void;
   busy: boolean;
   onClose: () => void;
   onRun: () => void;
@@ -6984,9 +7053,8 @@ function FindMzDialog({
       }
     >
       <p className="text-ink-600">
-        Sweeps MS1 scans (sampled up to 200 probes) at the current polarity
-        filter and jumps to the RT with the most intense peak within the
-        tolerance window.
+        Sweeps MS1 scans at the current polarity filter and jumps to the RT with the
+        most intense peak within the tolerance window.
       </p>
       <div className="mt-3 grid grid-cols-2 gap-3">
         <div>
@@ -7001,13 +7069,46 @@ function FindMzDialog({
           />
         </div>
         <div>
-          <div className="label">Tolerance (Da)</div>
+          <div className="flex items-center justify-between">
+            <span className="label">Tolerance ({unit === "da" ? "Da" : "ppm"})</span>
+            <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-xs">
+              <button
+                type="button"
+                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                  unit === "da" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+                }`}
+                onClick={() => {
+                  if (unit !== "da") {
+                    setUnit("da");
+                    if (tol >= 1) setTol(0.01);
+                  }
+                }}
+              >
+                Da
+              </button>
+              <button
+                type="button"
+                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                  unit === "ppm" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+                }`}
+                onClick={() => {
+                  if (unit !== "ppm") {
+                    setUnit("ppm");
+                    if (tol < 0.1) setTol(10);
+                  }
+                }}
+              >
+                ppm
+              </button>
+            </div>
+          </div>
           <input
             type="number"
-            step="0.001"
+            step={unit === "da" ? "0.001" : "1"}
+            min={unit === "da" ? 0.0001 : 0.1}
             className="input mt-1 w-full"
             value={tol}
-            onChange={(e) => setTol(parseFloat(e.target.value) || 0.01)}
+            onChange={(e) => setTol(Math.max(unit === "da" ? 0.0001 : 0.1, parseFloat(e.target.value) || (unit === "da" ? 0.01 : 10)))}
           />
         </div>
       </div>
@@ -7082,6 +7183,8 @@ function EICDialog({
   setInput,
   tol,
   setTol,
+  unit,
+  setUnit,
   busy,
   onClose,
   onRun,
@@ -7090,6 +7193,8 @@ function EICDialog({
   setInput: (v: string) => void;
   tol: number;
   setTol: (v: number) => void;
+  unit: "da" | "ppm";
+  setUnit: (v: "da" | "ppm") => void;
   busy: boolean;
   onClose: () => void;
   onRun: () => void;
@@ -7129,14 +7234,46 @@ function EICDialog({
           />
         </div>
         <div>
-          <div className="label">Tolerance (Da)</div>
+          <div className="flex items-center justify-between">
+            <span className="label">Tolerance ({unit === "da" ? "Da" : "ppm"})</span>
+            <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-xs">
+              <button
+                type="button"
+                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                  unit === "da" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+                }`}
+                onClick={() => {
+                  if (unit !== "da") {
+                    setUnit("da");
+                    if (tol >= 1) setTol(0.01);
+                  }
+                }}
+              >
+                Da
+              </button>
+              <button
+                type="button"
+                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                  unit === "ppm" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+                }`}
+                onClick={() => {
+                  if (unit !== "ppm") {
+                    setUnit("ppm");
+                    if (tol < 0.1) setTol(10);
+                  }
+                }}
+              >
+                ppm
+              </button>
+            </div>
+          </div>
           <input
             type="number"
-            step="0.001"
-            min={0}
+            step={unit === "da" ? "0.001" : "1"}
+            min={unit === "da" ? 0.0001 : 0.1}
             className="input mt-1 w-full"
             value={tol}
-            onChange={(e) => setTol(Math.max(0.000001, parseFloat(e.target.value) || 0.01))}
+            onChange={(e) => setTol(Math.max(unit === "da" ? 0.0001 : 0.1, parseFloat(e.target.value) || (unit === "da" ? 0.01 : 10)))}
           />
         </div>
       </div>

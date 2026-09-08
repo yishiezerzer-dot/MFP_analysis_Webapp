@@ -3,9 +3,12 @@ import type { Config, Data, Layout, PlotlyHTMLElement } from "plotly.js";
 export type PublicationExportFormat = "svg" | "png";
 
 export interface PublicationSizePreset {
+  id: string;
   label: string;
+  category: "ACS" | "Nature" | "RSC" | "Standard";
   widthMm: number;
   heightMm: number;
+  defaultLegendFontSize?: number;
 }
 
 export interface PublicationExportSettings {
@@ -29,13 +32,26 @@ export interface PublicationExportRequest extends PublicationExportSettings {
 }
 
 export const PUBLICATION_WIDTH_PRESETS: PublicationSizePreset[] = [
-  { label: "90 x 60 mm", widthMm: 90, heightMm: 60 },
-  { label: "135 x 80 mm", widthMm: 135, heightMm: 80 },
-  { label: "180 x 100 mm", widthMm: 180, heightMm: 100 },
-  { label: "180 x 120 mm", widthMm: 180, heightMm: 120 },
+  // ACS (American Chemical Society - JACS, Macromolecules, Chem. Mater., etc.)
+  { id: "acs-single", label: "ACS Single Col (82.5 x 60 mm)", category: "ACS", widthMm: 82.5, heightMm: 60, defaultLegendFontSize: 9 },
+  { id: "acs-double", label: "ACS Double Col (177.8 x 100 mm)", category: "ACS", widthMm: 177.8, heightMm: 100, defaultLegendFontSize: 10 },
+
+  // Nature Portfolio (Nat. Chem., Nat. Mater., Nat. Commun., etc.)
+  { id: "nature-single", label: "Nature Single Col (89 x 60 mm)", category: "Nature", widthMm: 89, heightMm: 60, defaultLegendFontSize: 8 },
+  { id: "nature-double", label: "Nature Double Col (180 x 100 mm)", category: "Nature", widthMm: 180, heightMm: 100, defaultLegendFontSize: 9 },
+
+  // RSC (Royal Society of Chemistry - Chem. Sci., Analyst, etc.)
+  { id: "rsc-single", label: "RSC Single Col (83 x 60 mm)", category: "RSC", widthMm: 83, heightMm: 60, defaultLegendFontSize: 9 },
+  { id: "rsc-double", label: "RSC Double Col (171 x 100 mm)", category: "RSC", widthMm: 171, heightMm: 100, defaultLegendFontSize: 10 },
+
+  // Standard Presets
+  { id: "std-90x60", label: "Standard Small (90 x 60 mm)", category: "Standard", widthMm: 90, heightMm: 60, defaultLegendFontSize: 10 },
+  { id: "std-135x80", label: "Standard Medium (135 x 80 mm)", category: "Standard", widthMm: 135, heightMm: 80, defaultLegendFontSize: 11 },
+  { id: "std-180x100", label: "Standard Large (180 x 100 mm)", category: "Standard", widthMm: 180, heightMm: 100, defaultLegendFontSize: 12 },
+  { id: "std-180x120", label: "Standard Full-Page (180 x 120 mm)", category: "Standard", widthMm: 180, heightMm: 120, defaultLegendFontSize: 12 },
 ];
 
-export const DEFAULT_PUBLICATION_SIZE = PUBLICATION_WIDTH_PRESETS[2];
+export const DEFAULT_PUBLICATION_SIZE = PUBLICATION_WIDTH_PRESETS[3]; // Nature Double Col (180 x 100 mm)
 
 export const PUBLICATION_DPI_PRESETS = [300, 600, 1200] as const;
 
@@ -258,6 +274,10 @@ function exportAxis(source: unknown, override: unknown): unknown {
     linewidth: 1,
     tickcolor: "#111827",
     tickwidth: 1,
+    ticks: "outside",
+    ticklen: 4,
+    showline: true,
+    mirror: true,
   };
 }
 

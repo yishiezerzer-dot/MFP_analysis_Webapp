@@ -158,6 +158,7 @@ class LCMSTopSpectrumPeaksOutput(BaseModel):
 class LCMSFindMzInput(LCMSSessionIdInput):
     mz: float = Field(gt=0)
     tolerance: float = Field(default=0.01, gt=0)
+    tolerance_unit: Literal["da", "ppm"] = "da"
     polarity: Optional[Literal["positive", "negative"]] = None
 
 
@@ -172,6 +173,8 @@ class LCMSBestMzMatch(BaseModel):
 class LCMSFindMzOutput(BaseModel):
     target_mz: float
     tolerance: float
+    tolerance_unit: str = "da"
+    tolerance_value: Optional[float] = None
     n_scans: int
     best: LCMSBestMzMatch
 
@@ -197,6 +200,8 @@ class LCMSSumTICRegionSpectrumOutput(BaseModel):
 class LCMSEICPayload(BaseModel):
     target_mz: float
     tolerance: float
+    tolerance_unit: str = "da"
+    tolerance_value: Optional[float] = None
     rt_min: List[float]
     intensity: List[float]
     polarity: List[Optional[str]] = Field(default_factory=list)

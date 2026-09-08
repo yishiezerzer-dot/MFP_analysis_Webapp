@@ -36,16 +36,11 @@ function reconcileSettings(value: unknown, fallback: PublicationExportSettings):
 
 function sizeValue(settings: PublicationExportSettings): string {
   const preset = PUBLICATION_WIDTH_PRESETS.find(
-    (item) => item.widthMm === settings.widthMm && item.heightMm === settings.heightMm,
+    (item) =>
+      Math.abs(item.widthMm - settings.widthMm) < 0.1 &&
+      Math.abs(item.heightMm - settings.heightMm) < 0.1,
   );
-  return preset ? `${preset.widthMm}x${preset.heightMm}` : "custom";
-}
-
-function parseSize(value: string, fallback: PublicationExportSettings): Pick<PublicationExportSettings, "widthMm" | "heightMm"> {
-  if (value === "custom") return { widthMm: fallback.widthMm, heightMm: fallback.heightMm };
-  const [w, h] = value.split("x").map((part) => Number(part));
-  const preset = PUBLICATION_WIDTH_PRESETS.find((item) => item.widthMm === w && item.heightMm === h) ?? DEFAULT_PUBLICATION_SIZE;
-  return { widthMm: preset.widthMm, heightMm: preset.heightMm };
+  return preset ? preset.id : "custom";
 }
 
 function defaultSettings(props: PaperFigureExportToolbarProps): PublicationExportSettings {
@@ -61,7 +56,7 @@ function defaultSettings(props: PaperFigureExportToolbarProps): PublicationExpor
     widthMm: DEFAULT_PUBLICATION_SIZE.widthMm,
     heightMm: DEFAULT_PUBLICATION_SIZE.heightMm,
     dpi: DEFAULT_PUBLICATION_DPI,
-    legendFontSize: DEFAULT_PUBLICATION_LEGEND_FONT_SIZE,
+    legendFontSize: DEFAULT_PUBLICATION_SIZE.defaultLegendFontSize ?? DEFAULT_PUBLICATION_LEGEND_FONT_SIZE,
   };
 }
 
@@ -84,17 +79,52 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
       <label className="flex items-center gap-1 text-xs text-ink-600">
         <span className="text-ink-500">Preset</span>
         <select
-          className="input w-[7.5rem] py-0.5 text-xs"
+          className="input w-[10.5rem] py-0.5 text-xs font-mono"
           value={sizeValue(settings)}
           disabled={props.disabled}
-          onChange={(e) => setSettings((prev) => ({ ...prev, ...parseSize(e.target.value, prev) }))}
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val === "custom") return;
+            const found = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === val);
+            if (found) {
+              setSettings((prev) => ({
+                ...prev,
+                widthMm: found.widthMm,
+                heightMm: found.heightMm,
+                legendFontSize: found.defaultLegendFontSize ?? prev.legendFontSize,
+              }));
+            }
+          }}
         >
-          {PUBLICATION_WIDTH_PRESETS.map((preset) => (
-            <option key={`${preset.widthMm}x${preset.heightMm}`} value={`${preset.widthMm}x${preset.heightMm}`}>
-              {preset.label}
-            </option>
-          ))}
-          <option value="custom">Custom</option>
+          <optgroup label="ACS (JACS, Macromolecules)">
+            {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "ACS").map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Nature Portfolio">
+            {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "Nature").map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="RSC (Chem. Sci.)">
+            {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "RSC").map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Standard Sizes">
+            {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "Standard").map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.label}
+              </option>
+            ))}
+          </optgroup>
+          <option value="custom">Custom Dimensions</option>
         </select>
       </label>
       <label className="flex items-center gap-1 text-xs text-ink-600">

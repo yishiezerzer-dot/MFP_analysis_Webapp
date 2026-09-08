@@ -161,6 +161,8 @@ export interface SpectrumData {
 export interface LCMSFindMzResponse {
   target_mz: number;
   tolerance: number;
+  tolerance_value?: number;
+  tolerance_unit?: "da" | "ppm";
   n_scans: number;
   best: {
     rt_min: number | null;
@@ -174,6 +176,8 @@ export interface LCMSFindMzResponse {
 export interface LCMSEICData {
   target_mz: number;
   tolerance: number;
+  tolerance_value?: number;
+  tolerance_unit?: "da" | "ppm";
   rt_min: number[];
   intensity: number[];
   polarity: (string | null)[];
@@ -871,10 +875,11 @@ export const api = {
     },
     findMz: (
       sid: string,
-      opts: { mz: number; tolerance?: number; polarity?: "positive" | "negative" },
+      opts: { mz: number; tolerance?: number; tolerance_unit?: "da" | "ppm"; polarity?: "positive" | "negative" },
     ) => {
       const params = new URLSearchParams({ mz: String(opts.mz) });
       if (opts.tolerance !== undefined) params.set("tolerance", String(opts.tolerance));
+      if (opts.tolerance_unit !== undefined) params.set("tolerance_unit", opts.tolerance_unit);
       if (opts.polarity) params.set("polarity", opts.polarity);
       return apiFetch(`/api/lcms/sessions/${sid}/find-mz?${params.toString()}`).then((r) =>
         handle<LCMSFindMzResponse>(r),
@@ -882,7 +887,7 @@ export const api = {
     },
     eic: (
       sid: string,
-      body: { mz: number; tolerance?: number; polarity?: "positive" | "negative" },
+      body: { mz: number; tolerance?: number; tolerance_unit?: "da" | "ppm"; polarity?: "positive" | "negative" },
     ) =>
       apiFetch(`/api/lcms/sessions/${sid}/eic`, {
         method: "POST",

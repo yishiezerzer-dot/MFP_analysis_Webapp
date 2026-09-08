@@ -139,6 +139,7 @@ async def find_mz(args: LCMSFindMzInput) -> LCMSFindMzOutput:
                 state,
                 float(args.mz),
                 tolerance=float(args.tolerance),
+                tolerance_unit=getattr(args, "tolerance_unit", "da"),
                 polarity=args.polarity,
             )
         )

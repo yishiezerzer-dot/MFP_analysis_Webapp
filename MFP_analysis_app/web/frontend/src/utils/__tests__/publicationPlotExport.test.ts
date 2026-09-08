@@ -8,6 +8,7 @@ import {
   publicationExportPixels,
   pngScaleForDpi,
   publicationFilenameSuffix,
+  PUBLICATION_WIDTH_PRESETS,
 } from "../publicationPlotExport";
 
 describe("publication plot export sizing", () => {
@@ -64,5 +65,21 @@ describe("publication plot export sizing", () => {
     const settings = { widthMm: 180, heightMm: 100, dpi: 600, legendFontSize: 13 };
     expect(publicationFilenameSuffix(settings, "svg")).toBe("180x100mm_vector");
     expect(publicationFilenameSuffix(settings, "png")).toBe("180x100mm_600dpi");
+  });
+
+  it("provides standard journal size presets for ACS, Nature, and RSC", () => {
+    const acsSingle = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === "acs-single");
+    const acsDouble = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === "acs-double");
+    const natureSingle = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === "nature-single");
+    const natureDouble = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === "nature-double");
+    const rscSingle = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === "rsc-single");
+    const rscDouble = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === "rsc-double");
+
+    expect(acsSingle?.widthMm).toBe(82.5);
+    expect(acsDouble?.widthMm).toBe(177.8);
+    expect(natureSingle?.widthMm).toBe(89);
+    expect(natureDouble?.widthMm).toBe(180);
+    expect(rscSingle?.widthMm).toBe(83);
+    expect(rscDouble?.widthMm).toBe(171);
   });
 });

@@ -436,6 +436,67 @@ export function integrateEICPeak(
   };
 }
 
+export interface IntegratedTraceRegion {
+  rtMin: number;
+  rtMax: number;
+  rtApex: number;
+  height: number;
+  area: number;
+  baseline: number;
+  width: number;
+  nPoints: number;
+}
+
+export function integrateTraceRegion(
+  rts: number[],
+  intensities: number[],
+  rtMin: number,
+  rtMax: number,
+): IntegratedTraceRegion | null {
+  const lo = Math.min(rtMin, rtMax);
+  const hi = Math.max(rtMin, rtMax);
+  const indices: number[] = [];
+  for (let i = 0; i < rts.length; i += 1) {
+    if (rts[i] >= lo && rts[i] <= hi && Number.isFinite(intensities[i])) {
+      indices.push(i);
+    }
+  }
+  if (indices.length === 0) return null;
+
+  let maxIdx = indices[0];
+  let minInt = intensities[indices[0]];
+  for (const idx of indices) {
+    const val = intensities[idx];
+    if (val > intensities[maxIdx]) maxIdx = idx;
+    if (val < minInt) minInt = val;
+  }
+
+  const firstIdx = indices[0];
+  const lastIdx = indices[indices.length - 1];
+  const baseline = Math.max(0, Math.min(intensities[firstIdx], intensities[lastIdx], minInt));
+
+  let area = 0;
+  for (let k = 0; k < indices.length - 1; k += 1) {
+    const i0 = indices[k];
+    const i1 = indices[k + 1];
+    const dt = Math.max(0, rts[i1] - rts[i0]);
+    const y0 = Math.max(0, intensities[i0] - baseline);
+    const y1 = Math.max(0, intensities[i1] - baseline);
+    area += ((y0 + y1) / 2) * dt;
+  }
+
+  return {
+    rtMin: lo,
+    rtMax: hi,
+    rtApex: rts[maxIdx],
+    height: Math.max(0, intensities[maxIdx] - baseline),
+    area,
+    baseline,
+    width: hi - lo,
+    nPoints: indices.length,
+  };
+}
+
 export function eicSourceSessionId(plot: LCMSEICPlot): string | null {
   return plot.metadata?.sourceSessionId ?? null;
 }

@@ -52,6 +52,7 @@ _UV_UPLOAD_DIR = _UPLOAD_ROOT / "uv"
 class EICRequest(BaseModel):
     mz: float
     tolerance: float = Field(default=0.01, gt=0)
+    tolerance_unit: str = Field(default="da")
     polarity: Optional[str] = None
 
 
@@ -298,6 +299,7 @@ async def find_mz(
     sid: str,
     mz: float,
     tolerance: float = 0.01,
+    tolerance_unit: str = "da",
     polarity: Optional[str] = None,
 ) -> Dict[str, Any]:
     state = await _require_session(sid)
@@ -306,6 +308,7 @@ async def find_mz(
             state,
             float(mz),
             tolerance=float(tolerance),
+            tolerance_unit=tolerance_unit,
             polarity=polarity,
         )
     except LCMSLoadError as exc:
@@ -320,6 +323,7 @@ async def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
             state,
             float(body.mz),
             tolerance=float(body.tolerance),
+            tolerance_unit=body.tolerance_unit,
             polarity=body.polarity,
         )
     except LCMSLoadError as exc:

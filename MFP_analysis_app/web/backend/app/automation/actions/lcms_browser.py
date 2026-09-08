@@ -505,6 +505,7 @@ async def create_eic_and_show(args: CreateEICAndShowInput) -> BrowserActionOutpu
             session_id=args.session_id,
             mz=args.mz,
             tolerance=args.tolerance,
+            tolerance_unit=args.tolerance_unit,
             polarity=args.polarity,
         )
     )

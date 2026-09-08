@@ -345,11 +345,19 @@ def extracted_ion_chromatogram(
     target_mz: float,
     *,
     tolerance: float = 0.01,
+    tolerance_unit: str = "da",
     polarity: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Sum intensity in a target m/z window for every MS1 scan."""
-    tol = max(0.0, float(tolerance))
     target = float(target_mz)
+    tol_val = max(0.0, float(tolerance))
+    unit = str(tolerance_unit).lower()
+    if unit == "ppm":
+        tol = max(1e-9, tol_val * 1e-6 * target)
+    else:
+        unit = "da"
+        tol = tol_val
+
     rows: List[Tuple[float, float, Optional[str]]] = []
     best: Dict[str, Any] = {
         "rt_min": None,
@@ -377,6 +385,8 @@ def extracted_ion_chromatogram(
     return {
         "target_mz": target,
         "tolerance": tol,
+        "tolerance_value": tol_val,
+        "tolerance_unit": unit,
         "rt_min": [rt for rt, _intensity, _pol in rows],
         "intensity": [intensity for _rt, intensity, _pol in rows],
         "polarity": [pol for _rt, _intensity, pol in rows],
@@ -390,17 +400,21 @@ def find_mz_across_scans(
     target_mz: float,
     *,
     tolerance: float = 0.01,
+    tolerance_unit: str = "da",
     polarity: Optional[str] = None,
 ) -> Dict[str, Any]:
     eic = extracted_ion_chromatogram(
         state,
         target_mz,
         tolerance=tolerance,
+        tolerance_unit=tolerance_unit,
         polarity=polarity,
     )
     return {
         "target_mz": eic["target_mz"],
         "tolerance": eic["tolerance"],
+        "tolerance_value": eic.get("tolerance_value", eic["tolerance"]),
+        "tolerance_unit": eic.get("tolerance_unit", "da"),
         "best": eic["best"],
         "n_scans": eic["n_scans"],
     }
