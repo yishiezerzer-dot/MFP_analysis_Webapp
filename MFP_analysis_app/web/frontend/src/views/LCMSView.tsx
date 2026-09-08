@@ -101,6 +101,9 @@ import { KendrickDialog } from "../components/lcms/KendrickDialog";
 import { ExpectedProductsDialog } from "../components/lcms/ExpectedProductsDialog";
 import { GraphSettingsDialog } from "../components/lcms/GraphSettingsDialog";
 import { PolymerDialog } from "../components/lcms/PolymerDialog";
+import { PolymerStudioDrawer } from "../components/lcms/PolymerStudioDrawer";
+import { PeakContextPopover, type PeakContextData } from "../components/common/PeakContextPopover";
+import { SegmentedControl } from "../components/common/SegmentedControl";
 import { DeconvolutionDialog } from "../components/lcms/DeconvolutionDialog";
 
 let pendingPlotResizeFrame: number | null = null;
@@ -1194,7 +1197,7 @@ export function LCMSView() {
     (value) => (isTabId(value) ? value : "navigate"),
   );
   const [workflowHidden, setWorkflowHidden] = useStoredState(`${LCMS_STORAGE_PREFIX}.workflowHidden`, false);
-  const [showPolymerControls, setShowPolymerControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showPolymerControls`, false);
+  const [showPolymerControls, setShowPolymerControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showPolymerControls`, true);
   const [showConfidenceControls, setShowConfidenceControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showConfidenceControls`, false);
   const [showAlignmentDiagnostics, setShowAlignmentDiagnostics] = useStoredState(`${LCMS_STORAGE_PREFIX}.showAlignmentDiagnostics`, false);
 
@@ -1341,6 +1344,8 @@ export function LCMSView() {
     loadGraphSettingsDefault(),
   );
   const [polymerDialogOpen, setPolymerDialogOpen] = useState(false);
+  const [polymerStudioOpen, setPolymerStudioOpen] = useState(false);
+  const [activePeakContext, setActivePeakContext] = useState<PeakContextData | null>(null);
   const [expectedProductsOpen, setExpectedProductsOpen] = useState(false);
   const [kendrickOpen, setKendrickOpen] = useState(false);
   const [deconvolutionOpen, setDeconvolutionOpen] = useState(false);
@@ -2520,13 +2525,20 @@ export function LCMSView() {
   };
 
   const onSpectrumPeakClick = useCallback(
-    (mz: number) => {
-      setEicInput(mz.toFixed(4));
-      void createEICForMz(mz, "spectrum", undefined, {
-        label: `MS1 peak ${mz.toFixed(4)}`,
+    (mz: number, intensity?: number, mouseEvent?: MouseEvent) => {
+      const clientX = mouseEvent?.clientX ?? (window.innerWidth / 2 - 140);
+      const clientY = mouseEvent?.clientY ?? (window.innerHeight / 2);
+      const matchedLabel = spectrum?.labels.find((l) => Math.abs(l.mz - mz) < 0.05);
+      setActivePeakContext({
+        mz,
+        intensity: intensity ?? matchedLabel?.intensity ?? 0,
+        label: matchedLabel?.text,
+        source: matchedLabel?.source,
+        x: clientX,
+        y: clientY,
       });
     },
-    [createEICForMz],
+    [spectrum],
   );
 
   const integrateEicPlot = useCallback(
@@ -3729,6 +3741,8 @@ export function LCMSView() {
                   rtUnit={rtUnit}
                   settings={graphSettings.spectrum}
                   polymerEnabled={Boolean(activePolymerSettings)}
+                  polymerStudioOpen={polymerStudioOpen}
+                  onTogglePolymerStudio={() => setPolymerStudioOpen((v) => !v)}
                   onPeakClick={onSpectrumPeakClick}
                   onDeconvolution={() => setDeconvolutionOpen(true)}
                 />
@@ -3883,9 +3897,36 @@ export function LCMSView() {
           canOpenKendrick={Boolean(spectrum)}
           onSavePolymerDefaults={savePolymerDefaults}
         />
+
+        <PolymerStudioDrawer
+          open={polymerStudioOpen}
+          onClose={() => setPolymerStudioOpen(false)}
+          polarity={polarity}
+          settings={polymerSettings}
+          onChange={setPolymerSettings}
+          onExpectedProducts={() => void openExpectedProductsWithCompute()}
+          onKendrick={() => void openKendrickWithCompute()}
+          canOpenExpectedProducts={Boolean(spectrum && polarity !== "all" && polymerMonomerText(polymerSettings))}
+          canOpenKendrick={Boolean(spectrum)}
+          onSaveDefaults={savePolymerDefaults}
+          spectrumAvailable={Boolean(spectrum)}
+        />
       </div>
 
       <StatusBar {...statusText} />
+
+      <PeakContextPopover
+        peak={activePeakContext}
+        onClose={() => setActivePeakContext(null)}
+        onExtractEic={(mz) => {
+          setEicInput(mz.toFixed(4));
+          void createEICForMz(mz, "spectrum", undefined, {
+            label: `MS1 peak ${mz.toFixed(4)}`,
+          });
+        }}
+        onDeconvolute={() => setDeconvolutionOpen(true)}
+        onMatchPolymer={() => setPolymerStudioOpen(true)}
+      />
 
       {findMzOpen && (
         <FindMzDialog
@@ -5486,14 +5527,7 @@ function AnnotateTab(p: ToolsPanelProps) {
         </div>
       </GroupBox>
 
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          className="rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled
-          title="Coming soon"
-        >
-          Annotate Peaks…
-        </button>
+      <div className="flex flex-col gap-2">
         <button
           className="rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
           onClick={p.onAutoArrangeLabels}
@@ -5879,32 +5913,15 @@ function TICChart(props: {
         <div className="flex items-center gap-2.5">
           <h3 className="text-sm font-semibold">Total Ion Chromatogram</h3>
           {props.onToggleRegionSelect && (
-            <div className="inline-flex rounded-md border border-ink-200 bg-ink-50/70 p-0.5 text-xs">
-              <button
-                type="button"
-                className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
-                  !props.regionSelect
-                    ? "bg-surface text-ink-900 shadow-sm"
-                    : "text-ink-600 hover:text-ink-900"
-                }`}
-                onClick={() => props.onToggleRegionSelect?.(false)}
-                title="Inspect scan at clicked RT point"
-              >
-                Inspect Peak
-              </button>
-              <button
-                type="button"
-                className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
-                  props.regionSelect
-                    ? "bg-brand-600 text-white shadow-sm"
-                    : "text-ink-600 hover:text-ink-900"
-                }`}
-                onClick={() => props.onToggleRegionSelect?.(true)}
-                title="Click and drag across a peak to slice & integrate"
-              >
-                Slicing Tool
-              </button>
-            </div>
+            <SegmentedControl
+              size="xs"
+              value={props.regionSelect ? "slice" : "point"}
+              onChange={(val) => props.onToggleRegionSelect?.(val === "slice")}
+              options={[
+                { value: "point", label: "Inspect Peak", icon: "🎯", title: "Inspect scan at clicked RT point" },
+                { value: "slice", label: "Slice Peak", icon: "✂️", title: "Click and drag across a peak to slice & integrate" },
+              ]}
+            />
           )}
         </div>
         <div className="flex items-center gap-2 text-xs text-ink-500">
@@ -6821,7 +6838,9 @@ function SpectrumChart(props: {
   rtUnit: RtUnit;
   settings: ChartSettings;
   polymerEnabled: boolean;
-  onPeakClick?: (mz: number) => void;
+  polymerStudioOpen?: boolean;
+  onTogglePolymerStudio?: () => void;
+  onPeakClick?: (mz: number, intensity?: number, event?: MouseEvent) => void;
   onDeconvolution?: () => void;
 }) {
   const s = props.spectrum;
@@ -6865,8 +6884,10 @@ function SpectrumChart(props: {
   const handleSpectrumClick = (event: Readonly<PlotMouseEvent>) => {
     const point = event.points?.[0];
     const mz = Number(point?.x);
+    const intensity = Number(point?.y);
     if (!Number.isFinite(mz) || !props.onPeakClick) return;
-    props.onPeakClick(mz);
+    const clientEvent = (event as unknown as { event?: MouseEvent }).event;
+    props.onPeakClick(mz, intensity, clientEvent);
   };
   const overlayData = useMemo(
     () =>
@@ -6952,7 +6973,26 @@ function SpectrumChart(props: {
                   : ""}
               </span>
             )}
-            {s && props.onPeakClick ? <span>Click a peak to create an EIC</span> : null}
+            {s && props.onPeakClick ? <span>Click a peak for quick actions</span> : null}
+            {props.onTogglePolymerStudio && (
+              <button
+                type="button"
+                className={clsx(
+                  "rounded-md border px-2 py-0.5 text-xs font-semibold transition-all flex items-center gap-1 shadow-sm",
+                  props.polymerStudioOpen || props.polymerEnabled
+                    ? "border-brand-500 bg-brand-50 text-brand-700 hover:bg-brand-100"
+                    : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
+                )}
+                onClick={props.onTogglePolymerStudio}
+                title="Open Polymer & Reaction Studio (Live parameter tuning)"
+              >
+                <span>🧬</span>
+                <span>Polymer Studio</span>
+                {props.polymerEnabled && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-brand-600 animate-pulse" />
+                )}
+              </button>
+            )}
             {props.onDeconvolution && (
               <button
                 type="button"

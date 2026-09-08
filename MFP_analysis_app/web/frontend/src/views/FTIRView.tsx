@@ -40,6 +40,8 @@ import {
   publicationFilenameSuffix,
   sanitizeFilenamePart,
 } from "../utils/publicationPlotExport";
+import { FTIRInspectorPanel, type FTIRInspectorTab } from "../components/ftir/FTIRInspectorPanel";
+import { FTIRCanvasToolbar } from "../components/ftir/FTIRCanvasToolbar";
 
 // --- types local to this view ---
 
@@ -528,6 +530,7 @@ export function FTIRView() {
     DEFAULT_CONTROL_PANELS,
     (value) => ({ ...DEFAULT_CONTROL_PANELS, ...value }),
   );
+  const [inspectorTab, setInspectorTab] = useState<FTIRInspectorTab>("preprocess");
   const [integrationResult, setIntegrationResult] = useState<FTIRIntegrationResponse | null>(null);
   const [differenceSpectrum, setDifferenceSpectrum] = useState<FTIRSubtractResponse | null>(null);
   const [matchResult, setMatchResult] = useState<FTIRMatchResponse | null>(null);
@@ -1288,155 +1291,22 @@ export function FTIRView() {
           onRemove={onRemove}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-6">
-          {!active && <EmptyState onPick={() => fileRef.current?.click()} />}
-
-          {active && (
-            <>
+        {!active ? (
+          <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-6">
+            <EmptyState onPick={() => fileRef.current?.click()} />
+          </div>
+        ) : (
+          <div className="flex min-w-0 flex-1 overflow-hidden">
+            {/* Left 65% Canvas: Summary, Floating Canvas Toolbar, SpectrumChart, PeakTable */}
+            <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:p-5">
               <SummaryCard active={active} spectrum={spectrum} peaks={peaks} onTagUpdated={handleTagUpdated} />
 
-              <div className="flex shrink-0 flex-col gap-2">
-                <CollapsiblePanel
-                  title="Reprocess"
-                  summary={`${pre.mode}, ${pre.baseline} baseline, ${pre.normalize} normalize`}
-                  open={controlPanels.preprocess}
-                  onOpenChange={(open) => setControlPanelOpen("preprocess", open)}
-                  headerRight={
-                    <div className="flex items-center gap-1">
-                      <Tooltip content="Undo preprocessing change (Ctrl+Z)" placement="bottom">
-                        <button
-                          type="button"
-                          className="btn-ghost rounded p-1 text-xs disabled:opacity-30"
-                          disabled={!canUndoPre}
-                          onClick={(e) => { e.stopPropagation(); undoPre(); }}
-                        >
-                          ↩
-                        </button>
-                      </Tooltip>
-                      <Tooltip content="Redo preprocessing change (Ctrl+Y)" placement="bottom">
-                        <button
-                          type="button"
-                          className="btn-ghost rounded p-1 text-xs disabled:opacity-30"
-                          disabled={!canRedoPre}
-                          onClick={(e) => { e.stopPropagation(); redoPre(); }}
-                        >
-                          ↪
-                        </button>
-                      </Tooltip>
-                    </div>
-                  }
-                >
-                  <PreprocessCard pre={pre} setPre={setPre} />
-                </CollapsiblePanel>
-
-                <CollapsiblePanel
-                  title="Overlay"
-                  summary={overlayEnabled ? `${overlaySessionIds.length} selected` : "Off"}
-                  open={controlPanels.overlay}
-                  onOpenChange={(open) => setControlPanelOpen("overlay", open)}
-                >
-                  <OverlayCard
-                    sessions={sessions}
-                    enabled={overlayEnabled}
-                    setEnabled={setOverlayEnabled}
-                    selectedIds={overlaySessionIds}
-                    setSelectedIds={setOverlaySessionIds}
-                    overlayMode={graphSettings.overlayMode}
-                    setOverlayMode={(overlayMode) => setGraphSettings((prev) => ({ ...prev, overlayMode }))}
-                  />
-                </CollapsiblePanel>
-
-                <CollapsiblePanel
-                  title="Assignments"
-                  summary={`${pk.top_n || "all"} peaks, ${pk.assign ? "library on" : "library off"}`}
-                  open={controlPanels.peaks}
-                  onOpenChange={(open) => setControlPanelOpen("peaks", open)}
-                  headerRight={
-                    <div className="flex items-center gap-1">
-                      <Tooltip content="Undo peak pick adjustment (Ctrl+Z)" placement="bottom">
-                        <button
-                          type="button"
-                          className="btn-ghost rounded p-1 text-xs disabled:opacity-30"
-                          disabled={!canUndoPk}
-                          onClick={(e) => { e.stopPropagation(); undoPk(); }}
-                        >
-                          ↩
-                        </button>
-                      </Tooltip>
-                      <Tooltip content="Redo peak pick adjustment (Ctrl+Y)" placement="bottom">
-                        <button
-                          type="button"
-                          className="btn-ghost rounded p-1 text-xs disabled:opacity-30"
-                          disabled={!canRedoPk}
-                          onClick={(e) => { e.stopPropagation(); redoPk(); }}
-                        >
-                          ↪
-                        </button>
-                      </Tooltip>
-                    </div>
-                  }
-                >
-                  <PeakCard
-                    pk={pk}
-                    setPk={setPk}
-                    onRun={runPick}
-                    picking={picking}
-                    disabled={!spectrum}
-                    pickAcrossOverlay={pickAcrossOverlay}
-                    setPickAcrossOverlay={setPickAcrossOverlay}
-                    overlayEnabled={overlayEnabled}
-                    overlayCount={overlaySessionIds.length}
-                    peakEditMode={peakEditMode}
-                    setPeakEditMode={setPeakEditMode}
-                    onClearManualPeaks={clearManualPeaks}
-                    manualPeakCount={(manualPeakEdits[active.session_id]?.added.length ?? 0) + (manualPeakEdits[active.session_id]?.removed.length ?? 0)}
-                  />
-                </CollapsiblePanel>
-
-                <CollapsiblePanel
-                  title="Constraints"
-                  summary={`${assignmentConstraints.excluded_categories.length + assignmentConstraints.excluded_subcategories.length} exclusions`}
-                  open={controlPanels.assignments}
-                  onOpenChange={(open) => setControlPanelOpen("assignments", open)}
-                >
-                  <AssignmentConstraintsCard
-                    categories={libraryCategories}
-                    constraints={assignmentConstraints}
-                    setConstraints={setAssignmentConstraints}
-                    onApply={runPick}
-                    disabled={!spectrum || picking}
-                  />
-                </CollapsiblePanel>
-
-                <CollapsiblePanel
-                  title="Quant/tools"
-                  summary={`Integrate ${formatRange(quantState.integrationRegion.lo, quantState.integrationRegion.hi)} cm^-1`}
-                  open={controlPanels.quant}
-                  onOpenChange={(open) => setControlPanelOpen("quant", open)}
-                >
-                  <QuantToolsCard
-                    sessions={sessions}
-                    activeSid={active.session_id}
-                    state={quantState}
-                    setState={setQuantState}
-                    integrationResult={integrationResult}
-                    differenceSpectrum={differenceSpectrum}
-                    onIntegrate={runIntegrate}
-                    onSubtract={runSubtract}
-                    onMatch={runMatch}
-                    onFit={runFit}
-                    onClearDifference={() => setDifferenceSpectrum(null)}
-                    matchResult={matchResult}
-                    selectedReference={selectedReference}
-                    onSelectReference={setSelectedReference}
-                    onClearReference={() => setSelectedReference(null)}
-                    fitResult={fitResult}
-                    onClearFit={() => setFitResult(null)}
-                    busy={quantBusy}
-                    disabled={!spectrum}
-                  />
-                </CollapsiblePanel>
-              </div>
+              <FTIRCanvasToolbar
+                mode={peakEditMode}
+                onModeChange={setPeakEditMode}
+                manualPeakCount={(manualPeakEdits[active.session_id]?.added.length ?? 0) + (manualPeakEdits[active.session_id]?.removed.length ?? 0)}
+                onClearManual={clearManualPeaks}
+              />
 
               <SpectrumChart
                 spectrum={spectrum}
@@ -1485,9 +1355,84 @@ export function FTIRView() {
                   />
                 </PeakTablesTabs>
               )}
-            </>
-          )}
-        </div>
+            </div>
+
+            {/* Right 35% Inspector Panel */}
+            <FTIRInspectorPanel
+              activeTab={inspectorTab}
+              onTabChange={setInspectorTab}
+              undoPre={undoPre}
+              redoPre={redoPre}
+              canUndoPre={canUndoPre}
+              canRedoPre={canRedoPre}
+              undoPk={undoPk}
+              redoPk={redoPk}
+              canUndoPk={canUndoPk}
+              canRedoPk={canRedoPk}
+              childrenPreprocess={<PreprocessCard pre={pre} setPre={setPre} />}
+              childrenPeaks={
+                <div className="flex flex-col gap-4">
+                  <PeakCard
+                    pk={pk}
+                    setPk={setPk}
+                    onRun={runPick}
+                    picking={picking}
+                    disabled={!spectrum}
+                    pickAcrossOverlay={pickAcrossOverlay}
+                    setPickAcrossOverlay={setPickAcrossOverlay}
+                    overlayEnabled={overlayEnabled}
+                    overlayCount={overlaySessionIds.length}
+                    peakEditMode={peakEditMode}
+                    setPeakEditMode={setPeakEditMode}
+                    onClearManualPeaks={clearManualPeaks}
+                    manualPeakCount={(manualPeakEdits[active.session_id]?.added.length ?? 0) + (manualPeakEdits[active.session_id]?.removed.length ?? 0)}
+                  />
+                  <AssignmentConstraintsCard
+                    categories={libraryCategories}
+                    constraints={assignmentConstraints}
+                    setConstraints={setAssignmentConstraints}
+                    onApply={runPick}
+                    disabled={!spectrum || picking}
+                  />
+                </div>
+              }
+              childrenQuant={
+                <QuantToolsCard
+                  sessions={sessions}
+                  activeSid={active.session_id}
+                  state={quantState}
+                  setState={setQuantState}
+                  integrationResult={integrationResult}
+                  differenceSpectrum={differenceSpectrum}
+                  onIntegrate={runIntegrate}
+                  onSubtract={runSubtract}
+                  onMatch={runMatch}
+                  onFit={runFit}
+                  onClearDifference={() => setDifferenceSpectrum(null)}
+                  matchResult={matchResult}
+                  selectedReference={selectedReference}
+                  onSelectReference={setSelectedReference}
+                  onClearReference={() => setSelectedReference(null)}
+                  fitResult={fitResult}
+                  onClearFit={() => setFitResult(null)}
+                  busy={quantBusy}
+                  disabled={!spectrum}
+                />
+              }
+              childrenOverlay={
+                <OverlayCard
+                  sessions={sessions}
+                  enabled={overlayEnabled}
+                  setEnabled={setOverlayEnabled}
+                  selectedIds={overlaySessionIds}
+                  setSelectedIds={setOverlaySessionIds}
+                  overlayMode={graphSettings.overlayMode}
+                  setOverlayMode={(overlayMode) => setGraphSettings((prev) => ({ ...prev, overlayMode }))}
+                />
+              }
+            />
+          </div>
+        )}
       </div>
       {helpModule ? (
         <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
