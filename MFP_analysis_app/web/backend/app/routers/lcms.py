@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 
 from ..blob_store import manifest_key, put_json
 from ..db import get_upload_dir
-from ..upload_utils import read_upload_bytes
+from ..upload_utils import read_upload_bytes, stream_upload_to_file
 from ..services.lcms_service import (
     LCMSSessionState,
     attach_uv_from_csv,
@@ -169,11 +169,13 @@ async def create_session(
     rt_unit: str = Form("minutes"),
     x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
-    data, name = await read_upload_bytes(file, blob_url, blob_filename)
-    if not name.lower().endswith((".mzml", ".mzml.gz")):
-        raise HTTPException(status_code=400, detail="Expected a .mzML file.")
-    dest = _persistent_upload_path(_MZML_UPLOAD_DIR, name, data)
-    dest.write_bytes(data)
+    dest, name = await stream_upload_to_file(
+        file,
+        blob_url,
+        blob_filename,
+        _MZML_UPLOAD_DIR,
+        allowed_extensions={".mzml", ".mzml.gz"},
+    )
     try:
         state = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name, rt_unit=rt_unit)
     except LCMSLoadError as exc:
@@ -450,12 +452,13 @@ async def export_uv_csv(sid: str) -> Response:
 @router.post("/sessions/{sid}/uv")
 async def attach_uv(sid: str, file: UploadFile = File(...)) -> Dict[str, Any]:
     state = await _require_session(sid)
-    name = file.filename or "upload.csv"
-    if not name.lower().endswith((".csv", ".tsv", ".txt")):
-        raise HTTPException(status_code=400, detail="Expected a .csv/.tsv/.txt UV chromatogram file.")
-    data = await file.read()
-    dest = _persistent_upload_path(_UV_UPLOAD_DIR, name, data)
-    dest.write_bytes(data)
+    dest, name = await stream_upload_to_file(
+        file,
+        None,
+        None,
+        _UV_UPLOAD_DIR,
+        allowed_extensions={".csv", ".tsv", ".txt"},
+    )
     try:
         attach_uv_from_csv(state, dest, filename=name)
     except UVLoadError as exc:

@@ -117,6 +117,26 @@ export interface PlotlyThemeColors {
   colorway: string[];
 }
 
+/**
+ * Standard Okabe-Ito colorblind-safe palette recommended by Nature, Science, and ACS.
+ */
+export const OKABE_ITO_PALETTE = [
+  "#0072B2", // Blue
+  "#E69F00", // Orange
+  "#009E73", // Bluish green
+  "#D55E00", // Vermilion
+  "#CC79A7", // Reddish purple
+  "#56B4E9", // Sky blue
+  "#F0E442", // Yellow
+  "#333333", // Dark gray / Off-black
+] as const;
+
+export const DEFAULT_PLOTLY_CONFIG = {
+  responsive: true,
+  displaylogo: false,
+  modeBarButtonsToRemove: ["toImage" as const],
+};
+
 const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
   day: {
     plot_bgcolor: "#ffffff",
@@ -125,7 +145,7 @@ const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
     gridColor: "#d6dcea",
     legendBg: "rgba(255,255,255,0.88)",
     zerolineColor: "#b6c4da",
-    colorway: ["#3559A8","#0F766E","#B45309","#7C3AED","#BE123C","#0891B2"],
+    colorway: [...OKABE_ITO_PALETTE],
   },
   night: {
     plot_bgcolor: "#001a37",
@@ -134,7 +154,7 @@ const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
     gridColor: "#002042",
     legendBg: "rgba(0,26,55,0.88)",
     zerolineColor: "#284974",
-    colorway: ["#7290E8","#5EEAD4","#FCD34D","#C4B5FD","#FDA4AF","#67E8F9"],
+    colorway: ["#56B4E9", "#E69F00", "#5EEAD4", "#FDA4AF", "#FCD34D", "#C4B5FD", "#67E8F9", "#FFFFFF"],
   },
   "night-vision": {
     plot_bgcolor: "#100505",
@@ -143,7 +163,7 @@ const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
     gridColor: "#1a0808",
     legendBg: "rgba(16,5,5,0.88)",
     zerolineColor: "#3c1616",
-    colorway: ["#FF6B6B","#FFB347","#FFEAA7","#FF9F80","#E8A0BF","#AFF8D8"],
+    colorway: ["#FF6B6B", "#FFB347", "#FFEAA7", "#FF9F80", "#E8A0BF", "#AFF8D8"],
   },
 };
 

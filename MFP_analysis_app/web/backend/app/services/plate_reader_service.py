@@ -272,4 +272,5 @@ def _result_to_dict(res: PlateReaderMICWizardResult) -> Dict[str, Any]:
         "control_std": list(res.control_std) if res.control_std is not None else None,
         "blank_mean": list(getattr(res, "blank_mean", None)) if getattr(res, "blank_mean", None) is not None else None,
         "blank_std": list(getattr(res, "blank_std", None)) if getattr(res, "blank_std", None) is not None else None,
+        "four_pl": getattr(res, "four_pl", None),
     }

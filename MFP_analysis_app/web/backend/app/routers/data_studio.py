@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from ..blob_store import manifest_key, put_json
 from ..db import get_upload_dir
-from ..upload_utils import read_upload_bytes
+from ..upload_utils import read_upload_bytes, stream_upload_to_file
 from ..services.data_studio_service import (
     DataStudioSession,
     build_histogram,
@@ -97,14 +97,8 @@ async def create_session(
     blob_filename: str | None = Form(None),
     x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
-    import hashlib
-    data, name = await read_upload_bytes(file, blob_url, blob_filename)
     upload_dir = get_upload_dir("data_studio")
-    stem = Path(name).stem or "upload"
-    suffix = "".join(Path(name).suffixes)
-    digest = hashlib.sha256(data).hexdigest()[:12]
-    dest = upload_dir / f"{stem}.{digest}{suffix}"
-    dest.write_bytes(data)
+    dest, name = await stream_upload_to_file(file, blob_url, blob_filename, upload_dir)
     s = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name)
     if blob_url:
         await put_json(

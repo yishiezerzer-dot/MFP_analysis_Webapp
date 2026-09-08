@@ -184,6 +184,7 @@ class PlateReaderMICWizardResult:
     control_std: Optional[List[float]] = None
     blank_mean: Optional[List[float]] = None
     blank_std: Optional[List[float]] = None
+    four_pl: Optional[Dict[str, Any]] = None
 
     def render(self, ax, *, config: Optional[PlateReaderMICWizardConfig]) -> None:
         """Render data into UI elements.
@@ -399,6 +400,59 @@ class PlateReaderMICWizardResult:
                         pass
 
 
+def fit_4pl_curve(x_vals: Sequence[float], y_vals: Sequence[float]) -> Optional[Dict[str, Any]]:
+    """Fit a 4-Parameter Logistic (4PL / Hill equation) sigmoidal curve to dose-response data:
+    y = Bottom + (Top - Bottom) / (1 + (x / IC50) ** HillSlope)
+    """
+    try:
+        from scipy.optimize import curve_fit
+        x_arr = np.asarray(x_vals, dtype=float)
+        y_arr = np.asarray(y_vals, dtype=float)
+        mask = np.isfinite(x_arr) & np.isfinite(y_arr)
+        if np.sum(mask) < 4:
+            return None
+        x = x_arr[mask]
+        y = y_arr[mask]
+
+        bottom_init = float(np.min(y))
+        top_init = float(np.max(y))
+        ic50_init = float(np.median(x))
+        hill_init = 1.0 if y[0] < y[-1] else -1.0
+
+        def sigmoidal_4pl(xi, bottom, top, ic50, hill):
+            ratio = np.maximum(xi, 1e-12) / np.maximum(ic50, 1e-12)
+            denom = 1.0 + np.power(ratio, hill)
+            return bottom + (top - bottom) / np.maximum(denom, 1e-12)
+
+        popt, _ = curve_fit(
+            sigmoidal_4pl,
+            x,
+            y,
+            p0=[bottom_init, top_init, ic50_init, hill_init],
+            maxfev=5000,
+        )
+        b, t, ic, h = popt
+        y_pred = sigmoidal_4pl(x, b, t, ic, h)
+        ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+        ss_res = float(np.sum((y - y_pred) ** 2))
+        r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+
+        smooth_x = np.linspace(float(np.min(x)), float(np.max(x)), 80)
+        smooth_y = sigmoidal_4pl(smooth_x, b, t, ic, h)
+
+        return {
+            "bottom": float(b),
+            "top": float(t),
+            "ic50": float(ic),
+            "hill_slope": float(h),
+            "r_squared": float(max(0.0, r2)),
+            "curve_x": [float(v) for v in smooth_x],
+            "curve_y": [float(v) for v in smooth_y],
+        }
+    except Exception:
+        return None
+
+
 def build_mic_wizard_config_and_result(
     df: pd.DataFrame,
     *,
@@ -458,7 +512,11 @@ def build_mic_wizard_config_and_result(
     if bool(subtract_blank) and blank_mean is not None:
         sample_mat = sample_mat - blank_mean
     sample_mean = np.nanmean(sample_mat, axis=0)
-    sample_std = np.nanstd(sample_mat, axis=0, ddof=1) if sample_mat.shape[0] > 1 else np.zeros(sample_mat.shape[1])
+    raw_sample_std = np.nanstd(sample_mat, axis=0, ddof=1) if sample_mat.shape[0] > 1 else np.zeros(sample_mat.shape[1])
+    if bool(subtract_blank) and blank_std is not None:
+        sample_std = np.sqrt(np.square(raw_sample_std) + np.square(blank_std))
+    else:
+        sample_std = raw_sample_std
 
     control_mean = None
     control_std = None
@@ -468,7 +526,11 @@ def build_mic_wizard_config_and_result(
             if bool(subtract_blank) and blank_mean is not None:
                 ctrl_mat = ctrl_mat - blank_mean
             control_mean = np.nanmean(ctrl_mat, axis=0)
-            control_std = np.nanstd(ctrl_mat, axis=0, ddof=1) if ctrl_mat.shape[0] > 1 else np.zeros(ctrl_mat.shape[1])
+            raw_ctrl_std = np.nanstd(ctrl_mat, axis=0, ddof=1) if ctrl_mat.shape[0] > 1 else np.zeros(ctrl_mat.shape[1])
+            if bool(subtract_blank) and blank_std is not None:
+                control_std = np.sqrt(np.square(raw_ctrl_std) + np.square(blank_std))
+            else:
+                control_std = raw_ctrl_std
 
     cfg = PlateReaderMICWizardConfig(
         use_first_row_as_header=bool(use_first_row_as_header),
@@ -514,6 +576,18 @@ def build_mic_wizard_config_and_result(
             except Exception:
                 pass
 
+    # 4-Parameter Logistic (4PL) sigmoidal curve fitting
+    numeric_concs: List[float] = []
+    labels_to_check = tick_labels if tick_labels else [str(c) for c in concentration_columns]
+    for lbl in labels_to_check:
+        try:
+            numeric_concs.append(float(str(lbl).strip()))
+        except Exception:
+            numeric_concs = []
+            break
+    x_for_fit = numeric_concs if (numeric_concs and len(numeric_concs) == len(sample_mean)) else [float(i) for i in range(len(sample_mean))]
+    four_pl = fit_4pl_curve(x_for_fit, sample_mean)
+
     result = PlateReaderMICWizardResult(
         concentrations=[float(i) for i in range(len(concentration_columns))],
         x_tick_labels=(tick_labels if tick_labels else [str(c) for c in concentration_columns]),
@@ -531,6 +605,7 @@ def build_mic_wizard_config_and_result(
         blank_std=([
             float(x) if np.isfinite(x) else float("nan") for x in blank_std.tolist()
         ] if blank_std is not None else None),
+        four_pl=four_pl,
     )
 
     return cfg, result, float(sample_nan)

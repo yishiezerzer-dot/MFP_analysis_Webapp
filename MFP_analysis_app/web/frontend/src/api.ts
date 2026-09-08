@@ -272,6 +272,16 @@ export interface MICRequestBody {
   control_style: MICControlStyle;
 }
 
+export interface FourPLFit {
+  bottom: number;
+  top: number;
+  ic50: number;
+  hill_slope: number;
+  r_squared: number;
+  curve_x: number[];
+  curve_y: number[];
+}
+
 export interface MICResult {
   config: {
     use_first_row_as_header: boolean;
@@ -300,6 +310,7 @@ export interface MICResult {
     control_std: number[] | null;
     blank_mean?: number[] | null;
     blank_std?: number[] | null;
+    four_pl?: FourPLFit | null;
   };
   sample_nan_ratio: number;
 }

@@ -755,6 +755,11 @@ export function PlateReaderView() {
                         </span>
                       </span>
                     )}
+                    {mic.result.four_pl && (
+                      <span className="rounded bg-brand-50 px-2 py-0.5 text-brand-800 border border-brand-200">
+                        <span className="font-semibold">4PL Sigmoidal Fit:</span> IC₅₀ = <span className="font-mono font-bold">{mic.result.four_pl.ic50.toFixed(3)}</span> | R² = <span className="font-mono font-bold">{mic.result.four_pl.r_squared.toFixed(3)}</span> (Slope = {mic.result.four_pl.hill_slope.toFixed(2)})
+                      </span>
+                    )}
                     {mic.sample_nan_ratio > 0 && (
                       <span className="text-amber-700">
                         ⚠ {(mic.sample_nan_ratio * 100).toFixed(1)}% non-numeric cells ignored
@@ -1393,6 +1398,18 @@ function MICChart({
       error_y: errBars(result.blank_std),
       line: { color: settings.blankColor, width: settings.lineWidth, dash: "dot" },
       marker: { color: settings.blankColor, size: Math.max(4, settings.markerSize - 1) },
+    });
+  }
+
+  if (result.four_pl) {
+    data.push({
+      type: "scatter",
+      mode: "lines",
+      name: `4PL Fit (IC₅₀: ${result.four_pl.ic50.toFixed(2)}, R²: ${result.four_pl.r_squared.toFixed(3)})`,
+      x: result.four_pl.curve_x,
+      y: result.four_pl.curve_y,
+      line: { color: settings.sampleColor, width: Math.max(1.8, settings.lineWidth), dash: "dash" },
+      hoverinfo: "y+name",
     });
   }
 
