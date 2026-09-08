@@ -22,3 +22,7 @@ lxml>=5.0
 # --- AI assistant (OpenAI + HTTP client for Ollama) ---
 httpx>=0.27
 openai>=1.40
+
+# --- Publication & Figure Engine ---
+reportlab>=4.0
+pillow>=10.0
