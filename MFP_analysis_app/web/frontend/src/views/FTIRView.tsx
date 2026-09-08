@@ -55,7 +55,7 @@ const DEFAULT_PRE: FTIRPreprocessOptions = {
   mode: "transmittance",
   smoothing_window: 0,
   poly_order: 2,
-  baseline: "none",
+  baseline: "airpls",
   normalize: "none",
   baseline_lambda: 100000,
   baseline_p: 0.01,
@@ -446,6 +446,8 @@ export function FTIRView() {
     (value) => ({ ...DEFAULT_PEAK, ...value }),
   );
   const [spectrum, setSpectrum] = useState<FTIRSpectrumResponse | null>(null);
+  const [showSecondDerivative, setShowSecondDerivative] = useState<boolean>(false);
+  const [showBaselineCurve, setShowBaselineCurve] = useState<boolean>(false);
   const [overlayEnabled, setOverlayEnabled] = useStoredState<boolean>(`${FTIR_STORAGE_PREFIX}.overlayEnabled`, false);
   const [overlaySessionIds, setOverlaySessionIds] = useStoredState<string[]>(
     `${FTIR_STORAGE_PREFIX}.overlaySessionIds`,
@@ -616,11 +618,16 @@ export function FTIRView() {
     }
     setBusy(true);
     api.ftir
-      .spectrum(activeSid, { ...pre, max_points: 4000 })
+      .spectrum(activeSid, {
+        ...pre,
+        max_points: 4000,
+        include_second_derivative: showSecondDerivative,
+        include_baseline: showBaselineCurve,
+      })
       .then(setSpectrum)
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(false));
-  }, [activeSid, pre, sessions]);
+  }, [activeSid, pre, sessions, showSecondDerivative, showBaselineCurve]);
 
   useEffect(() => {
     if (!activeSid) return;
@@ -1369,6 +1376,10 @@ export function FTIRView() {
                 setGraphSettings={setGraphSettings}
                 peakEditMode={peakEditMode}
                 onChartPeakEdit={handleChartPeakEdit}
+                showSecondDerivative={showSecondDerivative}
+                setShowSecondDerivative={setShowSecondDerivative}
+                showBaselineCurve={showBaselineCurve}
+                setShowBaselineCurve={setShowBaselineCurve}
               />
 
               {hasAnyPeakTable && selectedPeakTableSid && selectedPeakTableSession && (
@@ -2307,7 +2318,35 @@ function QuantToolsCard(props: {
         )}
       </div>
       <div className="mt-4 rounded-md border border-ink-200 bg-surface-raised p-3">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-500">Peak fitting</div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+            Sub-band Deconvolution & Fitting (2nd Derivative Seeded)
+          </div>
+          <div className="flex flex-wrap items-center gap-1 text-[11px] text-ink-500">
+            <span>Presets:</span>
+            <button
+              type="button"
+              className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 hover:bg-ink-100"
+              onClick={() => props.setState({ ...props.state, fitRegion: { lo: 1600, hi: 1700 }, fitComponents: 4, fitProfile: "gauss" })}
+            >
+              Amide I (1600–1700)
+            </button>
+            <button
+              type="button"
+              className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 hover:bg-ink-100"
+              onClick={() => props.setState({ ...props.state, fitRegion: { lo: 1680, hi: 1780 }, fitComponents: 2, fitProfile: "gauss" })}
+            >
+              Carbonyl (1680–1780)
+            </button>
+            <button
+              type="button"
+              className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 hover:bg-ink-100"
+              onClick={() => props.setState({ ...props.state, fitRegion: { lo: 3100, hi: 3600 }, fitComponents: 3, fitProfile: "gauss" })}
+            >
+              O-H/N-H (3100–3600)
+            </button>
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
           <Field label="Fit lo cm^-1">
             <input
@@ -2355,7 +2394,7 @@ function QuantToolsCard(props: {
           </Field>
           <Field label="Run">
             <button className="btn-primary h-9 w-full" disabled={props.disabled || props.busy} onClick={props.onFit}>
-              Fit
+              Deconvolute
             </button>
           </Field>
           <Field label="Overlay">
@@ -2370,20 +2409,46 @@ function QuantToolsCard(props: {
         </div>
         {props.fitResult && (
           <div className="mt-3">
-            <div className="mb-2 flex flex-wrap gap-2 text-xs text-ink-600">
-              <Metric label="R2" value={props.fitResult.r2 == null ? "-" : props.fitResult.r2.toFixed(4)} />
-              <Metric label="RMS" value={formatNumber(props.fitResult.residual_rms)} />
-              <Metric label="Profile" value={props.fitResult.profile} />
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-600">
+              <div className="flex flex-wrap gap-2">
+                <Metric label="R²" value={props.fitResult.r2 == null ? "-" : props.fitResult.r2.toFixed(4)} />
+                <Metric label="RMS Residual" value={formatNumber(props.fitResult.residual_rms)} />
+                <Metric label="Profile" value={props.fitResult.profile} />
+              </div>
+              <button
+                type="button"
+                className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-100"
+                onClick={() => {
+                  if (!props.fitResult) return;
+                  const rows = [
+                    ["Component", "Center_cm1", "Assignment", "FWHM_cm1", "Amplitude", "Area", "Area_Percent"],
+                    ...props.fitResult.components.map((c) => [
+                      c.index,
+                      c.center.toFixed(2),
+                      `"${c.assignment ?? ""}"`,
+                      c.fwhm != null ? c.fwhm.toFixed(2) : (c.width * 2.35).toFixed(2),
+                      c.amplitude.toFixed(4),
+                      c.area.toFixed(4),
+                      c.area_percent != null ? c.area_percent.toFixed(2) : "",
+                    ]),
+                  ];
+                  const csv = rows.map((r) => r.join(",")).join("\n");
+                  void navigator.clipboard.writeText(csv);
+                }}
+              >
+                📋 Copy Deconvolution CSV
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full border-separate border-spacing-0 text-xs">
                 <thead>
                   <tr>
                     <Th>#</Th>
-                    <Th align="right">Center</Th>
-                    <Th align="right">Width</Th>
-                    <Th align="right">Amplitude</Th>
+                    <Th align="right">Center (cm⁻¹)</Th>
+                    <Th align="left">Assignment / Conformation</Th>
+                    <Th align="right">FWHM (cm⁻¹)</Th>
                     <Th align="right">Area</Th>
+                    <Th align="right">Area %</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2391,9 +2456,19 @@ function QuantToolsCard(props: {
                     <tr key={component.index} className="odd:bg-ink-50/40">
                       <Td>{component.index}</Td>
                       <Td align="right">{component.center.toFixed(1)}</Td>
-                      <Td align="right">{component.width.toFixed(1)}</Td>
-                      <Td align="right">{formatNumber(component.amplitude)}</Td>
-                      <Td align="right">{formatNumber(component.area)}</Td>
+                      <Td align="left">
+                        <span className="rounded bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-700">
+                          {component.assignment ?? "Band"}
+                        </span>
+                      </Td>
+                      <Td align="right">
+                        {component.fwhm != null ? component.fwhm.toFixed(1) : (component.width * 2.35).toFixed(1)}
+                      </Td>
+                      <Td align="right">
+                        <span className="font-semibold text-brand-700">
+                          {component.area_percent != null ? `${component.area_percent.toFixed(1)}%` : "-"}
+                        </span>
+                      </Td>
                     </tr>
                   ))}
                 </tbody>
@@ -2439,11 +2514,12 @@ function SortButton(props: {
 
 type PeakSortKey = "wn" | "y" | "prominence" | "score";
 
-type FTIRRegion = "full" | "fingerprint" | "functional" | "custom";
+type FTIRRegion = "full" | "fingerprint" | "functional" | "amide" | "custom";
 const FTIR_REGIONS: Record<Exclude<FTIRRegion, "custom">, [number, number]> = {
   full:       [400, 4000],
   fingerprint:[400, 1500],
   functional: [1500, 4000],
+  amide:      [1500, 1750],
 };
 const FIT_COMPONENT_COLORS = ["#7c3aed", "#0891b2", "#ea580c", "#16a34a", "#db2777", "#4f46e5"];
 const GROUP_FREQUENCY_REGIONS = [
@@ -2476,6 +2552,10 @@ function SpectrumChart(props: {
   setGraphSettings: (value: GraphSettings) => void;
   peakEditMode: PeakEditMode;
   onChartPeakEdit: (wn: number, y: number) => void;
+  showSecondDerivative: boolean;
+  setShowSecondDerivative: React.Dispatch<React.SetStateAction<boolean>>;
+  showBaselineCurve: boolean;
+  setShowBaselineCurve: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
   const { spectrum, mode } = props;
   const pt = usePlotlyTheme();
@@ -2636,12 +2716,45 @@ function SpectrumChart(props: {
         name: `${overlay.display_name} peaks`,
       });
     }
-    return [trace, ...overlayTraces, ...differenceTrace, ...referenceTrace, ...fitTraces, ...markerTraces];
+    const secondDerivativeTrace: Data[] =
+      props.showSecondDerivative && spectrum?.inverted_second_derivative
+        ? [
+            {
+              type: "scatter",
+              mode: "lines",
+              x: spectrum.wn,
+              y: spectrum.inverted_second_derivative,
+              line: { color: "#8b5cf6", width: 1.3, dash: "dot" },
+              yaxis: "y2",
+              name: "Inverted 2nd Deriv (-d²A/dν²)",
+              hovertemplate: "2nd Deriv<br>%{x:.1f} cm⁻¹<br>-d²A/dν²: %{y:.4g}<extra></extra>",
+              opacity: 0.85,
+            },
+          ]
+        : [];
+    const baselineTrace: Data[] =
+      props.showBaselineCurve && spectrum?.baseline
+        ? [
+            {
+              type: "scatter",
+              mode: "lines",
+              x: spectrum.wn,
+              y: spectrum.baseline,
+              line: { color: "#d97706", width: 1.3, dash: "dash" },
+              name: "Subtracted Baseline",
+              hovertemplate: "Baseline<br>%{x:.1f} cm⁻¹<br>%{y:.4g}<extra></extra>",
+              opacity: 0.8,
+            },
+          ]
+        : [];
+    return [trace, ...baselineTrace, ...secondDerivativeTrace, ...overlayTraces, ...differenceTrace, ...referenceTrace, ...fitTraces, ...markerTraces];
   }, [
     spectrum,
     props.differenceSpectrum,
     props.fitResult,
     props.selectedReference,
+    props.showSecondDerivative,
+    props.showBaselineCurve,
     props.title,
     visibleOverlays,
     props.graphSettings.lineWidth,
@@ -2964,6 +3077,34 @@ function SpectrumChart(props: {
             </span>
           </Tooltip>
           <PaperFigureExportToolbar disabled={!spectrum} onExport={exportPlotImagePaper} />
+          <Tooltip content="Overlay inverted 2nd derivative (-d²A/dν²) to detect hidden sub-bands and shoulders">
+            <button
+              type="button"
+              className={clsx(
+                "rounded-md border px-2 py-1 text-xs transition-colors",
+                props.showSecondDerivative
+                  ? "border-purple-500 bg-purple-50 text-purple-700 font-semibold"
+                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
+              )}
+              onClick={() => props.setShowSecondDerivative((prev) => !prev)}
+            >
+              〰 2nd Deriv
+            </button>
+          </Tooltip>
+          <Tooltip content="Overlay fitted baseline curve before subtraction">
+            <button
+              type="button"
+              className={clsx(
+                "rounded-md border px-2 py-1 text-xs transition-colors",
+                props.showBaselineCurve
+                  ? "border-amber-500 bg-amber-50 text-amber-700 font-semibold"
+                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
+              )}
+              onClick={() => props.setShowBaselineCurve((prev) => !prev)}
+            >
+              📉 Baseline
+            </button>
+          </Tooltip>
           <span className="text-xs text-ink-400">Region:</span>
           <select
             className="input py-0.5 text-xs"
@@ -2973,6 +3114,7 @@ function SpectrumChart(props: {
             <option value="full">Full (400–4000 cm⁻¹)</option>
             <option value="fingerprint">Fingerprint (400–1500)</option>
             <option value="functional">Functional groups (1500–4000)</option>
+            <option value="amide">Amide I & II (1500–1750)</option>
             <option value="custom">Custom…</option>
           </select>
           {region === "custom" && (

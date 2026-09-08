@@ -36,8 +36,9 @@ def preprocess_spectrum(
     baseline_p: float = 0.01,
     atr_correction: bool = False,
     atr_n_crystal: float = 1.5,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Preprocess an FTIR spectrum for peak picking.
+    return_baseline: bool = False,
+) -> Tuple[np.ndarray, np.ndarray] | Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Preprocess an FTIR spectrum for peak picking and analysis.
 
     This function does NOT pick peaks; it only returns processed arrays.
 
@@ -45,35 +46,32 @@ def preprocess_spectrum(
       1) sanitize + sort by `wn`
       2) optional smoothing
       3) optional ATR correction
-      4) optional baseline correction
+      4) optional baseline correction (airPLS, AsLS, rubberband, or ModPoly)
       5) optional normalization
 
     Args:
         wn: x array (wavenumber).
         y: signal array.
-        mode: "absorbance" or "transmittance" (used only for sensible defaults;
-            this function returns processed y in the original orientation).
+        mode: "absorbance" or "transmittance".
         smoothing_window: Savitzky-Golay (SciPy) or moving-average window size.
             Use 0/1 to disable.
         poly_order: For Savitzky-Golay (if SciPy available). Must be < window.
         baseline: "none", "polyfit", "rubberband", "asls", or "airpls".
         normalize: "none", "max", "area", "snv", "vector", or "min-max".
-        baseline_lambda: smoothness for iterative baselines.
-        baseline_p: asymmetry for AsLS.
+        baseline_lambda: smoothness for iterative baselines (airPLS/AsLS).
+        baseline_p: asymmetry parameter for AsLS.
         atr_correction: apply a gentle ATR penetration-depth correction.
         atr_n_crystal: refractive index used to scale ATR correction.
+        return_baseline: if True, returns (wn, y_processed, baseline_curve).
 
     Returns:
-        (wn_sorted, y_processed)
-
-    Notes:
-        - Non-finite points are dropped.
-        - If the result is empty, returns empty arrays.
-        - Baseline polyfit uses degree=min(3, n-1).
+        (wn_sorted, y_processed) or (wn_sorted, y_processed, baseline_curve)
     """
 
     x, y0 = _sanitize_xy(wn, y)
     if x.size == 0:
+        if return_baseline:
+            return x, y0, np.zeros_like(y0)
         return x, y0
 
     y_out = np.asarray(y0, dtype=float)
@@ -93,14 +91,16 @@ def preprocess_spectrum(
 
     # --- baseline correction ---
     b = (baseline or "none").strip().lower()
-    if b == "polyfit":
-        y_out = _baseline_polyfit(x, y_out)
-    elif b == "rubberband":
-        y_out = _baseline_rubberband(x, y_out)
-    elif b == "asls":
-        y_out = _baseline_asls(y_out, lam=float(baseline_lambda or 100000.0), p=float(baseline_p or 0.01))
-    elif b == "airpls":
-        y_out = _baseline_airpls(y_out, lam=float(baseline_lambda or 100000.0))
+    base_curve = np.zeros_like(y_out)
+    if b != "none":
+        base_curve = calculate_baseline(
+            x,
+            y_out,
+            baseline=b,
+            baseline_lambda=float(baseline_lambda or 100000.0),
+            baseline_p=float(baseline_p or 0.01),
+        )
+        y_out = (y_out - base_curve).astype(float)
 
     # --- normalization ---
     nrm = (normalize or "none").strip().lower()
@@ -117,6 +117,8 @@ def preprocess_spectrum(
     elif nrm == "msc":
         y_out = _normalize_msc(y_out)
 
+    if return_baseline:
+        return x, np.asarray(y_out, dtype=float), np.asarray(base_curve, dtype=float)
     return x, np.asarray(y_out, dtype=float)
 
 
@@ -160,89 +162,123 @@ def _smooth(y: np.ndarray, *, window: int, poly_order: int) -> np.ndarray:
     return np.convolve(ypad, kernel, mode="valid").astype(float)
 
 
-def _baseline_polyfit(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    """Implement the `_baseline_polyfit` behavior for this module.
+def _calculate_baseline_polyfit(x: np.ndarray, y: np.ndarray, *, max_deg: int = 2, n_iter: int = 15) -> np.ndarray:
+    """Modified Polynomial (ModPoly) baseline estimation.
 
-    Text-only documentation note: modify internal logic here to change behavior.
+    Suppresses Runge edge oscillations and peak distortion by:
+    1. Normalizing wavenumber coordinates to [-1, 1] to ensure well-conditioned matrices.
+    2. Restricting max degree to 2 (parabolic/linear) by default, strictly preventing edge flare.
+    3. Iteratively updating y_work = min(y, base) so absorption peaks do not pull the
+       baseline upward into bands.
     """
     xx = np.asarray(x, dtype=float)
     yy = np.asarray(y, dtype=float)
     n = int(yy.size)
     if n < 4:
-        return yy
+        return np.zeros_like(yy)
 
-    deg = min(3, n - 1)
-    try:
-        coeff = np.polyfit(xx, yy, deg=int(deg))
-        base = np.polyval(coeff, xx)
-        return (yy - base).astype(float)
-    except Exception:
-        return yy
+    xmin, xmax = float(np.nanmin(xx)), float(np.nanmax(xx))
+    span = max(1e-12, xmax - xmin)
+    x_scaled = 2.0 * (xx - xmin) / span - 1.0
+
+    deg = min(max_deg, n - 1)
+    y_work = yy.copy()
+    base = np.zeros_like(yy)
+
+    for _ in range(int(n_iter)):
+        try:
+            coeffs = np.polyfit(x_scaled, y_work, deg=deg)
+            base = np.polyval(coeffs, x_scaled)
+            # Threshold: baseline cannot exceed the actual signal
+            y_work = np.minimum(yy, base)
+        except Exception:
+            break
+
+    return base.astype(float)
 
 
-def _baseline_rubberband(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    """Subtract a lower-envelope rubberband baseline."""
+def _baseline_polyfit(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Subtract ModPoly baseline with Runge oscillation suppression."""
+    xx = np.asarray(x, dtype=float)
+    yy = np.asarray(y, dtype=float)
+    base = _calculate_baseline_polyfit(xx, yy, max_deg=2)
+    return (yy - base).astype(float)
 
+
+def _calculate_baseline_rubberband(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Calculate lower-envelope rubberband baseline."""
     xx = np.asarray(x, dtype=float)
     yy = np.asarray(y, dtype=float)
     if yy.size < 3:
-        return yy
+        return np.zeros_like(yy)
 
     try:
-      from scipy.spatial import ConvexHull  # type: ignore
+        from scipy.spatial import ConvexHull  # type: ignore
 
-      points = np.column_stack([xx, yy])
-      hull = ConvexHull(points)
-      vertices = sorted(int(v) for v in hull.vertices)
-      lower = []
-      for idx in vertices:
-          x0 = xx[idx]
-          y0 = yy[idx]
-          if not lower:
-              lower.append(idx)
-              continue
-          last = lower[-1]
-          if x0 <= xx[last]:
-              continue
-          slope = (y0 - yy[last]) / max(1e-12, x0 - xx[last])
-          while len(lower) >= 2:
-              prev = lower[-2]
-              prev_slope = (yy[last] - yy[prev]) / max(1e-12, xx[last] - xx[prev])
-              if slope > prev_slope:
-                  break
-              lower.pop()
-              last = lower[-1]
-              slope = (y0 - yy[last]) / max(1e-12, x0 - xx[last])
-          lower.append(idx)
-      if len(lower) >= 2:
-          base = np.interp(xx, xx[lower], yy[lower])
-          return (yy - base).astype(float)
+        points = np.column_stack([xx, yy])
+        hull = ConvexHull(points)
+        vertices = sorted(int(v) for v in hull.vertices)
+        lower = []
+        for idx in vertices:
+            x0 = xx[idx]
+            y0 = yy[idx]
+            if not lower:
+                lower.append(idx)
+                continue
+            last = lower[-1]
+            if x0 <= xx[last]:
+                continue
+            slope = (y0 - yy[last]) / max(1e-12, x0 - xx[last])
+            while len(lower) >= 2:
+                prev = lower[-2]
+                prev_slope = (yy[last] - yy[prev]) / max(1e-12, xx[last] - xx[prev])
+                if slope > prev_slope:
+                    break
+                lower.pop()
+                last = lower[-1]
+                slope = (y0 - yy[last]) / max(1e-12, x0 - xx[last])
+            lower.append(idx)
+        if len(lower) >= 2:
+            return np.interp(xx, xx[lower], yy[lower]).astype(float)
     except Exception:
         pass
 
-    return _baseline_rolling_minimum(xx, yy)
+    return _calculate_baseline_rolling_minimum(xx, yy)
 
 
-def _baseline_rolling_minimum(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+def _baseline_rubberband(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Subtract lower-envelope rubberband baseline."""
+    xx = np.asarray(x, dtype=float)
+    yy = np.asarray(y, dtype=float)
+    base = _calculate_baseline_rubberband(xx, yy)
+    return (yy - base).astype(float)
+
+
+def _calculate_baseline_rolling_minimum(x: np.ndarray, y: np.ndarray) -> np.ndarray:
     yy = np.asarray(y, dtype=float)
     n = int(yy.size)
     if n < 3:
-        return yy
+        return np.zeros_like(yy)
     window = max(5, min(101, (n // 20) | 1))
     pad = window // 2
     padded = np.pad(yy, (pad, pad), mode="edge")
     mins = np.array([np.nanmin(padded[i : i + window]) for i in range(n)], dtype=float)
     base = _smooth(mins, window=min(window, n if n % 2 else n - 1), poly_order=2)
+    return np.asarray(base, dtype=float)
+
+
+def _baseline_rolling_minimum(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    yy = np.asarray(y, dtype=float)
+    base = _calculate_baseline_rolling_minimum(x, yy)
     return (yy - base).astype(float)
 
 
-def _baseline_asls(y: np.ndarray, *, lam: float, p: float, n_iter: int = 12) -> np.ndarray:
-    """Asymmetric least-squares baseline correction."""
-
+def _calculate_baseline_asls(y: np.ndarray, *, lam: float, p: float, n_iter: int = 12) -> np.ndarray:
+    """Calculate Asymmetric Least Squares (AsLS) baseline."""
     yy = np.asarray(y, dtype=float)
     n = int(yy.size)
     if n < 5:
-        return yy
+        return np.zeros_like(yy)
     lam = float(max(1.0, min(1e9, lam)))
     p = float(max(0.001, min(0.1, p)))
     try:
@@ -257,18 +293,24 @@ def _baseline_asls(y: np.ndarray, *, lam: float, p: float, n_iter: int = 12) -> 
             wmat = sparse.spdiags(weights, 0, n, n, format="csc")
             z = np.asarray(spsolve(wmat + penalty, weights * yy), dtype=float)
             weights = p * (yy > z) + (1.0 - p) * (yy <= z)
-        return (yy - z).astype(float)
+        return z.astype(float)
     except Exception:
-        return _baseline_rubberband(np.arange(n, dtype=float), yy)
+        return _calculate_baseline_rubberband(np.arange(n, dtype=float), yy)
 
 
-def _baseline_airpls(y: np.ndarray, *, lam: float, n_iter: int = 15) -> np.ndarray:
-    """Adaptive iteratively reweighted penalized least-squares baseline."""
+def _baseline_asls(y: np.ndarray, *, lam: float, p: float, n_iter: int = 12) -> np.ndarray:
+    """Subtract asymmetric least-squares baseline."""
+    yy = np.asarray(y, dtype=float)
+    z = _calculate_baseline_asls(yy, lam=lam, p=p, n_iter=n_iter)
+    return (yy - z).astype(float)
 
+
+def _calculate_baseline_airpls(y: np.ndarray, *, lam: float, n_iter: int = 15) -> np.ndarray:
+    """Calculate Adaptive Iteratively Reweighted Penalized Least Squares (airPLS) baseline."""
     yy = np.asarray(y, dtype=float)
     n = int(yy.size)
     if n < 5:
-        return yy
+        return np.zeros_like(yy)
     lam = float(max(1.0, min(1e9, lam)))
     try:
         from scipy import sparse  # type: ignore
@@ -289,9 +331,42 @@ def _baseline_airpls(y: np.ndarray, *, lam: float, n_iter: int = 15) -> np.ndarr
             weights[residual >= 0] = 0.0
             weights[residual < 0] = np.exp(min(50.0, i * np.abs(residual[residual < 0]) / scale))
             weights[0] = weights[-1] = np.max(weights)
-        return (yy - z).astype(float)
+        return z.astype(float)
     except Exception:
-        return _baseline_asls(yy, lam=lam, p=0.01)
+        return _calculate_baseline_asls(yy, lam=lam, p=0.01)
+
+
+def _baseline_airpls(y: np.ndarray, *, lam: float, n_iter: int = 15) -> np.ndarray:
+    """Subtract adaptive iteratively reweighted penalized least-squares baseline."""
+    yy = np.asarray(y, dtype=float)
+    z = _calculate_baseline_airpls(yy, lam=lam, n_iter=n_iter)
+    return (yy - z).astype(float)
+
+
+def calculate_baseline(
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    baseline: str = "none",
+    baseline_lambda: float = 100000.0,
+    baseline_p: float = 0.01,
+) -> np.ndarray:
+    """Calculate baseline curve without subtracting it.
+
+    Supports 'airpls', 'asls', 'rubberband', 'polyfit' (ModPoly).
+    """
+    b = (baseline or "none").strip().lower()
+    xx = np.asarray(x, dtype=float)
+    yy = np.asarray(y, dtype=float)
+    if b == "polyfit":
+        return _calculate_baseline_polyfit(xx, yy, max_deg=2)
+    elif b == "rubberband":
+        return _calculate_baseline_rubberband(xx, yy)
+    elif b == "asls":
+        return _calculate_baseline_asls(yy, lam=float(baseline_lambda or 100000.0), p=float(baseline_p or 0.01))
+    elif b == "airpls":
+        return _calculate_baseline_airpls(yy, lam=float(baseline_lambda or 100000.0))
+    return np.zeros_like(yy)
 
 
 def _normalize_max(y: np.ndarray) -> np.ndarray:
@@ -521,6 +596,95 @@ def pick_peaks(
     return selected
 
 
+def compute_second_derivative(
+    wn: Sequence[float] | np.ndarray,
+    y: Sequence[float] | np.ndarray,
+    *,
+    smoothing_window: int = 15,
+    poly_order: int = 3,
+    mode: str = "absorbance",
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Calculate Savitzky-Golay second derivative d²y/dν² and inverted -d²y/dν².
+
+    In FTIR absorbance spectroscopy, true absorption bands (local maxima) correspond
+    to local minima in the 2nd derivative (d²A/dν² < 0).
+    The inverted second derivative (-d²A/dν²) displays these as positive peaks,
+    allowing clear visualization and automated resolution of overlapping sub-bands
+    (e.g., resolving the protein Amide I band into α-helix and β-sheet components).
+
+    Args:
+        wn: Wavenumber array.
+        y: Signal array.
+        smoothing_window: Window length for Savitzky-Golay filter (must be odd, >= 5).
+        poly_order: Polynomial degree (typically 2 or 3).
+        mode: "absorbance" or "transmittance".
+
+    Returns:
+        (x_sorted, d2y, inverted_d2y)
+    """
+    x, y0 = _sanitize_xy(wn, y)
+    if x.size < 7:
+        zeros = np.zeros_like(x)
+        return x, zeros, zeros
+
+    y_work = -y0 if (mode or "absorbance").strip().lower() == "transmittance" else y0
+    w = max(5, int(smoothing_window or 15))
+    if (w % 2) == 0:
+        w += 1
+    if w > int(y_work.size):
+        w = int(y_work.size) if int(y_work.size) % 2 else int(y_work.size) - 1
+    w = max(5, w)
+    po = min(max(2, int(poly_order or 3)), w - 1)
+
+    dx = float(np.mean(np.abs(np.diff(x)))) or 1.0
+
+    d2y = None
+    try:
+        from scipy.signal import savgol_filter  # type: ignore
+
+        # Savitzky-Golay deriv=2 computes analytic 2nd derivative of local fitted polynomial
+        d2y = np.asarray(
+            savgol_filter(y_work, window_length=w, polyorder=po, deriv=2, delta=dx, mode="interp"),
+            dtype=float,
+        )
+    except Exception:
+        pass
+
+    if d2y is None or not np.isfinite(d2y).all():
+        smooth = _smooth(y_work, window=w, poly_order=po)
+        d2y = np.asarray(np.gradient(np.gradient(smooth, x), x), dtype=float)
+
+    inverted = -d2y
+    return x, d2y, inverted
+
+
+def classify_amide_subband(wn: float) -> str:
+    """Classify an FTIR Amide I / II sub-band into its protein secondary structure element.
+
+    References:
+    - Barth (2007) Biochim. Biophys. Acta 1767: 1073-1101
+    - Kong & Yu (2007) Acta Biochim. Biophys. Sinica 39: 549-559
+    """
+    w = float(wn)
+    if 1610.0 <= w < 1625.0:
+        return "Aggregated / Intermolecular β-sheet"
+    elif 1625.0 <= w < 1640.0:
+        return "Native β-sheet"
+    elif 1640.0 <= w < 1648.0:
+        return "Random coil / Unordered"
+    elif 1648.0 <= w <= 1660.0:
+        return "α-helix"
+    elif 1660.0 < w <= 1685.0:
+        return "β-turn / Loop"
+    elif 1685.0 < w <= 1700.0:
+        return "Antiparallel β-sheet (split)"
+    elif 1510.0 <= w <= 1580.0:
+        return "Amide II (N-H bend / C-N)"
+    elif 1700.0 < w <= 1755.0:
+        return "Carbonyl C=O (ester/acid)"
+    return "Absorption band"
+
+
 def pick_peaks_second_derivative(
     wn: Sequence[float] | np.ndarray,
     y: Sequence[float] | np.ndarray,
@@ -532,24 +696,23 @@ def pick_peaks_second_derivative(
     poly_order: int = 3,
 ) -> List[FTIRPeak]:
     """Pick likely shoulders/bands from minima in the second derivative."""
-
     x, y0 = _sanitize_xy(wn, y)
     if x.size < 7:
         return []
-    y_pick = -y0 if (mode or "absorbance").strip().lower() == "transmittance" else y0
-    w = max(5, int(smoothing_window or 9))
-    if (w % 2) == 0:
-        w += 1
-    if w > int(y_pick.size):
-        w = int(y_pick.size) if int(y_pick.size) % 2 else int(y_pick.size) - 1
-    smooth = _smooth(y_pick, window=max(3, w), poly_order=int(poly_order or 3))
-    second = np.gradient(np.gradient(smooth, x), x)
-    score = -np.asarray(second, dtype=float)
+
+    x_sorted, _d2y, inverted = compute_second_derivative(
+        x,
+        y0,
+        smoothing_window=smoothing_window or 9,
+        poly_order=poly_order or 3,
+        mode=mode,
+    )
+    score = inverted
     prom = float(np.nanstd(score)) * 0.25
     if not math.isfinite(prom) or prom <= 0:
         return []
     derivative_peaks = pick_peaks(
-        x,
+        x_sorted,
         score,
         mode="absorbance",
         min_prominence=prom,
@@ -558,15 +721,16 @@ def pick_peaks_second_derivative(
         top_n=top_n,
     )
     out: List[FTIRPeak] = []
+    y_pick = -y0 if (mode or "absorbance").strip().lower() == "transmittance" else y0
     for peak in derivative_peaks:
-        idx = int(np.nanargmin(np.abs(x - float(peak.wn))))
+        idx = int(np.nanargmin(np.abs(x_sorted - float(peak.wn))))
         prom_orig, lb_i, rb_i = _approx_prominence_with_bases(idx, y_pick)
-        lb = float(x[lb_i]) if lb_i is not None else None
-        rb = float(x[rb_i]) if rb_i is not None else None
+        lb = float(x_sorted[lb_i]) if lb_i is not None else None
+        rb = float(x_sorted[rb_i]) if rb_i is not None else None
         width = float(abs(rb - lb)) if lb is not None and rb is not None else None
         out.append(
             FTIRPeak(
-                wn=float(x[idx]),
+                wn=float(x_sorted[idx]),
                 y=float(y0[idx]),
                 prominence=float(max(prom_orig, peak.prominence)),
                 left_base_wn=lb,

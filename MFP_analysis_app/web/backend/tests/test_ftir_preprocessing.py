@@ -63,3 +63,57 @@ def test_atr_correction_changes_intensity_scale():
     assert corrected.shape == y.shape
     assert np.isfinite(corrected).all()
     assert not np.allclose(corrected, y)
+
+
+def test_modpoly_baseline_runge_suppression():
+    x, y = synthetic_spectrum()
+    _x_out, y_poly, base = preprocess_spectrum(x, y, baseline="polyfit", return_baseline=True)
+
+    assert y_poly.shape == y.shape
+    assert base.shape == y.shape
+    assert np.isfinite(y_poly).all()
+    # Check that edges do not oscillate or blow up (Runge phenomenon)
+    assert abs(float(base[0] - base[1])) < 0.05
+    assert abs(float(base[-1] - base[-2])) < 0.05
+    # The peaks should remain above baseline
+    assert y_poly.max() > 0.7
+
+
+def test_return_baseline_returns_matching_shape():
+    x, y = synthetic_spectrum()
+    x_out, y_airpls, base_airpls = preprocess_spectrum(x, y, baseline="airpls", return_baseline=True)
+
+    assert x_out.shape == x.shape
+    assert y_airpls.shape == y.shape
+    assert base_airpls.shape == y.shape
+    assert np.all(np.isfinite(base_airpls))
+    assert np.allclose(y_airpls + base_airpls, y, atol=1e-5)
+
+
+def test_compute_second_derivative_resolves_overlapping_peaks():
+    from lab_gui.ftir_analysis import compute_second_derivative, pick_peaks_second_derivative
+
+    x = np.linspace(1600.0, 1700.0, 401)
+    # Overlapping Amide I: beta-sheet at 1630, alpha-helix at 1654
+    y = 0.6 * np.exp(-0.5 * ((x - 1630.0) / 10.0) ** 2) + 0.8 * np.exp(-0.5 * ((x - 1654.0) / 12.0) ** 2)
+
+    _x_s, d2y, inv_d2y = compute_second_derivative(x, y, smoothing_window=15, poly_order=3)
+    assert d2y.shape == x.shape
+    assert inv_d2y.shape == x.shape
+
+    # Both peaks should be resolved as peaks in pick_peaks_second_derivative
+    peaks = pick_peaks_second_derivative(x, y, min_distance_cm1=10.0, top_n=2)
+    assert len(peaks) == 2
+    centers = sorted(p.wn for p in peaks)
+    assert abs(centers[0] - 1630.0) < 3.0
+    assert abs(centers[1] - 1654.0) < 3.0
+
+
+def test_classify_amide_subbands():
+    from lab_gui.ftir_analysis import classify_amide_subband
+
+    assert "β-sheet" in classify_amide_subband(1632.0)
+    assert "α-helix" in classify_amide_subband(1654.0)
+    assert "Random coil" in classify_amide_subband(1645.0)
+    assert "Loop" in classify_amide_subband(1670.0)
+    assert "Carbonyl" in classify_amide_subband(1715.0)

@@ -400,6 +400,9 @@ export interface FTIRPreprocessOptions {
 export interface FTIRSpectrumResponse {
   wn: number[];
   y: number[];
+  second_derivative?: number[];
+  inverted_second_derivative?: number[];
+  baseline?: number[];
   n_points_full: number;
   n_points_returned: number;
   mode: FTIRYMode;
@@ -488,6 +491,8 @@ export interface FTIRPeakLabelOverride {
 
 export interface FTIRSpectrumRequest extends FTIRPreprocessOptions {
   max_points: number;
+  include_second_derivative?: boolean;
+  include_baseline?: boolean;
 }
 
 export interface FTIRIntegrationRequest extends FTIRSpectrumRequest {
@@ -557,7 +562,10 @@ export interface FTIRFitComponent {
   amplitude: number;
   center: number;
   width: number;
+  fwhm?: number;
   area: number;
+  area_percent?: number;
+  assignment?: string;
   wn: number[];
   y: number[];
 }
@@ -569,6 +577,11 @@ export interface FTIRFitResponse {
   fit: {
     wn: number[];
     y: number[];
+  };
+  second_derivative?: {
+    wn: number[];
+    d2y: number[];
+    inverted: number[];
   };
   r2: number | null;
   residual_rms: number;

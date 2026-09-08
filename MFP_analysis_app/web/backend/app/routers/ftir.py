@@ -43,7 +43,11 @@ from ..services.ftir_service import (
     set_peak_label_override,
     subtract_sessions,
 )
-from lab_gui.ftir_analysis import pick_peaks, pick_peaks_second_derivative
+from lab_gui.ftir_analysis import (
+    compute_second_derivative,
+    pick_peaks,
+    pick_peaks_second_derivative,
+)
 
 router = APIRouter()
 
@@ -70,6 +74,8 @@ class SpectrumRequest(BaseModel):
     atr_correction: bool = False
     atr_n_crystal: float = Field(default=1.5, ge=1.1, le=4.0)
     max_points: int = Field(default=4000, ge=200, le=20000)
+    include_second_derivative: bool = False
+    include_baseline: bool = False
 
 
 class PeaksRequest(BaseModel):
@@ -186,7 +192,7 @@ def delete_session(sid: str) -> Dict[str, bool]:
 @router.post("/sessions/{sid}/spectrum")
 async def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
     state = await _require_session(sid)
-    x, y_proc = compute_preprocessed(
+    res = compute_preprocessed(
         state,
         mode=body.mode,
         smoothing_window=body.smoothing_window,
@@ -197,9 +203,16 @@ async def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
         baseline_p=body.baseline_p,
         atr_correction=body.atr_correction,
         atr_n_crystal=body.atr_n_crystal,
+        return_baseline=body.include_baseline,
     )
+    if body.include_baseline:
+        x, y_proc, base_curve = res
+    else:
+        x, y_proc = res
+        base_curve = None
+
     x_d, y_d = decimate(x, y_proc, max_points=body.max_points)
-    return {
+    out: Dict[str, Any] = {
         "wn": [float(v) for v in x_d.tolist()],
         "y": [float(v) for v in y_d.tolist()],
         "n_points_full": int(x.size),
@@ -218,6 +231,24 @@ async def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
         },
         "atmospheric_regions": atmospheric_regions() if body.mask_atmospheric else [],
     }
+    if body.include_second_derivative:
+        _x2, d2y, neg_d2y = compute_second_derivative(
+            x,
+            y_proc,
+            smoothing_window=max(5, body.smoothing_window or 15),
+            poly_order=max(2, body.poly_order or 3),
+            mode=body.mode,
+        )
+        _xd, d2y_d = decimate(x, d2y, max_points=body.max_points)
+        _xd, neg_d2y_d = decimate(x, neg_d2y, max_points=body.max_points)
+        out["second_derivative"] = [float(v) for v in d2y_d.tolist()]
+        out["inverted_second_derivative"] = [float(v) for v in neg_d2y_d.tolist()]
+
+    if body.include_baseline and base_curve is not None:
+        _xd, base_d = decimate(x, base_curve, max_points=body.max_points)
+        out["baseline"] = [float(v) for v in base_d.tolist()]
+
+    return out
 
 
 @router.post("/sessions/{sid}/peaks")

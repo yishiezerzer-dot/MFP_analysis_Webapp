@@ -22,8 +22,11 @@ import numpy as np
 from lab_gui.ftir_analysis import (
     FTIRPeak,
     atmospheric_mask_regions,
+    classify_amide_subband,
+    compute_second_derivative,
     mask_atmospheric_regions,
     pick_peaks,
+    pick_peaks_second_derivative,
     preprocess_spectrum,
 )
 from lab_gui.ftir_assignment import assign_ftir_peaks
@@ -266,8 +269,9 @@ def compute_preprocessed(
     baseline_p: float = 0.01,
     atr_correction: bool = False,
     atr_n_crystal: float = 1.5,
-) -> Tuple[np.ndarray, np.ndarray]:
-    x, y_proc = preprocess_spectrum(
+    return_baseline: bool = False,
+) -> Tuple[np.ndarray, np.ndarray] | Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    res = preprocess_spectrum(
         s.x,
         s.y,
         mode=mode,
@@ -279,8 +283,9 @@ def compute_preprocessed(
         baseline_p=float(baseline_p or 0.01),
         atr_correction=bool(atr_correction),
         atr_n_crystal=float(atr_n_crystal or 1.5),
+        return_baseline=return_baseline,
     )
-    return x, y_proc
+    return res
 
 
 def mask_for_peak_picking(x: np.ndarray, y: np.ndarray, *, mask_atmospheric: bool) -> Tuple[np.ndarray, np.ndarray]:
@@ -435,6 +440,15 @@ def fit_peak_region(
     except Exception:
         params = p0
 
+    raw_areas = []
+    for idx in range(n_comp):
+        amp, center, width = params[idx * 3 : idx * 3 + 3]
+        y_comp = _profile(xr, amp, center, width, prof)
+        area = float(np.trapezoid(y_comp, xr))
+        raw_areas.append(area)
+
+    total_area = float(sum(raw_areas)) if raw_areas else 1.0
+
     components = []
     fitted_positive = np.zeros_like(xr)
     for idx in range(n_comp):
@@ -442,13 +456,23 @@ def fit_peak_region(
         y_comp = _profile(xr, amp, center, width, prof)
         fitted_positive += y_comp
         signed = base + polarity * y_comp
+        area = raw_areas[idx]
+        area_pct = float(round(100.0 * max(0.0, area) / max(1e-12, total_area), 2))
+
+        # FWHM conversion factors
+        fwhm_factor = 2.35482 if prof == "gauss" else (2.0 if prof == "lorentz" else 2.1774)
+        fwhm_val = float(round(abs(width) * fwhm_factor, 2))
+
         components.append(
             {
                 "index": idx + 1,
                 "amplitude": float(amp),
                 "center": float(center),
                 "width": float(width),
-                "area": float(np.trapezoid(y_comp, xr)),
+                "fwhm": fwhm_val,
+                "area": float(area),
+                "area_percent": area_pct,
+                "assignment": classify_amide_subband(center),
                 "wn": [float(v) for v in xr.tolist()],
                 "y": [float(v) for v in signed.tolist()],
             }
@@ -459,6 +483,10 @@ def fit_peak_region(
     ss_res = float(np.sum(residual * residual))
     ss_tot = float(np.sum((yr - float(np.mean(yr))) ** 2))
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else None
+
+    # Compute 2nd derivative of region for validation
+    _x_d2, d2y, neg_d2y = compute_second_derivative(xr, yr, smoothing_window=9, poly_order=3)
+
     return {
         "region": [lo, hi],
         "profile": prof,
@@ -467,12 +495,48 @@ def fit_peak_region(
             "wn": [float(v) for v in xr.tolist()],
             "y": [float(v) for v in fitted.tolist()],
         },
+        "second_derivative": {
+            "wn": [float(v) for v in xr.tolist()],
+            "d2y": [float(v) for v in d2y.tolist()],
+            "inverted": [float(v) for v in neg_d2y.tolist()],
+        },
         "r2": r2,
         "residual_rms": float(np.sqrt(np.mean(residual * residual))),
     }
 
 
 def _initial_component_centers(x: np.ndarray, y: np.ndarray, n_components: int) -> List[float]:
+    """Identify initial component centers using Savitzky-Golay second-derivative minima.
+
+    True overlapping bands/shoulders create local maxima in -d²y/dν².
+    """
+    if n_components <= 1:
+        max_idx = int(np.nanargmax(y)) if y.size else 0
+        return [float(x[max_idx])]
+
+    try:
+        peaks = pick_peaks_second_derivative(
+            x,
+            y,
+            mode="absorbance",
+            min_distance_cm1=max(3.0, abs(float(x[-1] - x[0])) / (n_components * 3.5)),
+            top_n=n_components,
+            smoothing_window=9,
+            poly_order=3,
+        )
+        if len(peaks) >= n_components:
+            return sorted(float(p.wn) for p in peaks[:n_components])
+        elif len(peaks) > 0:
+            centers = [float(p.wn) for p in peaks]
+            remaining = n_components - len(centers)
+            grid = np.linspace(float(x[0]), float(x[-1]), remaining + 2)[1:-1]
+            for g in grid:
+                if not any(abs(g - c) < 4.0 for c in centers):
+                    centers.append(float(g))
+            return sorted(centers[:n_components])
+    except Exception:
+        pass
+
     try:
         idx = np.argpartition(y, -n_components)[-n_components:]
         centers = sorted(float(x[int(i)]) for i in idx)

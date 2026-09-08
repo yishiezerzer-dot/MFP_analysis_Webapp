@@ -44,3 +44,10 @@ def test_fit_peak_region_recovers_two_gaussian_centers():
     assert abs(centers[0] - 1638.0) < 6.0
     assert abs(centers[1] - 1692.0) < 8.0
     assert result["r2"] is not None and result["r2"] > 0.9
+    assert "second_derivative" in result
+    assert "inverted" in result["second_derivative"]
+    for comp in result["components"]:
+        assert "area_percent" in comp
+        assert comp["area_percent"] > 0
+        assert "fwhm" in comp
+        assert "assignment" in comp
