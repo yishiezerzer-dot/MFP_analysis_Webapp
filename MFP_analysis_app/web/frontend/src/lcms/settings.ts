@@ -41,6 +41,8 @@ export interface EICOverlaySettings {
   showLegend: boolean;
 }
 
+export type GraphId = "tic" | "uv" | "spectrum" | "eic";
+
 export interface GraphSettings {
   tic: ChartSettings;
   uv: ChartSettings;
