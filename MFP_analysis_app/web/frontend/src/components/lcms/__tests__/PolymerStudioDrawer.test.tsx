@@ -76,7 +76,7 @@ describe("PolymerStudioDrawer", () => {
     const adductsTab = screen.getByRole("button", { name: /Adducts & Tol/i });
     fireEvent.click(adductsTab);
 
-    expect(screen.getByText(/Tolerance/i)).toBeDefined();
+    expect(screen.getByText("Tolerance")).toBeDefined();
     expect(screen.getByText(/Positive Adducts/i)).toBeDefined();
   });
 });

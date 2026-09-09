@@ -12,6 +12,7 @@ import {
 import {
   Check,
   GroupBox,
+  Modal,
   NumberSetting,
   SelectSetting,
   TextSetting,
@@ -32,7 +33,7 @@ export interface PolymerStudioDrawerProps {
   spectrumAvailable?: boolean;
 }
 
-export function PolymerStudioDrawer({
+export function PolymerStudioModal({
   open,
   onClose,
   polarity,
@@ -43,7 +44,6 @@ export function PolymerStudioDrawer({
   canOpenExpectedProducts,
   canOpenKendrick,
   onSaveDefaults,
-  spectrumAvailable,
 }: PolymerStudioDrawerProps) {
   const [activeSubTab, setActiveSubTab] = useState<"monomers" | "parameters" | "advanced">("monomers");
   const activeMode = polarity === "negative" ? "negative" : "positive";
@@ -62,59 +62,78 @@ export function PolymerStudioDrawer({
   const patchMonomers = (monomers: PolymerMonomerPreset[]) =>
     onChange({ ...settings, monomers });
 
-
-
   const selectedSummary = polymerMonomerText(settings)
     .split(/\r?\n/)
     .filter(Boolean)
     .slice(0, 5)
     .join(", ");
 
-  return (
-    <aside
-      aria-label="Polymer & Reaction Studio"
-      className="flex w-96 shrink-0 flex-col border-l border-ink-200 bg-surface shadow-xl animate-in slide-in-from-right-5 duration-200"
-    >
-      {/* Drawer Header */}
-      <div className="flex items-center justify-between border-b border-ink-200 px-4 py-3 bg-ink-50/50">
-        <div className="flex items-center gap-2">
-          <span className="text-base font-bold text-ink-900">🧬 Polymer Studio</span>
-          <span
-            className={clsx(
-              "rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider",
-              polarity === "positive"
-                ? "bg-sky-100 text-sky-800"
-                : polarity === "negative"
-                  ? "bg-rose-100 text-rose-800"
-                  : "bg-amber-100 text-amber-800",
-            )}
-          >
-            {polarity}
-          </span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="rounded p-1 text-xs text-ink-500 hover:bg-ink-100 hover:text-ink-800"
-            onClick={onSaveDefaults}
-            title="Save current configuration as default"
-          >
-            💾 Save
-          </button>
-          <button
-            type="button"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-ink-400 hover:bg-ink-100 hover:text-ink-700"
-            onClick={onClose}
-            title="Close drawer"
-          >
-            ✕
-          </button>
-        </div>
+  const modalFooter = (
+    <div className="flex w-full flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
+          onClick={onSaveDefaults}
+          title="Save current configuration as default"
+        >
+          💾 Save as Defaults
+        </button>
+        <button
+          type="button"
+          className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-600 hover:bg-ink-100"
+          onClick={() => onChange(loadPolymerUiSettings())}
+          title="Reset all settings to original factory defaults"
+        >
+          Reset
+        </button>
       </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
+          onClick={onExpectedProducts}
+          disabled={!canOpenExpectedProducts}
+          title={
+            canOpenExpectedProducts
+              ? "View table of all expected monomer/dimer/oligomer products for current MS1"
+              : "Select monomers and load an MS1 spectrum first"
+          }
+        >
+          <span>📋</span>
+          <span>Expected Series</span>
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
+          onClick={onKendrick}
+          disabled={!canOpenKendrick}
+          title={
+            canOpenKendrick
+              ? "Open Kendrick Mass Defect (KMD) plot for current spectrum"
+              : "Load an MS1 spectrum first"
+          }
+        >
+          <span>📈</span>
+          <span>Kendrick Plot</span>
+        </button>
+        <button type="button" className="btn-primary text-xs" onClick={onClose}>
+          Done
+        </button>
+      </div>
+    </div>
+  );
 
-      {/* Main Enable & Quick Preset Bar */}
-      <div className="border-b border-ink-200 p-3 bg-surface">
-        <div className="flex items-center justify-between">
+  return (
+    <Modal
+      title={`🧬 Polymer Studio (${polarity})`}
+      onClose={onClose}
+      width="max-w-3xl"
+      footer={modalFooter}
+    >
+      {/* Polarity & Live Status Header Banner */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-200 bg-ink-50/60 p-3">
+        <div className="flex items-center gap-2.5">
           <label
             className={clsx(
               "flex items-center gap-2 text-xs font-semibold text-ink-900 cursor-pointer select-none",
@@ -130,21 +149,43 @@ export function PolymerStudioDrawer({
             />
             <span>Enable Spectrum Matching</span>
           </label>
-          <span className="text-[11px] text-brand-600 font-medium">
+          <span
+            className={clsx(
+              "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+              shared.enabled
+                ? "bg-emerald-100 text-emerald-800"
+                : "bg-ink-200 text-ink-600",
+            )}
+          >
             {shared.enabled ? "● Live On Spectrum" : "○ Off"}
           </span>
         </div>
 
-        {disabled && (
-          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800">
-            Set polarity to Positive or Negative to enable polymer matching.
-          </div>
-        )}
-
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-ink-500">Active Polarity:</span>
+          <span
+            className={clsx(
+              "rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider",
+              polarity === "positive"
+                ? "bg-sky-100 text-sky-800"
+                : polarity === "negative"
+                  ? "bg-rose-100 text-rose-800"
+                  : "bg-amber-100 text-amber-800",
+            )}
+          >
+            {polarity}
+          </span>
+        </div>
       </div>
 
+      {disabled && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          Set polarity to Positive or Negative in LCMS settings to enable polymer matching.
+        </div>
+      )}
+
       {/* Navigation Sub-Tabs */}
-      <div className="flex border-b border-ink-200 bg-ink-50/70 px-3">
+      <div className="mb-4 flex border-b border-ink-200">
         {(
           [
             { id: "monomers", label: "Monomers" },
@@ -157,9 +198,9 @@ export function PolymerStudioDrawer({
             type="button"
             onClick={() => setActiveSubTab(tab.id)}
             className={clsx(
-              "-mb-px border-b-2 px-3 py-2 text-xs font-medium transition-colors",
+              "-mb-px border-b-2 px-4 py-2 text-xs font-semibold transition-colors",
               activeSubTab === tab.id
-                ? "border-brand-500 text-brand-700 font-semibold"
+                ? "border-brand-600 text-brand-700 bg-surface"
                 : "border-transparent text-ink-500 hover:text-ink-800",
             )}
           >
@@ -168,136 +209,124 @@ export function PolymerStudioDrawer({
         ))}
       </div>
 
-      {/* Drawer Body */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3.5">
+      {/* Sub-Tab Content */}
+      <div className="space-y-4">
         {activeSubTab === "monomers" && (
-          <div className="space-y-3">
-            <div className="rounded-md border border-ink-200 bg-ink-50/60 px-2.5 py-1.5 text-xs text-ink-600">
-              <span className="font-semibold text-ink-800">Active: </span>
-              {selectedSummary || <span className="italic text-amber-700">None selected</span>}
+          <div className="space-y-4">
+            {selectedSummary ? (
+              <div className="rounded-md border border-brand-100 bg-brand-50/40 p-2.5 text-xs text-brand-900">
+                <span className="font-semibold">Selected:</span> {selectedSummary}
+              </div>
+            ) : (
+              <div className="rounded-md border border-ink-200 bg-ink-50/50 p-2.5 text-xs text-ink-500">
+                No monomers selected yet. Check boxes below to match against spectrum.
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <MonomerPresetBox
+                title="Known Hydroxy Acids"
+                category="hydroxy"
+                monomers={settings.monomers}
+                onChange={patchMonomers}
+              />
+              <MonomerPresetBox
+                title="Known Amino Acids"
+                category="amino"
+                monomers={settings.monomers}
+                onChange={patchMonomers}
+              />
             </div>
 
-            <MonomerPresetBox
-              title="Known hydroxy acids"
-              category="hydroxy"
-              monomers={settings.monomers}
-              onChange={patchMonomers}
-            />
-
-            <MonomerPresetBox
-              title="Amino acids"
-              category="amino"
-              monomers={settings.monomers}
-              onChange={patchMonomers}
-            />
-
-            <div className="rounded-md border border-ink-200 bg-surface p-2.5">
-              <div className="text-xs font-semibold uppercase tracking-wide text-ink-500 mb-1">
-                Custom Text Monomers
+            <label className="block rounded-md border border-ink-200 bg-surface p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+                Custom / Freeform Monomers
               </div>
               <textarea
-                className="input h-16 w-full font-mono text-xs"
+                className="input mt-1.5 h-20 w-full font-mono text-xs"
                 value={shared.monomers_text}
                 placeholder={"PEG 44.0262\nCustom,123.4567"}
                 onChange={(e) => patchShared({ monomers_text: e.target.value })}
               />
-              <p className="mt-1 text-[11px] text-ink-400">
-                Format: name mass (one per line).
+              <p className="mt-1 text-[11px] text-ink-500">
+                Custom monomers: enter one per line as &quot;Name Mass&quot;, &quot;Name,Mass&quot;, or &quot;Mass&quot;.
               </p>
-            </div>
+            </label>
           </div>
         )}
 
         {activeSubTab === "parameters" && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <NumberSetting
-                label="Tolerance"
-                value={shared.tol_value}
-                min={0}
-                step={0.001}
-                onChange={(value) => patchShared({ tol_value: Math.max(0, value ?? shared.tol_value) })}
-              />
-              <SelectSetting
-                label="Unit"
-                value={shared.tol_unit}
-                options={[
-                  { value: "ppm", label: "ppm" },
-                  { value: "Da", label: "Da" },
-                ]}
-                onChange={(tol_unit) => patchShared({ tol_unit: tol_unit as "Da" | "ppm" })}
-              />
-            </div>
+          <div className="space-y-4">
+            <GroupBox title="Tolerance">
+              <div className="grid grid-cols-2 gap-3">
+                <SelectSetting
+                  label="Tolerance unit"
+                  value={shared.tol_unit}
+                  options={[
+                    { value: "ppm", label: "ppm" },
+                    { value: "Da", label: "Da" },
+                  ]}
+                  onChange={(val) => patchShared({ tol_unit: val as "ppm" | "Da" })}
+                />
+                <NumberSetting
+                  label="Tolerance value"
+                  value={shared.tol_value}
+                  step={shared.tol_unit === "ppm" ? 1 : 0.001}
+                  onChange={(val) => patchShared({ tol_value: val ?? shared.tol_value })}
+                />
+              </div>
+            </GroupBox>
 
-            <div className="grid grid-cols-2 gap-2">
-              <NumberSetting
-                label="Max DP"
-                value={shared.max_dp}
-                min={1}
-                max={200}
-                step={1}
-                onChange={(value) => patchShared({ max_dp: Math.max(1, value ?? shared.max_dp) })}
-              />
-              <NumberSetting
-                label="Min Rel Int"
-                value={shared.min_rel_int}
-                min={0}
-                max={1}
-                step={0.01}
-                onChange={(value) =>
-                  patchShared({ min_rel_int: Math.max(0, Math.min(1, value ?? shared.min_rel_int)) })
-                }
-              />
-            </div>
+            <GroupBox title={polarity === "negative" ? "Negative Adducts" : "Positive Adducts"}>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {polarity === "negative" ? (
+                  <>
+                    <Check
+                      label="+Cl⁻ (Chlorine)"
+                      checked={profile.adduct_cl}
+                      onChange={(adduct_cl) => patchProfile({ adduct_cl })}
+                    />
+                    <Check
+                      label="+HCOO⁻ (Formate)"
+                      checked={profile.adduct_formate}
+                      onChange={(adduct_formate) => patchProfile({ adduct_formate })}
+                    />
+                    <Check
+                      label="+CH₃COO⁻ (Acetate)"
+                      checked={profile.adduct_acetate}
+                      onChange={(adduct_acetate) => patchProfile({ adduct_acetate })}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Check
+                      label="+Na⁺ (Sodium)"
+                      checked={profile.adduct_na}
+                      onChange={(adduct_na) => patchProfile({ adduct_na })}
+                    />
+                    <Check
+                      label="+K⁺ (Potassium)"
+                      checked={profile.adduct_k}
+                      onChange={(adduct_k) => patchProfile({ adduct_k })}
+                    />
+                  </>
+                )}
+              </div>
+            </GroupBox>
+          </div>
+        )}
 
-            {!disabled && (
-              <GroupBox title={polarity === "negative" ? "Negative Adducts" : "Positive Adducts"}>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {polarity === "negative" ? (
-                    <>
-                      <Check
-                        label="+Cl"
-                        checked={profile.adduct_cl}
-                        onChange={(adduct_cl) => patchProfile({ adduct_cl })}
-                      />
-                      <Check
-                        label="+HCOO"
-                        checked={profile.adduct_formate}
-                        onChange={(adduct_formate) => patchProfile({ adduct_formate })}
-                      />
-                      <Check
-                        label="+Ac"
-                        checked={profile.adduct_acetate}
-                        onChange={(adduct_acetate) => patchProfile({ adduct_acetate })}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <Check
-                        label="+Na"
-                        checked={profile.adduct_na}
-                        onChange={(adduct_na) => patchProfile({ adduct_na })}
-                      />
-                      <Check
-                        label="+K"
-                        checked={profile.adduct_k}
-                        onChange={(adduct_k) => patchProfile({ adduct_k })}
-                      />
-                    </>
-                  )}
-                </div>
-              </GroupBox>
-            )}
-
-            <GroupBox title="Reaction & Ion Variants">
-              <div className="space-y-1.5 text-xs">
+        {activeSubTab === "advanced" && (
+          <div className="space-y-4">
+            <GroupBox title="Chemical Variations & Neutral Losses">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <Check
-                  label="Water loss (-H2O)"
+                  label="Water loss (-H₂O)"
                   checked={shared.h2o_loss}
                   onChange={(h2o_loss) => patchShared({ h2o_loss })}
                 />
                 <Check
-                  label="Decarboxylation (-CO2)"
+                  label="Decarboxylation (-CO₂)"
                   checked={shared.decarb}
                   onChange={(decarb) => patchShared({ decarb })}
                 />
@@ -307,98 +336,50 @@ export function PolymerStudioDrawer({
                   onChange={(oxid) => patchShared({ oxid })}
                 />
                 <Check
-                  label={polarity === "negative" ? "Noncovalent dimers (2M-H)" : "Noncovalent dimers (2M+H)"}
+                  label={polarity === "negative" ? "Noncovalent dimers (2M-H)⁻" : "Noncovalent dimers (2M+H)⁺"}
                   checked={shared.cluster}
                   onChange={(cluster) => patchShared({ cluster })}
                 />
               </div>
             </GroupBox>
-          </div>
-        )}
 
-        {activeSubTab === "advanced" && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
-              <NumberSetting
-                label="Per-bond delta"
-                value={shared.bond_delta}
-                step={0.000001}
-                onChange={(value) => patchShared({ bond_delta: value ?? shared.bond_delta })}
-              />
-              <NumberSetting
-                label="Extra delta"
-                value={shared.extra_delta}
-                step={0.000001}
-                onChange={(value) => patchShared({ extra_delta: value ?? shared.extra_delta })}
-              />
-              <NumberSetting
-                label={polarity === "negative" ? "-H adduct mass" : "+H adduct mass"}
-                value={profile.adduct_mass}
-                step={0.000001}
-                onChange={(value) => patchProfile({ adduct_mass: value ?? profile.adduct_mass })}
-              />
-              <NumberSetting
-                label="Cluster adduct"
-                value={profile.cluster_adduct_mass}
-                step={0.000001}
-                onChange={(value) =>
-                  patchProfile({ cluster_adduct_mass: value ?? profile.cluster_adduct_mass })
-                }
-              />
-            </div>
-            <TextSetting
-              label="Allowed Charges"
-              value={shared.charges}
-              onChange={(charges) => patchShared({ charges })}
-            />
-            <button
-              type="button"
-              className="mt-2 w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-600 hover:bg-ink-100"
-              onClick={() => onChange(loadPolymerUiSettings())}
-            >
-              Reset to Factory Defaults
-            </button>
+            <GroupBox title="Mass Calibration & Allowed Charges">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <NumberSetting
+                  label="Extra delta (Da)"
+                  value={shared.extra_delta}
+                  step={0.000001}
+                  onChange={(value) => patchShared({ extra_delta: value ?? shared.extra_delta })}
+                />
+                <NumberSetting
+                  label={polarity === "negative" ? "-H adduct mass" : "+H adduct mass"}
+                  value={profile.adduct_mass}
+                  step={0.000001}
+                  onChange={(value) => patchProfile({ adduct_mass: value ?? profile.adduct_mass })}
+                />
+                <NumberSetting
+                  label="Cluster adduct mass"
+                  value={profile.cluster_adduct_mass}
+                  step={0.000001}
+                  onChange={(value) =>
+                    patchProfile({ cluster_adduct_mass: value ?? profile.cluster_adduct_mass })
+                  }
+                />
+              </div>
+              <div className="mt-3">
+                <TextSetting
+                  label="Allowed Charge States (comma-separated, e.g. 1, 2)"
+                  value={shared.charges}
+                  onChange={(charges) => patchShared({ charges })}
+                />
+              </div>
+            </GroupBox>
           </div>
         )}
       </div>
-
-      {/* Integrated Analysis Tools Footer */}
-      <div className="border-t border-ink-200 p-3 bg-ink-50/50 space-y-2">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-          Integrated Polymer Views:
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink-700 shadow-sm transition-colors hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
-            onClick={onExpectedProducts}
-            disabled={!canOpenExpectedProducts}
-            title={
-              canOpenExpectedProducts
-                ? "View table of all expected monomer/dimer/oligomer products for current MS1"
-                : "Select monomers and load an MS1 spectrum first"
-            }
-          >
-            <span>📋</span>
-            <span>Expected Series</span>
-          </button>
-
-          <button
-            type="button"
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink-700 shadow-sm transition-colors hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
-            onClick={onKendrick}
-            disabled={!canOpenKendrick}
-            title={
-              canOpenKendrick
-                ? "Open Kendrick Mass Defect (KMD) plot for current spectrum"
-                : "Load an MS1 spectrum first"
-            }
-          >
-            <span>📈</span>
-            <span>Kendrick Plot</span>
-          </button>
-        </div>
-      </div>
-    </aside>
+    </Modal>
   );
 }
+
+// Export both names for backwards compatibility
+export { PolymerStudioModal as PolymerStudioDrawer };

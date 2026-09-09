@@ -100,8 +100,9 @@ import { ComparisonMatrixDialog } from "../components/lcms/ComparisonMatrixDialo
 import { KendrickDialog } from "../components/lcms/KendrickDialog";
 import { ExpectedProductsDialog } from "../components/lcms/ExpectedProductsDialog";
 import { GraphSettingsDialog } from "../components/lcms/GraphSettingsDialog";
+import { SinglePlotDesignDialog } from "../components/lcms/SinglePlotDesignDialog";
 import { PolymerDialog } from "../components/lcms/PolymerDialog";
-import { PolymerStudioDrawer } from "../components/lcms/PolymerStudioDrawer";
+import { PolymerStudioModal } from "../components/lcms/PolymerStudioDrawer";
 import { PeakContextPopover, type PeakContextData } from "../components/common/PeakContextPopover";
 import { SegmentedControl } from "../components/common/SegmentedControl";
 import { DeconvolutionDialog } from "../components/lcms/DeconvolutionDialog";
@@ -1340,6 +1341,7 @@ export function LCMSView() {
   const [findMzOpen, setFindMzOpen] = useState(false);
   const [eicOpen, setEicOpen] = useState(false);
   const [graphSettingsOpen, setGraphSettingsOpen] = useState(false);
+  const [designPlotId, setDesignPlotId] = useState<GraphId | null>(null);
   const [graphSettings, setGraphSettings] = useState<GraphSettings>(() =>
     loadGraphSettingsDefault(),
   );
@@ -3643,6 +3645,7 @@ export function LCMSView() {
                   regionSelect={regionSelect}
                   onToggleRegionSelect={handleSetRegionSelect}
                   settings={graphSettings.tic}
+                  onOpenDesign={() => setDesignPlotId("tic")}
                 />
               )}
               {visibleEicPlots.length > 0 && overlayEicEnabled ? (
@@ -3667,6 +3670,7 @@ export function LCMSView() {
                   clearLabel="Clear file"
                   settings={graphSettings.eic}
                   overlaySettings={graphSettings.eicOverlay}
+                  onOpenDesign={() => setDesignPlotId("eic")}
                 />
               ) : (
                 visibleEicPlots.map((plot) => (
@@ -3696,6 +3700,7 @@ export function LCMSView() {
                       canRedoEic={canRedoEic}
                       settings={graphSettings.eic}
                       overlaySettings={graphSettings.eicOverlay}
+                      onOpenDesign={() => setDesignPlotId("eic")}
                     />
                   </div>
                 ))
@@ -3728,6 +3733,28 @@ export function LCMSView() {
                   bunchHubOffset={uvBunchHubOffset}
                   labelOrientation={uvLabelOrientation}
                   settings={graphSettings.uv}
+                  onOpenDesign={() => setDesignPlotId("uv")}
+                  onAutoLabelUV={() => dispatchUiAction("lcms.auto_label_uv")}
+                  onLabelSelectedRT={transferSelectedSpectrumToUv}
+                  onCustomUvLabel={() => dispatchUiAction("lcms.open_custom_uv_label")}
+                  onAutoArrangeLabels={autoArrangeUvLabels}
+                  uvProminence={uvProminence}
+                  setUvProminence={setUvProminence}
+                  uvMinDistance={uvMinDistance}
+                  setUvMinDistance={setUvMinDistance}
+                  transferMsToUv={transferMsToUv}
+                  setTransferMsToUv={setTransferMsToUv}
+                  uvTransferCount={uvTransferCount}
+                  setUvTransferCount={setUvTransferCount}
+                  snapUvLabels={snapUvLabels}
+                  setSnapUvLabels={setSnapUvLabels}
+                  setUvLabelOrientation={setUvLabelOrientation}
+                  setUvBunchLabels={setUvBunchLabels}
+                  setUvBunchHubOffset={setUvBunchHubOffset}
+                  uvLabelStairXStep={uvLabelStairXStep}
+                  setUvLabelStairXStep={setUvLabelStairXStep}
+                  uvLabelStairYStep={uvLabelStairYStep}
+                  setUvLabelStairYStep={setUvLabelStairYStep}
                 />
               )}
               {showSpectrum && (
@@ -3745,6 +3772,7 @@ export function LCMSView() {
                   onTogglePolymerStudio={() => setPolymerStudioOpen((v) => !v)}
                   onPeakClick={onSpectrumPeakClick}
                   onDeconvolution={() => setDeconvolutionOpen(true)}
+                  onOpenDesign={() => setDesignPlotId("spectrum")}
                 />
               )}
             </>
@@ -3897,20 +3925,6 @@ export function LCMSView() {
           canOpenKendrick={Boolean(spectrum)}
           onSavePolymerDefaults={savePolymerDefaults}
         />
-
-        <PolymerStudioDrawer
-          open={polymerStudioOpen}
-          onClose={() => setPolymerStudioOpen(false)}
-          polarity={polarity}
-          settings={polymerSettings}
-          onChange={setPolymerSettings}
-          onExpectedProducts={() => void openExpectedProductsWithCompute()}
-          onKendrick={() => void openKendrickWithCompute()}
-          canOpenExpectedProducts={Boolean(spectrum && polarity !== "all" && polymerMonomerText(polymerSettings))}
-          canOpenKendrick={Boolean(spectrum)}
-          onSaveDefaults={savePolymerDefaults}
-          spectrumAvailable={Boolean(spectrum)}
-        />
       </div>
 
       <StatusBar {...statusText} />
@@ -3966,6 +3980,36 @@ export function LCMSView() {
           }}
           onReset={() => setGraphSettings(loadGraphSettingsDefault())}
           onClose={() => setGraphSettingsOpen(false)}
+        />
+      )}
+      {designPlotId != null && (
+        <SinglePlotDesignDialog
+          graphId={designPlotId}
+          settings={graphSettings}
+          onChange={setGraphSettings}
+          overlayEicEnabled={overlayEicEnabled}
+          setOverlayEicEnabled={setOverlayEicEnabled}
+          onSetDefault={() => {
+            saveGraphSettingsDefault(graphSettings);
+            setInfo(`Saved current ${designPlotId.toUpperCase()} settings as the default.`);
+          }}
+          onReset={() => setGraphSettings(loadGraphSettingsDefault())}
+          onClose={() => setDesignPlotId(null)}
+        />
+      )}
+      {polymerStudioOpen && (
+        <PolymerStudioModal
+          open={polymerStudioOpen}
+          onClose={() => setPolymerStudioOpen(false)}
+          polarity={polarity}
+          settings={polymerSettings}
+          onChange={setPolymerSettings}
+          onExpectedProducts={() => void openExpectedProductsWithCompute()}
+          onKendrick={() => void openKendrickWithCompute()}
+          canOpenExpectedProducts={Boolean(spectrum && polarity !== "all" && polymerMonomerText(polymerSettings))}
+          canOpenKendrick={Boolean(spectrum)}
+          onSaveDefaults={savePolymerDefaults}
+          spectrumAvailable={Boolean(spectrum)}
         />
       )}
       {polymerDialogOpen && (
@@ -5779,6 +5823,7 @@ function TICChart(props: {
   regionSelect: boolean;
   onToggleRegionSelect?: (val: boolean) => void;
   settings: ChartSettings;
+  onOpenDesign?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<PlotlyHTMLElement | null>(null);
@@ -5985,6 +6030,17 @@ function TICChart(props: {
             storageKey="mfp-publication-plot-export-lcms-tic"
             onExport={savePublication}
           />
+          {props.onOpenDesign && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100"
+              onClick={props.onOpenDesign}
+              title="Configure TIC appearance, colors & limits"
+            >
+              <span>🎨</span>
+              <span>Design</span>
+            </button>
+          )}
         </div>
       </div>
       {!props.tic ? (
@@ -6081,6 +6137,7 @@ function EICChart(props: {
   rtUnit: RtUnit;
   settings: ChartSettings;
   overlaySettings: EICOverlaySettings;
+  onOpenDesign?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<PlotlyHTMLElement | null>(null);
@@ -6259,6 +6316,17 @@ function EICChart(props: {
             storageKey="mfp-publication-plot-export-lcms-eic"
             onExport={savePublication}
           />
+          {props.onOpenDesign && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100"
+              onClick={props.onOpenDesign}
+              title="Configure EIC appearance, colors & overlay options"
+            >
+              <span>🎨</span>
+              <span>Design</span>
+            </button>
+          )}
         </div>
       </div>
       <div
@@ -6342,6 +6410,28 @@ function UVChromatogramChart(props: {
   bunchHubOffset: number;
   labelOrientation: UVLabelOrientation;
   settings: ChartSettings;
+  onOpenDesign?: () => void;
+  onAutoLabelUV?: () => void;
+  onLabelSelectedRT?: () => void;
+  onCustomUvLabel?: () => void;
+  onAutoArrangeLabels?: () => void;
+  uvProminence?: number;
+  setUvProminence?: (v: number) => void;
+  uvMinDistance?: number;
+  setUvMinDistance?: (v: number) => void;
+  transferMsToUv?: boolean;
+  setTransferMsToUv?: (v: boolean) => void;
+  uvTransferCount?: number;
+  setUvTransferCount?: (v: number) => void;
+  snapUvLabels?: boolean;
+  setSnapUvLabels?: (v: boolean) => void;
+  setUvLabelOrientation?: (v: UVLabelOrientation) => void;
+  setUvBunchLabels?: (v: boolean) => void;
+  setUvBunchHubOffset?: (v: number) => void;
+  uvLabelStairXStep?: number;
+  setUvLabelStairXStep?: (v: number) => void;
+  uvLabelStairYStep?: number;
+  setUvLabelStairYStep?: (v: number) => void;
 }) {
   const {
     uv,
@@ -6364,6 +6454,7 @@ function UVChromatogramChart(props: {
     labelOrientation,
     settings,
   } = props;
+  const [showLabelOptions, setShowLabelOptions] = useState(false);
   const pt = usePlotlyTheme();
   const available = uv?.available === true;
   const canPlot = available || overlayTraces.length > 0;
@@ -6650,6 +6741,74 @@ function UVChromatogramChart(props: {
             </>
           )}
           {available && (
+            <>
+              <button
+                type="button"
+                className="flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm"
+                onClick={props.onAutoLabelUV}
+                disabled={busy}
+                title="Automatically detect UV peaks and annotate each with matching MS spectrum m/z"
+              >
+                <span>⚡</span>
+                <span>Auto Label Peaks</span>
+              </button>
+
+              {props.onLabelSelectedRT && selectedUvRt != null && (
+                <button
+                  type="button"
+                  className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={props.onLabelSelectedRT}
+                  disabled={busy}
+                  title="Annotate currently selected UV retention time with top MS spectrum peaks"
+                >
+                  <span>📍</span>
+                  <span>Label RT</span>
+                </button>
+              )}
+
+              {props.onCustomUvLabel && (
+                <button
+                  type="button"
+                  className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={props.onCustomUvLabel}
+                  disabled={busy}
+                  title="Add custom text label at retention time"
+                >
+                  <span>➕</span>
+                  <span>Custom</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                className={clsx(
+                  "flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors",
+                  showLabelOptions
+                    ? "border-brand-500 bg-brand-50 text-brand-700 font-semibold"
+                    : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
+                )}
+                onClick={() => setShowLabelOptions((prev) => !prev)}
+                title="Configure UV peak detection thresholds, label arrangement, and snapping"
+              >
+                <span>🏷️</span>
+                <span>Label Options</span>
+              </button>
+            </>
+          )}
+
+          {props.onOpenDesign && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100"
+              onClick={props.onOpenDesign}
+              title="Configure UV plot appearance, limits & labels"
+            >
+              <span>🎨</span>
+              <span>Design</span>
+            </button>
+          )}
+
+          {available && (
             <button
               className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
               onClick={saveSvg}
@@ -6685,6 +6844,181 @@ function UVChromatogramChart(props: {
           )}
         </div>
       </div>
+
+      {showLabelOptions && available && (
+        <div className="mb-2.5 rounded-lg border border-brand-200 bg-brand-50/20 p-3 text-xs text-ink-800 shadow-sm">
+          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-ink-200 pb-2">
+            <div className="flex items-center gap-1.5 font-semibold text-brand-900">
+              <span>🏷️</span>
+              <span>UV Peak Labeling Controls & Detection Settings</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {props.onAutoArrangeLabels && (
+                <button
+                  type="button"
+                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 hover:bg-ink-100 disabled:opacity-40"
+                  onClick={props.onAutoArrangeLabels}
+                  disabled={labels.length === 0}
+                  title="Arrange labels into clean descending stairs to prevent overlap"
+                >
+                  ↕ Auto Arrange Stairs
+                </button>
+              )}
+              {labels.length > 0 && (
+                <button
+                  type="button"
+                  className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                  onClick={onClearLabels}
+                  title="Clear all transferred and custom UV labels"
+                >
+                  Clear All ({labels.length})
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Peak Detection */}
+            <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+                Peak Detection
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-600">Prominence:</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  className="input h-7 w-20 text-xs"
+                  value={props.uvProminence ?? 0.05}
+                  onChange={(e) =>
+                    props.setUvProminence?.(Math.max(0, parseFloat(e.target.value || "0") || 0))
+                  }
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-600">Min dist (min):</span>
+                <input
+                  type="number"
+                  step="0.05"
+                  min={0}
+                  className="input h-7 w-20 text-xs"
+                  value={props.uvMinDistance ?? 0.1}
+                  onChange={(e) =>
+                    props.setUvMinDistance?.(Math.max(0, parseFloat(e.target.value || "0") || 0))
+                  }
+                />
+              </div>
+              <button
+                type="button"
+                className="w-full rounded bg-brand-600 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                onClick={props.onAutoLabelUV}
+                disabled={!available || busy}
+              >
+                Re-run Detection
+              </button>
+            </div>
+
+            {/* Placement & Alignment */}
+            <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+                Placement & Angle
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-600">Orientation:</span>
+                <select
+                  className="input h-7 text-xs"
+                  value={labelOrientation}
+                  onChange={(e) => props.setUvLabelOrientation?.(e.target.value as UVLabelOrientation)}
+                >
+                  <option value="vertical">Vertical (-90°)</option>
+                  <option value="horizontal">Horizontal (0°)</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="rounded border-ink-300 text-brand-600"
+                  checked={props.snapUvLabels ?? false}
+                  onChange={(e) => props.setSnapUvLabels?.(e.target.checked)}
+                />
+                <span>Snap to peak apex</span>
+              </label>
+            </div>
+
+            {/* MS Spectrum Transfer */}
+            <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+                Transfer from MS
+              </div>
+              <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="rounded border-ink-300 text-brand-600"
+                  checked={props.transferMsToUv ?? false}
+                  onChange={(e) => props.setTransferMsToUv?.(e.target.checked)}
+                />
+                <span>Transfer MS peaks on click</span>
+              </label>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-600">Peaks to transfer:</span>
+                <select
+                  className="input h-7 w-20 text-xs"
+                  value={props.uvTransferCount ?? 3}
+                  onChange={(e) => props.setUvTransferCount?.(parseInt(e.target.value, 10))}
+                >
+                  {[1, 2, 3, 5, 8, 10].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Grouping & Stairs */}
+            <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+                Grouping & Stairs
+              </div>
+              <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="rounded border-ink-300 text-brand-600"
+                  checked={bunchLabels}
+                  onChange={(e) => props.setUvBunchLabels?.(e.target.checked)}
+                />
+                <span>Bunch identical labels</span>
+              </label>
+              {bunchLabels && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-ink-600">Hub height:</span>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min={0}
+                    max={1}
+                    className="input h-7 w-20 text-xs"
+                    value={bunchHubOffset}
+                    onChange={(e) => props.setUvBunchHubOffset?.(parseFloat(e.target.value || "0") || 0)}
+                  />
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-600">Stair X step:</span>
+                <input
+                  type="number"
+                  step="0.05"
+                  min={0}
+                  className="input h-7 w-20 text-xs"
+                  value={props.uvLabelStairXStep ?? 0.08}
+                  onChange={(e) =>
+                    props.setUvLabelStairXStep?.(Math.max(0, parseFloat(e.target.value || "0") || 0))
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!uv ? (
         <div className="flex h-72 items-center justify-center text-sm text-ink-500">
@@ -6842,6 +7176,7 @@ function SpectrumChart(props: {
   onTogglePolymerStudio?: () => void;
   onPeakClick?: (mz: number, intensity?: number, event?: MouseEvent) => void;
   onDeconvolution?: () => void;
+  onOpenDesign?: () => void;
 }) {
   const s = props.spectrum;
   const specContainerRef = useRef<HTMLDivElement>(null);
@@ -7009,6 +7344,17 @@ function SpectrumChart(props: {
               storageKey="mfp-publication-plot-export-lcms-spectrum"
               onExport={savePublication}
             />
+            {props.onOpenDesign && (
+              <button
+                type="button"
+                className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-0.5 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100"
+                onClick={props.onOpenDesign}
+                title="Configure MS1 spectrum appearance, colors & peak labels"
+              >
+                <span>🎨</span>
+                <span>Design</span>
+              </button>
+            )}
             {s?.meta.n_scans != null && (
               <span>
                 {s.meta.n_scans.toLocaleString()} scans, {s.meta.merge_mode ?? "sum"} merge
