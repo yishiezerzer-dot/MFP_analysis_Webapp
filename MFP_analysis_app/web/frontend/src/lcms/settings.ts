@@ -29,6 +29,17 @@ export const DEFAULT_POLYMER_LABEL_SETTINGS: PolymerLabelSettings = {
   showArrow: true,
 };
 
+export const OVERLAY_PALETTE = [
+  "#5573b9",
+  "#0f766e",
+  "#b45309",
+  "#7c3aed",
+  "#be123c",
+  "#2563eb",
+  "#4d7c0f",
+  "#c2410c",
+];
+
 export interface ChartSettings {
   title: string;
   xTitle: string;
@@ -46,6 +57,7 @@ export interface ChartSettings {
   annotationConnectorColor?: string;
   annotationConnectorOpacity?: number;
   polymerLabels?: PolymerLabelSettings;
+  overlayColors?: string[];
   axis: AxisLimits;
   labels: LabelSettings;
 }
@@ -174,6 +186,7 @@ export function mergeChartSettings(base: ChartSettings, saved?: Partial<ChartSet
           ...(saved?.polymerLabels ?? {}),
         }
       : undefined,
+    overlayColors: saved?.overlayColors ?? base.overlayColors,
   };
 }
 

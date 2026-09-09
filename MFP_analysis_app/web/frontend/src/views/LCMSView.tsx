@@ -87,6 +87,7 @@ import {
   loadGraphSettingsDefault,
   mergeChartSettings,
   mergeGraphSettings,
+  OVERLAY_PALETTE,
   saveGraphSettingsDefault,
   type AxisLimits,
   type ChartSettings,
@@ -387,16 +388,6 @@ const UV_PEAK_FETCH_LIMIT = 250;
 const UV_LABEL_STAIR_X_STEP_MIN = 0.5;
 const UV_LABEL_STAIR_Y_STEP_PX = 5;
 const UV_LABEL_STAIR_BASE_Y_PX = 24;
-const OVERLAY_PALETTE = [
-  "#5573b9",
-  "#0f766e",
-  "#b45309",
-  "#7c3aed",
-  "#be123c",
-  "#2563eb",
-  "#4d7c0f",
-  "#c2410c",
-];
 
 const BUILT_IN_POLYMER_MONOMERS: PolymerMonomerPreset[] = [
   { id: "hydroxy:glycolic-acid", category: "hydroxy", name: "Glycolic acid", abbr: "GA", mass: 76.016044, selected: false },
@@ -1346,6 +1337,7 @@ export function LCMSView() {
   const [eicOpen, setEicOpen] = useState(false);
   const [graphSettingsOpen, setGraphSettingsOpen] = useState(false);
   const [designPlotId, setDesignPlotId] = useState<GraphId | null>(null);
+  const [reloadPulse, setReloadPulse] = useState(0);
   const [graphSettings, setGraphSettings] = useState<GraphSettings>(() =>
     loadGraphSettingsDefault(),
   );
@@ -1767,54 +1759,6 @@ export function LCMSView() {
       })),
     [uvLabelsBySessionId, uvOverlay],
   );
-
-  useEffect(() => {
-    const ids = overlaySessionIds.filter((sid) => sid !== activeSid);
-    if (!overlaySpectrumEnabled || selectedRt == null || ids.length === 0) {
-      setSpectrumOverlay([]);
-      return;
-    }
-    let cancelled = false;
-    Promise.all(
-      ids.map(async (sid) => {
-        const session = sessions.find((item) => item.session_id === sid);
-        try {
-          const payload = await api.lcms.spectrum(sid, {
-            rt_min: selectedRt,
-            polarity: pol,
-            top_n: spectrumTopN,
-            min_rel: spectrumMinRel,
-            polymer: activePolymerSettings,
-          });
-          return {
-            session_id: sid,
-            display_name: session?.display_name ?? sid,
-            spectrum: payload,
-          };
-        } catch {
-          return null;
-        }
-      }),
-    ).then((items) => {
-      if (cancelled) return;
-      setSpectrumOverlay(
-        items.filter((item): item is LCMSSpectrumOverlayTrace => item !== null),
-      );
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    activePolymerSettings,
-    activeSid,
-    overlaySessionIds,
-    overlaySpectrumEnabled,
-    pol,
-    selectedRt,
-    sessions,
-    spectrumMinRel,
-    spectrumTopN,
-  ]);
 
   // --- callbacks ------------------------------------------------------------
 
@@ -2843,6 +2787,102 @@ export function LCMSView() {
     [regionIgnoredMasses, regionIgnoredMzTolerance],
   );
 
+  useEffect(() => {
+    const ids = overlaySessionIds.filter((sid) => sid !== activeSid);
+    const shouldOverlay = (overlaySpectrumEnabled || overlayTicEnabled) && ids.length > 0;
+    if (!shouldOverlay) {
+      setSpectrumOverlay([]);
+      return;
+    }
+
+    let cancelled = false;
+    const hasRegion =
+      selectedRegion != null &&
+      Number.isFinite(selectedRegion.rtMin) &&
+      Number.isFinite(selectedRegion.rtMax) &&
+      selectedRegion.rtMin !== selectedRegion.rtMax;
+
+    if (hasRegion && selectedRegion != null) {
+      const lo = Math.min(selectedRegion.rtMin, selectedRegion.rtMax);
+      const hi = Math.max(selectedRegion.rtMin, selectedRegion.rtMax);
+      Promise.all(
+        ids.map(async (sid) => {
+          const session = sessions.find((item) => item.session_id === sid);
+          try {
+            const payload = await api.lcms.regionSpectrum(sid, {
+              rt_min: lo,
+              rt_max: hi,
+              polarity: pol,
+              bin_width: 0.01,
+              min_rel: 0.0,
+              polymer: activePolymerSettings,
+            });
+            const sp = spectrumFromRegionData(payload, lo, hi);
+            return {
+              session_id: sid,
+              display_name: session?.display_name ?? sid,
+              spectrum: sp,
+            };
+          } catch {
+            return null;
+          }
+        }),
+      ).then((items) => {
+        if (cancelled) return;
+        setSpectrumOverlay(
+          items.filter((item): item is LCMSSpectrumOverlayTrace => item !== null),
+        );
+      });
+    } else if (selectedRt != null) {
+      Promise.all(
+        ids.map(async (sid) => {
+          const session = sessions.find((item) => item.session_id === sid);
+          try {
+            const payload = await api.lcms.spectrum(sid, {
+              rt_min: selectedRt,
+              polarity: pol,
+              top_n: spectrumTopN,
+              min_rel: spectrumMinRel,
+              polymer: activePolymerSettings,
+            });
+            return {
+              session_id: sid,
+              display_name: session?.display_name ?? sid,
+              spectrum: payload,
+            };
+          } catch {
+            return null;
+          }
+        }),
+      ).then((items) => {
+        if (cancelled) return;
+        setSpectrumOverlay(
+          items.filter((item): item is LCMSSpectrumOverlayTrace => item !== null),
+        );
+      });
+    } else {
+      setSpectrumOverlay([]);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activePolymerSettings,
+    activeSid,
+    overlaySessionIds,
+    overlaySpectrumEnabled,
+    overlayTicEnabled,
+    pol,
+    reloadPulse,
+    selectedRegion,
+    selectedRt,
+    sessions,
+    spectrumFromRegionData,
+    spectrumMinRel,
+    spectrumTopN,
+  ]);
+
   const loadSummedRegionSpectrum = async () => {
     if (!activeSid || selectedRegion == null) {
       setInfo("Enable Region Select and drag an RT region on the TIC first.");
@@ -3553,7 +3593,11 @@ export function LCMSView() {
 
   const onTICClick = (ev: Readonly<PlotMouseEvent>) => {
     const rtMin = rtFromPlotClick(ev);
-    if (rtMin != null) loadSpectrum(rtMin);
+    if (rtMin != null) {
+      setSelectedRegion(null);
+      setRegionIntegration(null);
+      loadSpectrum(rtMin);
+    }
   };
 
   const onUVClick = (ev: Readonly<PlotMouseEvent>) => {
@@ -3563,6 +3607,50 @@ export function LCMSView() {
       loadSpectrum(displayedRtMin, { uvRtMin });
     }
   };
+
+  const handleReloadTIC = useCallback(() => {
+    if (activeSid) {
+      api.lcms.tic(activeSid, pol).then(setTic).catch((err) => setError(String(err)));
+      if (overlayTicEnabled && overlaySessionIds.length > 1) {
+        api.lcms
+          .ticOverlay({ session_ids: overlaySessionIds, polarity: pol })
+          .then((payload) => setTicOverlay(payload.traces))
+          .catch((err) => setError(String(err)));
+      }
+    }
+    setReloadPulse((p) => p + 1);
+    window.dispatchEvent(new Event("resize"));
+  }, [activeSid, overlaySessionIds, overlayTicEnabled, pol]);
+
+  const handleReloadUV = useCallback(() => {
+    if (activeSid) {
+      api.lcms
+        .uv(activeSid, {
+          top_n: UV_PEAK_FETCH_LIMIT,
+          min_rel: uvProminence,
+          min_distance_min: uvMinDistance,
+        })
+        .then(setUv)
+        .catch((err) => setError(String(err)));
+    }
+    setReloadPulse((p) => p + 1);
+    window.dispatchEvent(new Event("resize"));
+  }, [activeSid, uvMinDistance, uvProminence]);
+
+  const handleReloadSpectrum = useCallback(() => {
+    if (selectedRegion != null) {
+      void loadRegionData(selectedRegion);
+    } else if (selectedRt != null) {
+      loadSpectrum(selectedRt);
+    }
+    setReloadPulse((p) => p + 1);
+    window.dispatchEvent(new Event("resize"));
+  }, [loadRegionData, loadSpectrum, selectedRegion, selectedRt]);
+
+  const handleReloadEIC = useCallback(() => {
+    setReloadPulse((p) => p + 1);
+    window.dispatchEvent(new Event("resize"));
+  }, []);
 
   // --- header ---------------------------------------------------------------
 
@@ -3714,6 +3802,7 @@ export function LCMSView() {
                   onToggleRegionSelect={handleSetRegionSelect}
                   settings={graphSettings.tic}
                   onOpenDesign={() => setDesignPlotId("tic")}
+                  onReload={handleReloadTIC}
                 />
               )}
               {visibleEicPlots.length > 0 && overlayEicEnabled ? (
@@ -3739,6 +3828,7 @@ export function LCMSView() {
                   settings={graphSettings.eic}
                   overlaySettings={graphSettings.eicOverlay}
                   onOpenDesign={() => setDesignPlotId("eic")}
+                  onReload={handleReloadEIC}
                 />
               ) : (
                 visibleEicPlots.map((plot) => (
@@ -3769,6 +3859,7 @@ export function LCMSView() {
                       settings={graphSettings.eic}
                       overlaySettings={graphSettings.eicOverlay}
                       onOpenDesign={() => setDesignPlotId("eic")}
+                      onReload={handleReloadEIC}
                     />
                   </div>
                 ))
@@ -3802,6 +3893,7 @@ export function LCMSView() {
                   labelOrientation={uvLabelOrientation}
                   settings={graphSettings.uv}
                   onOpenDesign={() => setDesignPlotId("uv")}
+                  onReload={handleReloadUV}
                   onAutoLabelUV={() => dispatchUiAction("lcms.auto_label_uv")}
                   onLabelSelectedRT={transferSelectedSpectrumToUv}
                   onCustomUvLabel={() => dispatchUiAction("lcms.open_custom_uv_label")}
@@ -3850,6 +3942,7 @@ export function LCMSView() {
                   onPeakClick={onSpectrumPeakClick}
                   onDeconvolution={() => setDeconvolutionOpen(true)}
                   onOpenDesign={() => setDesignPlotId("spectrum")}
+                  onReload={handleReloadSpectrum}
                 />
               )}
             </>
@@ -4066,6 +4159,17 @@ export function LCMSView() {
           onChange={setGraphSettings}
           overlayEicEnabled={overlayEicEnabled}
           setOverlayEicEnabled={setOverlayEicEnabled}
+          overlayTraceNames={
+            designPlotId === "tic"
+              ? ticOverlay.map((t) => t.display_name)
+              : designPlotId === "spectrum"
+              ? spectrumOverlay.map((t) => t.display_name)
+              : designPlotId === "uv"
+              ? uvOverlayWithLabels.map((t) => t.display_name)
+              : designPlotId === "eic" && visibleEicPlots.length > 1
+              ? visibleEicPlots.map((p) => `${eicSourceFile(p)} m/z ${p.eic.target_mz.toFixed(4)}`)
+              : []
+          }
           onSetDefault={() => {
             saveGraphSettingsDefault(graphSettings);
             setInfo(`Saved current ${designPlotId.toUpperCase()} settings as the default.`);
@@ -5676,11 +5780,14 @@ function TICChart(props: {
   onToggleRegionSelect?: (val: boolean) => void;
   settings: ChartSettings;
   onOpenDesign?: () => void;
+  onReload?: () => void;
 }) {
+  const [localRevision, setLocalRevision] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<PlotlyHTMLElement | null>(null);
   const plotSize = useContainerSize(containerRef, props.settings.height);
   usePlotResizePulses([
+    localRevision,
     props.regionSelect,
     props.selectedRt,
     props.selectedRegion?.rtMin,
@@ -5692,6 +5799,7 @@ function TICChart(props: {
     props.settings.color,
     props.settings.height,
     props.settings.lineWidth,
+    props.settings.overlayColors,
     props.settings.showGrid,
     props.settings.tickSize,
     props.settings.title,
@@ -5711,16 +5819,21 @@ function TICChart(props: {
   );
   const overlayData = useMemo(
     () =>
-      props.overlayTraces.map((trace) => ({
+      props.overlayTraces.map((trace, index) => ({
         type: "scattergl" as const,
         mode: "lines" as const,
         x: trace.rt_min.map((v) => v * scale),
         y: trace.tic,
-        line: { width: Math.max(1, props.settings.lineWidth * 0.9) },
+        line: {
+          color:
+            props.settings.overlayColors?.[index] ??
+            OVERLAY_PALETTE[index % OVERLAY_PALETTE.length],
+          width: Math.max(1, props.settings.lineWidth * 0.9),
+        },
         hovertemplate: `${trace.display_name}<br>RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`,
         name: trace.display_name,
       })),
-    [props.overlayTraces, props.settings.lineWidth, scale, unit],
+    [props.overlayTraces, props.settings.lineWidth, props.settings.overlayColors, scale, unit],
   );
 
   const emitSelectedRtRegion = useCallback(
@@ -5916,6 +6029,20 @@ function TICChart(props: {
               <span>Design</span>
             </button>
           )}
+          {props.onReload && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
+              onClick={() => {
+                setLocalRevision((r) => r + 1);
+                props.onReload?.();
+              }}
+              title="Reload TIC plot"
+            >
+              <span>🔄</span>
+              <span>Reload</span>
+            </button>
+          )}
           <PaperFigureExportToolbar
             disabled={!props.tic}
             storageKey="mfp-publication-plot-export-lcms-tic"
@@ -5934,7 +6061,7 @@ function TICChart(props: {
           style={{ height: props.settings.height }}
         >
           <Plot
-            revision={plotSize.revision}
+            revision={plotSize.revision + localRevision}
             data={[
               {
                 type: props.regionSelect ? "scatter" : "scattergl",
@@ -6018,7 +6145,9 @@ function EICChart(props: {
   settings: ChartSettings;
   overlaySettings: EICOverlaySettings;
   onOpenDesign?: () => void;
+  onReload?: () => void;
 }) {
+  const [localRevision, setLocalRevision] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<PlotlyHTMLElement | null>(null);
   const plotSize = useContainerSize(containerRef, Math.max(240, props.settings.height * 0.75));
@@ -6057,7 +6186,9 @@ function EICChart(props: {
         customdata: plot.eic.intensity,
         opacity: isOverlay ? props.overlaySettings.opacity : 1,
         line: {
-          color: isOverlay ? (pt.colorway[index % pt.colorway.length] ?? props.settings.color) : props.settings.color,
+          color: isOverlay
+            ? (props.settings.overlayColors?.[index] ?? pt.colorway[index % pt.colorway.length] ?? props.settings.color)
+            : props.settings.color,
           width: props.settings.lineWidth,
         },
         hovertemplate: `${eicSourceFile(plot)}<br>m/z ${plot.eic.target_mz.toFixed(4)}<br>RT: %{x:.3f} ${unit}<br>Intensity: %{customdata:.3e}<extra></extra>`,
@@ -6065,10 +6196,11 @@ function EICChart(props: {
       };
       });
     },
-    [isOverlay, props.eics, props.overlaySettings, props.settings.lineWidth, pt.colorway, scale, unit],
+    [isOverlay, props.eics, props.overlaySettings, props.settings.color, props.settings.lineWidth, props.settings.overlayColors, pt.colorway, scale, unit],
   );
   const primary = props.eics[0]?.eic ?? null;
   usePlotResizePulses([
+    localRevision,
     eicRevisionKey,
     props.eics.length,
     props.overlaySettings.normalize,
@@ -6085,6 +6217,7 @@ function EICChart(props: {
     props.settings.color,
     props.settings.height,
     props.settings.lineWidth,
+    props.settings.overlayColors,
     props.settings.showGrid,
     props.settings.tickSize,
     props.settings.title,
@@ -6228,6 +6361,20 @@ function EICChart(props: {
               <span>Design</span>
             </button>
           )}
+          {props.onReload && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
+              onClick={() => {
+                setLocalRevision((r) => r + 1);
+                props.onReload?.();
+              }}
+              title="Reload EIC plot"
+            >
+              <span>🔄</span>
+              <span>Reload</span>
+            </button>
+          )}
           <PaperFigureExportToolbar
             disabled={props.eics.length === 0}
             storageKey="mfp-publication-plot-export-lcms-eic"
@@ -6241,7 +6388,7 @@ function EICChart(props: {
         style={{ height: Math.max(240, props.settings.height * 0.75) }}
       >
         <Plot
-          revision={plotSize.revision}
+          revision={plotSize.revision + localRevision}
           data={traces}
           layout={{
             height: plotSize.height,
@@ -6317,6 +6464,7 @@ function UVChromatogramChart(props: {
   labelOrientation: UVLabelOrientation;
   settings: ChartSettings;
   onOpenDesign?: () => void;
+  onReload?: () => void;
   onAutoLabelUV?: () => void;
   onLabelSelectedRT?: () => void;
   onCustomUvLabel?: () => void;
@@ -6345,6 +6493,7 @@ function UVChromatogramChart(props: {
   setAutoAlignUv?: (v: boolean) => void;
   onAutoAlignUV?: () => void;
 }) {
+  const [localRevision, setLocalRevision] = useState(0);
   const {
     uv,
     overlayTraces,
@@ -6389,13 +6538,15 @@ function UVChromatogramChart(props: {
         x: trace.uv.rt_min.map((v) => (v + xOffset) * scale),
         y: trace.uv.signal,
         line: {
-          color: OVERLAY_PALETTE[index % OVERLAY_PALETTE.length],
+          color:
+            settings.overlayColors?.[index] ??
+            OVERLAY_PALETTE[index % OVERLAY_PALETTE.length],
           width: Math.max(1, settings.lineWidth * 0.9),
         },
         hovertemplate: `${trace.display_name}<br>RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`,
         name: trace.display_name,
       })),
-    [overlayTraces, scale, settings.lineWidth, unit, xOffset],
+    [overlayTraces, scale, settings.lineWidth, settings.overlayColors, unit, xOffset],
   );
   const overlayLabelCount = useMemo(
     () => overlayTraces.reduce((count, trace) => count + trace.labels.length, 0),
@@ -6491,6 +6642,7 @@ function UVChromatogramChart(props: {
     xOffset,
   ]);
   usePlotResizePulses([
+    localRevision,
     available,
     bunchLabels,
     labelOrientation,
@@ -6508,6 +6660,7 @@ function UVChromatogramChart(props: {
     settings.labels.color,
     settings.labels.fontSize,
     settings.lineWidth,
+    settings.overlayColors,
     settings.showGrid,
     settings.tickSize,
     settings.title,
@@ -6527,6 +6680,7 @@ function UVChromatogramChart(props: {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [
+    localRevision,
     bunchLabels,
     labelOrientation,
     labels.length,
@@ -6540,6 +6694,7 @@ function UVChromatogramChart(props: {
     settings.labels.color,
     settings.labels.fontSize,
     settings.lineWidth,
+    settings.overlayColors,
     settings.showGrid,
     settings.tickSize,
     settings.title,
@@ -6735,6 +6890,20 @@ function UVChromatogramChart(props: {
             >
               <span>🎨</span>
               <span>Design</span>
+            </button>
+          )}
+          {props.onReload && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
+              onClick={() => {
+                setLocalRevision((r) => r + 1);
+                props.onReload?.();
+              }}
+              title="Reload UV plot"
+            >
+              <span>🔄</span>
+              <span>Reload</span>
             </button>
           )}
 
@@ -7010,7 +7179,7 @@ function UVChromatogramChart(props: {
             style={{ height: settings.height }}
           >
             <Plot
-              revision={uvPlotSize.revision}
+              revision={uvPlotSize.revision + localRevision}
               data={[
                 ...(available
                   ? [
@@ -7158,13 +7327,16 @@ function SpectrumChart(props: {
   onPeakClick?: (mz: number, intensity?: number, event?: MouseEvent) => void;
   onDeconvolution?: () => void;
   onOpenDesign?: () => void;
+  onReload?: () => void;
 }) {
+  const [localRevision, setLocalRevision] = useState(0);
   const s = props.spectrum;
   const specContainerRef = useRef<HTMLDivElement>(null);
   const specPlotRef = useRef<PlotlyHTMLElement | null>(null);
   const specPlotSize = useContainerSize(specContainerRef, props.settings.height);
   const pt = usePlotlyTheme();
   usePlotResizePulses([
+    localRevision,
     props.annotate,
     props.polymerEnabled,
     props.rtUnit,
@@ -7181,6 +7353,7 @@ function SpectrumChart(props: {
     props.settings.labels.color,
     props.settings.labels.enabled,
     props.settings.labels.fontSize,
+    props.settings.overlayColors,
     props.settings.showGrid,
     props.settings.tickSize,
     props.settings.title,
@@ -7212,12 +7385,16 @@ function SpectrumChart(props: {
         x: trace.spectrum.mz,
         y: trace.spectrum.intensity,
         width: props.settings.barWidth,
-        marker: { color: OVERLAY_PALETTE[index % OVERLAY_PALETTE.length] },
+        marker: {
+          color:
+            props.settings.overlayColors?.[index] ??
+            OVERLAY_PALETTE[index % OVERLAY_PALETTE.length],
+        },
         opacity: 0.38,
         hovertemplate: `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>`,
         name: trace.display_name,
       })),
-    [props.overlayTraces, props.settings.barWidth],
+    [props.overlayTraces, props.settings.barWidth, props.settings.overlayColors],
   );
   const overlayAnnotations = useMemo(() => {
     if (!props.annotate || !props.showOverlayLabels) return [];
@@ -7232,7 +7409,9 @@ function SpectrumChart(props: {
           yshift: 18 + traceIndex * 10 + labelIndex * 2,
           font: {
             size: Math.max(8, props.settings.labels.fontSize - 1),
-            color: OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length],
+            color:
+              props.settings.overlayColors?.[traceIndex] ??
+              OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length],
           },
         })),
     );
@@ -7241,6 +7420,7 @@ function SpectrumChart(props: {
     props.overlayTraces,
     props.settings.labels.enabled,
     props.settings.labels.fontSize,
+    props.settings.overlayColors,
     props.showOverlayLabels,
   ]);
   const savePublication = useCallback(
@@ -7374,6 +7554,20 @@ function SpectrumChart(props: {
               <span>Design</span>
             </button>
           )}
+          {props.onReload && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
+              onClick={() => {
+                setLocalRevision((r) => r + 1);
+                props.onReload?.();
+              }}
+              title="Reload MS1 spectrum plot"
+            >
+              <span>🔄</span>
+              <span>Reload</span>
+            </button>
+          )}
           <PaperFigureExportToolbar
             disabled={!s}
             storageKey="mfp-publication-plot-export-lcms-spectrum"
@@ -7392,7 +7586,7 @@ function SpectrumChart(props: {
           style={{ height: props.settings.height }}
         >
           <Plot
-            revision={specPlotSize.revision}
+            revision={specPlotSize.revision + localRevision}
             data={[
               {
                 type: "bar",

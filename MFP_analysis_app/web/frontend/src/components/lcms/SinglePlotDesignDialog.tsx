@@ -1,5 +1,6 @@
 import {
   DEFAULT_POLYMER_LABEL_SETTINGS,
+  OVERLAY_PALETTE,
   type AxisLimits,
   type ChartSettings,
   type EICOverlaySettings,
@@ -24,6 +25,7 @@ export interface SinglePlotDesignDialogProps {
   onChange: (updater: (prev: GraphSettings) => GraphSettings) => void;
   overlayEicEnabled?: boolean;
   setOverlayEicEnabled?: (value: boolean) => void;
+  overlayTraceNames?: string[];
   onSetDefault: () => void;
   onReset: () => void;
   onClose: () => void;
@@ -54,6 +56,7 @@ export function SinglePlotDesignDialog({
   onChange,
   overlayEicEnabled = false,
   setOverlayEicEnabled,
+  overlayTraceNames = [],
   onSetDefault,
   onReset,
   onClose,
@@ -210,6 +213,36 @@ export function SinglePlotDesignDialog({
             )}
           </div>
         </GroupBox>
+
+        {/* Overlay Trace Colors */}
+        {overlayTraceNames && overlayTraceNames.length > 0 && (
+          <GroupBox title="Overlay Trace Colors">
+            <p className="mb-2.5 text-[11px] text-ink-500">
+              Customize colors for each overlaid trace on this plot.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {overlayTraceNames.map((name, i) => {
+                const currentColor =
+                  s.overlayColors?.[i] ?? OVERLAY_PALETTE[i % OVERLAY_PALETTE.length];
+                return (
+                  <ColorSetting
+                    key={i}
+                    label={`Overlay ${i + 1}: ${name}`}
+                    value={currentColor}
+                    onChange={(newColor) => {
+                      const updated = [...(s.overlayColors ?? OVERLAY_PALETTE.slice(0, overlayTraceNames.length))];
+                      while (updated.length <= i) {
+                        updated.push(OVERLAY_PALETTE[updated.length % OVERLAY_PALETTE.length]);
+                      }
+                      updated[i] = newColor;
+                      updateChart({ overlayColors: updated });
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </GroupBox>
+        )}
 
         {/* Titles & Typography */}
         <GroupBox title="Titles & Typography">
