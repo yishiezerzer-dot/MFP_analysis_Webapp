@@ -354,6 +354,7 @@ interface LCMSWorkspaceEnvelope {
     uvTextLabels: UVTextLabel[];
     uvTextLabelsBySessionId?: Record<string, UVTextLabel[]>;
     polymerSettings: PolymerUiSettings;
+    polymerSettingsBySessionId?: Record<string, PolymerUiSettings>;
     eic?: LCMSEICData | null;
     eics?: LCMSEICPlot[];
     features?: LCMSFeatureRow[];
@@ -1256,10 +1257,51 @@ export function LCMSView() {
   // Annotate – overlay
   const [showOverlayLabels, setShowOverlayLabels] = useStoredState(`${LCMS_STORAGE_PREFIX}.showOverlayLabels`, false);
   const [multiDragOverlay, setMultiDragOverlay] = useStoredState(`${LCMS_STORAGE_PREFIX}.multiDragOverlay`, false);
-  const [polymerSettings, setPolymerSettings] =
-    useState<PolymerUiSettings>(() => loadPolymerUiSettings());
-  const polymerSettingsRef = useRef(polymerSettings);
-  useEffect(() => { polymerSettingsRef.current = polymerSettings; }, [polymerSettings]);
+  const [polymerSettingsBySessionId, setPolymerSettingsBySessionId] =
+    useStoredState<Record<string, PolymerUiSettings>>(
+      `${LCMS_STORAGE_PREFIX}.polymerSettingsBySessionId`,
+      {},
+      (value) => (value && typeof value === "object" ? value : {}),
+    );
+  const getPolymerSettingsForSession = useCallback(
+    (sid: string | null): PolymerUiSettings => {
+      if (sid && polymerSettingsBySessionId[sid]) {
+        return polymerSettingsBySessionId[sid];
+      }
+      return loadPolymerUiSettings();
+    },
+    [polymerSettingsBySessionId],
+  );
+  const activePolymerUiSettings = useMemo(
+    () => getPolymerSettingsForSession(activeSid),
+    [activeSid, getPolymerSettingsForSession],
+  );
+  const polymerSettings = activePolymerUiSettings;
+  const polymerSettingsRef = useRef(activePolymerUiSettings);
+  useEffect(() => {
+    polymerSettingsRef.current = activePolymerUiSettings;
+  }, [activePolymerUiSettings]);
+  const setPolymerSettingsForSession = useCallback(
+    (
+      sid: string | null,
+      next: PolymerUiSettings | ((prev: PolymerUiSettings) => PolymerUiSettings),
+    ) => {
+      if (!sid) return;
+      setPolymerSettingsBySessionId((prev) => {
+        const current = prev[sid] ?? loadPolymerUiSettings();
+        const updated = typeof next === "function" ? next(current) : next;
+        return { ...prev, [sid]: updated };
+      });
+    },
+    [setPolymerSettingsBySessionId],
+  );
+  const setPolymerSettings = useCallback(
+    (next: PolymerUiSettings | ((prev: PolymerUiSettings) => PolymerUiSettings)) => {
+      if (!activeSid) return;
+      setPolymerSettingsForSession(activeSid, next);
+    },
+    [activeSid, setPolymerSettingsForSession],
+  );
   const [uvLabelsBySessionId, setUvLabelsBySessionId] = useStoredState<Record<string, UVTextLabel[]>>(
     `${LCMS_STORAGE_PREFIX}.uvLabelsBySessionId`,
     {},
@@ -1331,6 +1373,39 @@ export function LCMSView() {
   const [uvBusy, setUvBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  const copyPolymerSettingsFromSession = useCallback(
+    (sourceSid: string, targetSid?: string) => {
+      const target = targetSid ?? activeSid;
+      if (!target || target === sourceSid) return;
+      const sourceSettings = getPolymerSettingsForSession(sourceSid);
+      setPolymerSettingsForSession(
+        target,
+        JSON.parse(JSON.stringify(sourceSettings)) as PolymerUiSettings,
+      );
+      const sourceName =
+        sessions.find((s) => s.session_id === sourceSid)?.display_name ?? sourceSid;
+      setInfo(`Copied polymer settings from ${sourceName}.`);
+    },
+    [activeSid, getPolymerSettingsForSession, sessions, setPolymerSettingsForSession],
+  );
+
+  const applyPolymerSettingsToAllSessions = useCallback(
+    (sourceSid?: string) => {
+      const source = sourceSid ?? activeSid;
+      if (!source) return;
+      const sourceSettings = getPolymerSettingsForSession(source);
+      setPolymerSettingsBySessionId((prev) => {
+        const next: Record<string, PolymerUiSettings> = { ...prev };
+        for (const s of sessions) {
+          next[s.session_id] = JSON.parse(JSON.stringify(sourceSettings)) as PolymerUiSettings;
+        }
+        return next;
+      });
+      setInfo(`Applied polymer settings to all ${sessions.length} open files.`);
+    },
+    [activeSid, getPolymerSettingsForSession, sessions, setPolymerSettingsBySessionId],
+  );
 
   // Dialog / modal state
   const [findMzOpen, setFindMzOpen] = useState(false);
@@ -1497,13 +1572,31 @@ export function LCMSView() {
     });
   }, [activeProjectId, projectSessions, sessions]);
 
+  const prevActiveSidForSpectrumRef = useRef<string | null>(activeSid);
+  useEffect(() => {
+    if (prevActiveSidForSpectrumRef.current !== activeSid) {
+      prevActiveSidForSpectrumRef.current = activeSid;
+      setSpectrum(null);
+      setSelectedRt(null);
+      setSelectedUvRt(null);
+    }
+  }, [activeSid]);
+
   const pol = polarity === "all" ? undefined : polarity;
+
+  const getApiPolymerSettingsForSession = useCallback(
+    (sid: string | null): PolymerSettings | undefined => {
+      if (!sid || polarity === "all") return undefined;
+      const pSettings = getPolymerSettingsForSession(sid);
+      if (!pSettings.shared.enabled) return undefined;
+      return toApiPolymerSettings(pSettings, polarity);
+    },
+    [getPolymerSettingsForSession, polarity],
+  );
+
   const activePolymerSettings = useMemo(
-    () =>
-      polarity === "all" || !polymerSettings.shared.enabled
-        ? undefined
-        : toApiPolymerSettings(polymerSettings, polarity),
-    [polarity, polymerSettings],
+    () => getApiPolymerSettingsForSession(activeSid),
+    [activeSid, getApiPolymerSettingsForSession],
   );
 
   const exportFeatureTableCsv = useCallback(
@@ -2043,7 +2136,7 @@ export function LCMSView() {
           polarity: pol,
           top_n: Math.max(1, spectrumTopN),
           min_rel: Math.max(0, spectrumMinRel),
-          polymer: polymerSettingsOverride ?? activePolymerSettings,
+          polymer: polymerSettingsOverride ?? getApiPolymerSettingsForSession(sid),
         });
         const count = addSpectrumLabelsToUv(sp, [
           {
@@ -2066,9 +2159,9 @@ export function LCMSView() {
       setBusy(false);
     }
   }, [
-    activePolymerSettings,
     activeSid,
     addSpectrumLabelsToUv,
+    getApiPolymerSettingsForSession,
     pol,
     spectrumMinRel,
     spectrumTopN,
@@ -2233,6 +2326,15 @@ export function LCMSView() {
       }
       if (uploaded.length > 0) {
         setSessions((prev) => [...prev, ...uploaded]);
+        setPolymerSettingsBySessionId((prev) => {
+          const next = { ...prev };
+          uploaded.forEach((session) => {
+            if (!next[session.session_id]) {
+              next[session.session_id] = loadPolymerUiSettings();
+            }
+          });
+          return next;
+        });
         setSessionProjectById((prev) => {
           const next = { ...prev };
           uploaded.forEach((session) => {
@@ -2261,6 +2363,12 @@ export function LCMSView() {
     await api.lcms.remove(sid).catch((err) => setError(String(err)));
     setSessions((prev) => prev.filter((s) => s.session_id !== sid));
     setSessionProjectById((prev) => {
+      if (!(sid in prev)) return prev;
+      const next = { ...prev };
+      delete next[sid];
+      return next;
+    });
+    setPolymerSettingsBySessionId((prev) => {
       if (!(sid in prev)) return prev;
       const next = { ...prev };
       delete next[sid];
@@ -2815,7 +2923,7 @@ export function LCMSView() {
               polarity: pol,
               bin_width: 0.01,
               min_rel: 0.0,
-              polymer: activePolymerSettings,
+              polymer: getApiPolymerSettingsForSession(sid),
             });
             const sp = spectrumFromRegionData(payload, lo, hi);
             return {
@@ -2843,7 +2951,7 @@ export function LCMSView() {
               polarity: pol,
               top_n: spectrumTopN,
               min_rel: spectrumMinRel,
-              polymer: activePolymerSettings,
+              polymer: getApiPolymerSettingsForSession(sid),
             });
             return {
               session_id: sid,
@@ -2868,12 +2976,13 @@ export function LCMSView() {
       cancelled = true;
     };
   }, [
-    activePolymerSettings,
     activeSid,
+    getApiPolymerSettingsForSession,
     overlaySessionIds,
     overlaySpectrumEnabled,
     overlayTicEnabled,
     pol,
+    polymerSettingsBySessionId,
     reloadPulse,
     selectedRegion,
     selectedRt,
@@ -2992,6 +3101,17 @@ export function LCMSView() {
     resetRegion(null);
   }, [activeSid, resetRegion]);
 
+  // Live re-match active MS1 spectrum when active polymer settings change
+  useEffect(() => {
+    if (!activeSid) return;
+    if (selectedRegion != null) {
+      void loadRegionData(selectedRegion);
+    } else if (selectedRt != null) {
+      loadSpectrum(selectedRt);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePolymerSettings]);
+
   const saveWorkspace = () => {
     const uvTextLabelsBySessionId = Object.fromEntries(
       sessions.map((session) => [
@@ -3051,6 +3171,7 @@ export function LCMSView() {
         uvTextLabels,
         uvTextLabelsBySessionId,
         polymerSettings,
+        polymerSettingsBySessionId,
         eic: eicPlots.at(-1)?.eic ?? null,
         eics: eicPlots,
         features: featureRows,
@@ -3172,7 +3293,22 @@ export function LCMSView() {
       setUvLabelStairXStep(analysis.uvLabelStairXStep ?? UV_LABEL_STAIR_X_STEP_MIN);
       setUvLabelStairYStep(analysis.uvLabelStairYStep ?? UV_LABEL_STAIR_Y_STEP_PX);
       setUvLabelsBySessionId(nextUvLabelsBySessionId);
-      if (analysis.polymerSettings) setPolymerSettings(analysis.polymerSettings);
+      if (analysis.polymerSettingsBySessionId) {
+        const nextPolymerSettingsBySessionId: Record<string, PolymerUiSettings> = {};
+        for (const [sid, pSettings] of Object.entries(analysis.polymerSettingsBySessionId)) {
+          const newSid = idMap.get(sid) ?? sid;
+          if (newAvailableIds.has(newSid) && pSettings && typeof pSettings === "object") {
+            nextPolymerSettingsBySessionId[newSid] = pSettings;
+          }
+        }
+        setPolymerSettingsBySessionId(nextPolymerSettingsBySessionId);
+      } else if (analysis.polymerSettings) {
+        const fallback: Record<string, PolymerUiSettings> = {};
+        for (const sid of newAvailableIds) {
+          fallback[sid] = JSON.parse(JSON.stringify(analysis.polymerSettings)) as PolymerUiSettings;
+        }
+        setPolymerSettingsBySessionId(fallback);
+      }
       setEicPlots(
         Array.isArray(analysis.eics)
           ? analysis.eics.map((plot) => ({
@@ -4191,6 +4327,11 @@ export function LCMSView() {
           canOpenKendrick={Boolean(spectrum)}
           onSaveDefaults={savePolymerDefaults}
           spectrumAvailable={Boolean(spectrum)}
+          sessions={sessions}
+          activeSessionId={activeSid}
+          onSelectSession={setActiveSid}
+          onCopyFromSession={copyPolymerSettingsFromSession}
+          onApplyToAllSessions={applyPolymerSettingsToAllSessions}
         />
       )}
       {polymerDialogOpen && (
@@ -4199,6 +4340,11 @@ export function LCMSView() {
           settings={polymerSettings}
           onChange={setPolymerSettings}
           onClose={() => setPolymerDialogOpen(false)}
+          sessions={sessions}
+          activeSessionId={activeSid}
+          onSelectSession={setActiveSid}
+          onCopyFromSession={copyPolymerSettingsFromSession}
+          onApplyToAllSessions={applyPolymerSettingsToAllSessions}
         />
       )}
       {expectedProductsOpen && polarity !== "all" && (

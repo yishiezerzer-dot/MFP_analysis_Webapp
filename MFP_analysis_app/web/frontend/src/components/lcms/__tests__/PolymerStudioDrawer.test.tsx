@@ -79,4 +79,77 @@ describe("PolymerStudioDrawer", () => {
     expect(screen.getByText("Tolerance")).toBeDefined();
     expect(screen.getByText(/Positive Adducts/i)).toBeDefined();
   });
+
+  it("renders target file selector and handles session switching", () => {
+    const handleSelectSession = vi.fn();
+    const settings = loadPolymerUiSettings();
+    const sessions = [
+      { session_id: "s1", display_name: "Sample_A.mzML" },
+      { session_id: "s2", display_name: "Sample_B.mzML" },
+    ];
+
+    render(
+      <PolymerStudioDrawer
+        open={true}
+        onClose={vi.fn()}
+        polarity="positive"
+        settings={settings}
+        onChange={vi.fn()}
+        onExpectedProducts={vi.fn()}
+        onKendrick={vi.fn()}
+        canOpenExpectedProducts={false}
+        canOpenKendrick={false}
+        onSaveDefaults={vi.fn()}
+        sessions={sessions}
+        activeSessionId="s1"
+        onSelectSession={handleSelectSession}
+      />,
+    );
+
+    const targetFileSelect = screen.getByRole("combobox", { name: /Target File/i }) as HTMLSelectElement;
+    expect(targetFileSelect).toBeDefined();
+    expect(targetFileSelect.value).toBe("s1");
+
+    fireEvent.change(targetFileSelect, { target: { value: "s2" } });
+    expect(handleSelectSession).toHaveBeenCalledWith("s2");
+  });
+
+  it("handles copy from session and apply to all sessions", () => {
+    const handleCopy = vi.fn();
+    const handleApplyAll = vi.fn();
+    const settings = loadPolymerUiSettings();
+    const sessions = [
+      { session_id: "s1", display_name: "Sample_A.mzML" },
+      { session_id: "s2", display_name: "Sample_B.mzML" },
+    ];
+
+    render(
+      <PolymerStudioDrawer
+        open={true}
+        onClose={vi.fn()}
+        polarity="positive"
+        settings={settings}
+        onChange={vi.fn()}
+        onExpectedProducts={vi.fn()}
+        onKendrick={vi.fn()}
+        canOpenExpectedProducts={false}
+        canOpenKendrick={false}
+        onSaveDefaults={vi.fn()}
+        sessions={sessions}
+        activeSessionId="s1"
+        onCopyFromSession={handleCopy}
+        onApplyToAllSessions={handleApplyAll}
+      />,
+    );
+
+    const copySelect = screen.getByRole("combobox", { name: /Copy from file/i });
+    expect(copySelect).toBeDefined();
+    fireEvent.change(copySelect, { target: { value: "s2" } });
+    expect(handleCopy).toHaveBeenCalledWith("s2");
+
+    const applyAllBtn = screen.getByRole("button", { name: /Apply to all open files/i });
+    expect(applyAllBtn).toBeDefined();
+    fireEvent.click(applyAllBtn);
+    expect(handleApplyAll).toHaveBeenCalled();
+  });
 });

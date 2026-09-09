@@ -153,11 +153,21 @@ export function PolymerDialog({
   settings,
   onChange,
   onClose,
+  sessions,
+  activeSessionId,
+  onSelectSession,
+  onCopyFromSession,
+  onApplyToAllSessions,
 }: {
   polarity: Polarity;
   settings: PolymerUiSettings;
   onChange: (settings: PolymerUiSettings) => void;
   onClose: () => void;
+  sessions?: Array<{ session_id: string; display_name: string }>;
+  activeSessionId?: string | null;
+  onSelectSession?: (sessionId: string) => void;
+  onCopyFromSession?: (fromSessionId: string) => void;
+  onApplyToAllSessions?: () => void;
 }) {
   const activeMode = polarity === "negative" ? "negative" : "positive";
   const disabled = polarity === "all";
@@ -210,6 +220,76 @@ export function PolymerDialog({
       }
     >
       <div className="flex flex-col gap-4 text-sm">
+        {/* Target File & Sync Banner */}
+        {sessions && sessions.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-brand-200 bg-brand-50/50 p-2.5 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-brand-900">Target File:</span>
+              {sessions.length > 1 && onSelectSession ? (
+                <select
+                  aria-label="Target File"
+                  value={activeSessionId ?? ""}
+                  onChange={(e) => onSelectSession(e.target.value)}
+                  className="rounded-md border border-brand-300 bg-surface px-2.5 py-1 text-xs font-semibold text-ink-800 shadow-2xs focus:border-brand-500 focus:outline-none"
+                >
+                  {sessions.map((s) => (
+                    <option key={s.session_id} value={s.session_id}>
+                      {s.display_name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="rounded-md bg-surface px-2.5 py-1 text-xs font-semibold text-ink-800 border border-brand-200 shadow-2xs">
+                  {sessions.find((s) => s.session_id === activeSessionId)?.display_name ?? "Default File"}
+                </span>
+              )}
+              <span className="text-[11px] text-brand-700 font-medium">
+                (Settings apply to this mzML)
+              </span>
+            </div>
+
+            {sessions.length > 1 && (
+              <div className="flex items-center gap-2">
+                {onCopyFromSession && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-ink-600">Copy from:</span>
+                    <select
+                      aria-label="Copy from file"
+                      defaultValue=""
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          onCopyFromSession(e.target.value);
+                          e.target.value = "";
+                        }
+                      }}
+                      className="rounded-md border border-ink-300 bg-surface px-2 py-1 text-xs text-ink-700 hover:border-ink-400 focus:outline-none shadow-2xs"
+                    >
+                      <option value="" disabled>Select file...</option>
+                      {sessions
+                        .filter((s) => s.session_id !== activeSessionId)
+                        .map((s) => (
+                          <option key={s.session_id} value={s.session_id}>
+                            {s.display_name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+                {onApplyToAllSessions && (
+                  <button
+                    type="button"
+                    onClick={onApplyToAllSessions}
+                    className="rounded-md border border-brand-300 bg-surface px-2.5 py-1 text-xs font-medium text-brand-700 shadow-2xs hover:bg-brand-100/60 transition-colors"
+                    title="Apply this file's polymer settings to all open mzML files"
+                  >
+                    ⚡ Apply to all
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {disabled && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
             Choose Positive or Negative polarity before enabling polymer matching.
