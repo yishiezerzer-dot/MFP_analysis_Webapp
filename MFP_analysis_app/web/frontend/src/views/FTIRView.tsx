@@ -2975,8 +2975,8 @@ function SpectrumChart(props: {
       const axisTitleSize = props.graphSettings.axisTitleSize;
       const axisTickSize = props.graphSettings.axisTickSize;
       const axisTitleStandoff = Math.max(8, Math.round(axisTickSize * 0.8));
-      const bottomMargin = Math.max(40, Math.round(20 + axisTickSize * 1.5 + axisTitleSize * 1.6));
-      const leftMargin = Math.max(50, Math.round(34 + axisTickSize * 1.8 + axisTitleSize * 1.2));
+      const bottomMargin = Math.max(45, Math.round(20 + axisTickSize * 1.5 + axisTitleSize * 1.6));
+      const leftMargin = Math.max(65, Math.round(34 + axisTickSize * 1.8 + axisTitleSize * 1.2));
       const stackedAxes = buildStackedAxes(
         props.graphSettings.overlayMode ?? "overlay",
         visibleOverlays.length,
@@ -2986,7 +2986,7 @@ function SpectrumChart(props: {
         axisTickSize,
       );
       return ({
-      margin: { l: leftMargin, r: 20, t: 8, b: bottomMargin },
+      margin: { l: leftMargin, r: 20, t: props.title ? 28 : 12, b: bottomMargin },
       height: 420,
       xaxis: {
         titlefont: { size: props.graphSettings.axisTitleSize },
@@ -3087,100 +3087,150 @@ function SpectrumChart(props: {
 
   return (
     <div className="card shrink-0 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
-        <h3 className="text-sm font-semibold">Spectrum</h3>
-        <div className="flex items-center gap-2">
-          <Tooltip content="Toggle chart display settings">
-            <button
-              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 transition-colors hover:bg-ink-100"
-              onClick={() => setShowGraphSettings((prev) => !prev)}
-            >
-              Graph settings
-            </button>
-          </Tooltip>
-          <Tooltip content={!spectrum ? "Load a spectrum first" : "Export chart as SVG"}>
-            <span>
-              <button
-                className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 transition-colors hover:bg-ink-100"
-                onClick={() => exportPlotImage("svg")}
-                disabled={!spectrum}
-              >
-                Export SVG
-              </button>
+      {/* Tier 1: Title & Status Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 min-h-[28px]">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
+            <span>📉</span>
+            <span>Spectrum</span>
+          </h3>
+          {spectrum && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-700 whitespace-nowrap">
+              {spectrum.wn.length.toLocaleString()} points
             </span>
-          </Tooltip>
-          <Tooltip content={!spectrum ? "Load a spectrum first" : "Export chart as PNG"}>
-            <span>
-              <button
-                className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 transition-colors hover:bg-ink-100"
-                onClick={() => exportPlotImage("png")}
-                disabled={!spectrum}
-              >
-                Export PNG
-              </button>
+          )}
+          {props.overlays.length > 0 && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
+              {props.overlays.length} overlay{props.overlays.length === 1 ? "" : "s"}
             </span>
-          </Tooltip>
-          <PaperFigureExportToolbar disabled={!spectrum} onExport={exportPlotImagePaper} />
+          )}
+          {props.activePeaks.length > 0 && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
+              {props.activePeaks.length} peaks
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap capitalize">
+            Region: {region}
+          </span>
+        </div>
+      </div>
+
+      {/* Tier 2: Action Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100/80 px-1 py-1.5">
+        {/* Left Cluster: Derivatives, Baseline & Region */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <Tooltip content="Overlay inverted 2nd derivative (-d²A/dν²) to detect hidden sub-bands and shoulders">
             <button
               type="button"
               className={clsx(
-                "rounded-md border px-2 py-1 text-xs transition-colors",
+                "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors shadow-xs whitespace-nowrap",
                 props.showSecondDerivative
-                  ? "border-purple-500 bg-purple-50 text-purple-700 font-semibold"
-                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
+                  ? "border-purple-500 bg-purple-50 text-purple-700 font-semibold ring-1 ring-purple-400"
+                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-50",
               )}
               onClick={() => props.setShowSecondDerivative((prev) => !prev)}
             >
               〰 2nd Deriv
             </button>
           </Tooltip>
+
           <Tooltip content="Overlay fitted baseline curve before subtraction">
             <button
               type="button"
               className={clsx(
-                "rounded-md border px-2 py-1 text-xs transition-colors",
+                "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors shadow-xs whitespace-nowrap",
                 props.showBaselineCurve
-                  ? "border-amber-500 bg-amber-50 text-amber-700 font-semibold"
-                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
+                  ? "border-amber-500 bg-amber-50 text-amber-700 font-semibold ring-1 ring-amber-400"
+                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-50",
               )}
               onClick={() => props.setShowBaselineCurve((prev) => !prev)}
             >
               📉 Baseline
             </button>
           </Tooltip>
-          <span className="text-xs text-ink-400">Region:</span>
-          <select
-            className="input py-0.5 text-xs"
-            value={region}
-            onChange={(e) => setRegion(e.target.value as FTIRRegion)}
-          >
-            <option value="full">Full (400–4000 cm⁻¹)</option>
-            <option value="fingerprint">Fingerprint (400–1500)</option>
-            <option value="functional">Functional groups (1500–4000)</option>
-            <option value="amide">Amide I & II (1500–1750)</option>
-            <option value="custom">Custom…</option>
-          </select>
-          {region === "custom" && (
-            <>
-              <input
-                type="number"
-                className="input w-20 py-0.5 text-xs"
-                value={customMin}
-                onChange={(e) => setCustomMin(Number(e.target.value) || 400)}
-                placeholder="min"
-              />
-              <span className="text-xs text-ink-400">–</span>
-              <input
-                type="number"
-                className="input w-20 py-0.5 text-xs"
-                value={customMax}
-                onChange={(e) => setCustomMax(Number(e.target.value) || 4000)}
-                placeholder="max"
-              />
-            </>
-          )}
-          <span className="text-xs text-ink-400">· {props.activePeaks.length} peaks</span>
+
+          <div className="flex items-center gap-1.5 pl-1">
+            <span className="text-xs text-ink-500">Region:</span>
+            <select
+              className="input py-1 text-xs font-medium"
+              value={region}
+              onChange={(e) => setRegion(e.target.value as FTIRRegion)}
+            >
+              <option value="full">Full (400–4000 cm⁻¹)</option>
+              <option value="fingerprint">Fingerprint (400–1500)</option>
+              <option value="functional">Functional groups (1500–4000)</option>
+              <option value="amide">Amide I & II (1500–1750)</option>
+              <option value="custom">Custom…</option>
+            </select>
+            {region === "custom" && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  className="input w-16 py-1 text-xs"
+                  value={customMin}
+                  onChange={(e) => setCustomMin(Number(e.target.value) || 400)}
+                  placeholder="min"
+                />
+                <span className="text-xs text-ink-400">–</span>
+                <input
+                  type="number"
+                  className="input w-16 py-1 text-xs"
+                  value={customMax}
+                  onChange={(e) => setCustomMax(Number(e.target.value) || 4000)}
+                  placeholder="max"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Cluster: Graph Settings & Export */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Tooltip content="Toggle chart display settings">
+            <button
+              type="button"
+              className={clsx(
+                "flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors shadow-xs whitespace-nowrap",
+                showGraphSettings
+                  ? "border-brand-500 bg-brand-50 text-brand-700 font-semibold"
+                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-50",
+              )}
+              onClick={() => setShowGraphSettings((prev) => !prev)}
+            >
+              <span>🎨</span>
+              <span>Design</span>
+            </button>
+          </Tooltip>
+
+          <PaperFigureExportToolbar disabled={!spectrum} onExport={exportPlotImagePaper} />
+
+          <Tooltip content={!spectrum ? "Load a spectrum first" : "Quick export SVG"}>
+            <span>
+              <button
+                type="button"
+                className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-40 shadow-xs whitespace-nowrap"
+                onClick={() => exportPlotImage("svg")}
+                disabled={!spectrum}
+              >
+                SVG
+              </button>
+            </span>
+          </Tooltip>
+          <Tooltip content={!spectrum ? "Load a spectrum first" : "Quick export PNG"}>
+            <span>
+              <button
+                type="button"
+                className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-40 shadow-xs whitespace-nowrap"
+                onClick={() => exportPlotImage("png")}
+                disabled={!spectrum}
+              >
+                PNG
+              </button>
+            </span>
+          </Tooltip>
         </div>
       </div>
       {showGraphSettings && (

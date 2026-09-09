@@ -5954,9 +5954,48 @@ function TICChart(props: {
   );
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
-        <div className="flex items-center gap-2.5">
-          <h3 className="text-sm font-semibold">Total Ion Chromatogram</h3>
+      {/* Tier 1: Title & Status Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 min-h-[28px]">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
+            <span>🌊</span>
+            <span>Total Ion Chromatogram</span>
+          </h3>
+          {props.tic && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-600 whitespace-nowrap">
+              {props.tic.rt_min.length.toLocaleString()} points
+            </span>
+          )}
+          {props.overlayTraces && props.overlayTraces.length > 0 && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
+              {props.overlayTraces.length} overlay{props.overlayTraces.length === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {props.regionSelect && props.selectedRegion != null ? (
+            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
+              Region {formatRt(props.selectedRegion.rtMin, props.rtUnit)} - {formatRt(props.selectedRegion.rtMax, props.rtUnit)}
+            </span>
+          ) : props.selectedRt != null ? (
+            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
+              RT {formatRt(props.selectedRt, props.rtUnit)}
+              {props.selectedScanId ? ` · Scan ${formatScanId(props.selectedScanId)}` : ""}
+            </span>
+          ) : null}
+          <span className="text-xs text-ink-400 hidden xl:inline whitespace-nowrap">
+            {props.regionSelect
+              ? "Drag across chromatogram to slice & integrate"
+              : "Click a point to load spectrum"}
+          </span>
+        </div>
+      </div>
+
+      {/* Tier 2: Action Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100/80 px-1 py-1.5">
+        {/* Left Cluster: Inspection / Slicing and Integration tools */}
+        <div className="flex flex-wrap items-center gap-2">
           {props.onToggleRegionSelect && (
             <SegmentedControl
               size="xs"
@@ -5968,14 +6007,13 @@ function TICChart(props: {
               ]}
             />
           )}
-        </div>
-        <div className="flex items-center gap-2 text-xs text-ink-500">
+
           {props.regionSelect && (
-            <div className="flex items-center gap-0.5 mr-1">
+            <div className="flex items-center gap-1">
               <Tooltip content="Undo region slice (Ctrl+Z)" placement="bottom">
                 <button
                   type="button"
-                  className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-30 shadow-xs"
                   disabled={!props.canUndoRegion}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -5989,7 +6027,7 @@ function TICChart(props: {
               <Tooltip content="Redo region slice (Ctrl+Y)" placement="bottom">
                 <button
                   type="button"
-                  className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-30 shadow-xs"
                   disabled={!props.canRedoRegion}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -6002,38 +6040,23 @@ function TICChart(props: {
               </Tooltip>
             </div>
           )}
-          {props.regionSelect && props.selectedRegion != null ? (
-            <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
-              Region {formatRt(props.selectedRegion.rtMin, props.rtUnit)} - {formatRt(props.selectedRegion.rtMax, props.rtUnit)}
-            </span>
-          ) : props.selectedRt != null ? (
-            <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
-              RT {formatRt(props.selectedRt, props.rtUnit)}
-              {props.selectedScanId ? ` · Scan ${formatScanId(props.selectedScanId)}` : ""}
-            </span>
-          ) : null}
+
           {props.regionIntegration && (
             <span
-              className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-emerald-800"
+              className="rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 font-mono text-[11px] font-semibold text-emerald-800 shadow-xs whitespace-nowrap"
               title={`Integrated Area: ${props.regionIntegration.area.toExponential(4)} | Apex: ${props.regionIntegration.rtApex.toFixed(3)} min | Height: ${props.regionIntegration.height.toExponential(3)}`}
             >
               Area: {props.regionIntegration.area.toExponential(2)} (Apex {props.regionIntegration.rtApex.toFixed(3)} min, Δ {(props.regionIntegration.width).toFixed(3)} min)
             </span>
           )}
-          <span>
-            {props.regionSelect
-              ? "Drag across chromatogram to slice & integrate"
-              : "Click a point to load spectrum"}
-          </span>
-          <PaperFigureExportToolbar
-            disabled={!props.tic}
-            storageKey="mfp-publication-plot-export-lcms-tic"
-            onExport={savePublication}
-          />
+        </div>
+
+        {/* Right Cluster: Standard actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {props.onOpenDesign && (
             <button
               type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
               onClick={props.onOpenDesign}
               title="Configure TIC appearance, colors & limits"
             >
@@ -6041,6 +6064,11 @@ function TICChart(props: {
               <span>Design</span>
             </button>
           )}
+          <PaperFigureExportToolbar
+            disabled={!props.tic}
+            storageKey="mfp-publication-plot-export-lcms-tic"
+            onExport={savePublication}
+          />
         </div>
       </div>
       {!props.tic ? (
@@ -6070,7 +6098,7 @@ function TICChart(props: {
             layout={{
               height: plotSize.height,
               width: plotSize.width,
-              margin: { l: 60, r: 20, t: 10, b: 40 },
+              margin: { l: 65, r: 20, t: props.settings.title ? 28 : 15, b: 45 },
               title: props.settings.title
                 ? { text: props.settings.title, font: { size: props.settings.titleSize } }
                 : undefined,
@@ -6246,45 +6274,67 @@ function EICChart(props: {
   );
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
-        <h3 className="text-sm font-semibold">
-          {props.eics.length === 1 && primary
-            ? `EIC m/z ${primary.target_mz.toFixed(4)} +/- ${primary.tolerance.toFixed(4)}`
-            : `EIC overlay (${props.eics.length} traces)`}
-        </h3>
-        <div className="flex items-center gap-2 text-xs text-ink-500">
-          <span className="max-w-[220px] truncate rounded-full bg-ink-50 px-2 py-0.5 font-medium text-ink-700" title={sourceFiles.join(", ")}>
+      {/* Tier 1: Title & Status Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 min-h-[28px]">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
+            <span>🎯</span>
+            <span>
+              {props.eics.length === 1 && primary
+                ? `EIC m/z ${primary.target_mz.toFixed(4)} ± ${primary.tolerance.toFixed(4)}`
+                : `EIC Overlay (${props.eics.length} traces)`}
+            </span>
+          </h3>
+          <span className="max-w-[240px] truncate rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-700" title={sourceFiles.join(", ")}>
             {sourceLabel}
           </span>
           {primary && (
-            <span>
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
               {props.eics.length === 1
                 ? `${primary.n_scans} scans`
-                : `${props.eics.length} EICs${props.overlaySettings.normalize ? ", normalized" : ""}${props.overlaySettings.stack ? ", stacked" : ""}`}
+                : `${props.eics.length} traces${props.overlaySettings.normalize ? ", norm" : ""}${props.overlaySettings.stack ? ", stacked" : ""}`}
             </span>
           )}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {props.selectedRt != null && (
+            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
+              RT {formatRt(props.selectedRt, props.rtUnit)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Tier 2: Action Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100/80 px-1 py-1.5">
+        {/* Left Cluster: Integration & Clear tools */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
-            className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
+            type="button"
+            className="flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-100 shadow-xs whitespace-nowrap"
             onClick={() =>
               props.onIntegrateAll && props.eics.length > 1
                 ? props.onIntegrateAll()
                 : props.eics.forEach((plot) => props.onIntegrate(plot))
             }
           >
-            {props.eics.length > 1 ? "Integrate all" : "Integrate"}
+            <span>∫</span>
+            <span>{props.eics.length > 1 ? "Integrate all" : "Integrate"}</span>
           </button>
           <button
-            className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
+            type="button"
+            className="rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
             onClick={props.onClear}
           >
-            {props.clearLabel ?? "Clear"}
+            ✕ {props.clearLabel ?? "Clear"}
           </button>
           {props.onUndoEic && (
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-1">
               <Tooltip content="Undo EIC action (Ctrl+Z)" placement="bottom">
                 <button
                   type="button"
-                  className="rounded border border-ink-200 bg-surface px-1.5 py-1 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-30 shadow-xs"
                   disabled={!props.canUndoEic}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -6298,7 +6348,7 @@ function EICChart(props: {
               <Tooltip content="Redo EIC action (Ctrl+Y)" placement="bottom">
                 <button
                   type="button"
-                  className="rounded border border-ink-200 bg-surface px-1.5 py-1 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
+                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-30 shadow-xs"
                   disabled={!props.canRedoEic}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -6311,15 +6361,14 @@ function EICChart(props: {
               </Tooltip>
             </div>
           )}
-          <PaperFigureExportToolbar
-            disabled={props.eics.length === 0}
-            storageKey="mfp-publication-plot-export-lcms-eic"
-            onExport={savePublication}
-          />
+        </div>
+
+        {/* Right Cluster: Standard actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {props.onOpenDesign && (
             <button
               type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
               onClick={props.onOpenDesign}
               title="Configure EIC appearance, colors & overlay options"
             >
@@ -6327,6 +6376,11 @@ function EICChart(props: {
               <span>Design</span>
             </button>
           )}
+          <PaperFigureExportToolbar
+            disabled={props.eics.length === 0}
+            storageKey="mfp-publication-plot-export-lcms-eic"
+            onExport={savePublication}
+          />
         </div>
       </div>
       <div
@@ -6340,7 +6394,7 @@ function EICChart(props: {
           layout={{
             height: plotSize.height,
             width: plotSize.width,
-            margin: { l: 60, r: 20, t: 10, b: 40 },
+            margin: { l: 65, r: 20, t: props.settings.title ? 28 : 15, b: 45 },
             title: props.settings.title
               ? { text: props.settings.title, font: { size: props.settings.titleSize } }
               : undefined,
@@ -6695,56 +6749,60 @@ function UVChromatogramChart(props: {
 
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
-        <div className="flex items-baseline gap-2">
-          <h3 className="text-sm font-semibold">UV Chromatogram</h3>
+      {/* Tier 1: Title & Status Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 min-h-[28px]">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
+            <span>📈</span>
+            <span>UV Chromatogram</span>
+          </h3>
           {available && meta?.filename && (
-            <span className="truncate text-xs text-ink-500" title={meta.filename}>
+            <span className="truncate max-w-[240px] rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-700" title={meta.filename}>
               {meta.filename}
               {(meta.y_label || meta.y_col) ? ` · ${meta.y_label || meta.y_col}` : ""}
-              {xOffset !== 0 ? ` · offset ${xOffset.toFixed(3)} min` : ""}
+            </span>
+          )}
+          {available && uv.peaks.length > 0 && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
+              {uv.peaks.length} peak{uv.peaks.length === 1 ? "" : "s"}
+            </span>
+          )}
+          {overlayTraces.length > 0 && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
+              {overlayTraces.length} overlay{overlayTraces.length === 1 ? "" : "s"}
+            </span>
+          )}
+          {xOffset !== 0 && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
+              offset {xOffset.toFixed(3)} min
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 text-xs">
+
+        <div className="flex items-center gap-2 shrink-0">
           {selectedUvRt != null && (
-            <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
+            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
               UV RT {formatRt(selectedUvRt, rtUnit)}
               {props.selectedScanId ? ` · Scan ${formatScanId(props.selectedScanId)}` : ""}
             </span>
           )}
           {available && (
-            <span className="text-ink-500">Click a point to load the MS spectrum</span>
-          )}
-          {available && uv.peaks.length > 0 && (
-            <span className="text-ink-500">
-              {uv.peaks.length} peak{uv.peaks.length === 1 ? "" : "s"} annotated
+            <span className="text-xs text-ink-400 hidden xl:inline whitespace-nowrap">
+              Click a point to load MS spectrum
             </span>
           )}
-          {overlayTraces.length > 0 && (
-            <span className="text-ink-500">
-              {overlayTraces.length} UV overlay{overlayTraces.length === 1 ? "" : "s"}
-            </span>
-          )}
-          {labels.length > 0 && (
-            <>
-              <span className="text-ink-500">
-                {labels.length} transferred label{labels.length === 1 ? "" : "s"}
-              </span>
-              <button
-                className="rounded-md border border-red-200 bg-surface px-2 py-1 text-red-600 transition-colors hover:bg-red-50"
-                onClick={onClearLabels}
-                title="Delete all transferred UV labels"
-              >
-                Clear labels
-              </button>
-            </>
-          )}
+        </div>
+      </div>
+
+      {/* Tier 2: Action Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100/80 px-1 py-1.5">
+        {/* Left Cluster: Plot-specific labeling & detection actions */}
+        <div className="flex flex-wrap items-center gap-1.5">
           {available && (
             <>
               <button
                 type="button"
-                className="flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm"
+                className="flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50 shadow-xs whitespace-nowrap"
                 onClick={props.onAutoLabelUV}
                 disabled={busy}
                 title="Automatically detect UV peaks and annotate each with matching MS spectrum m/z"
@@ -6756,7 +6814,7 @@ function UVChromatogramChart(props: {
               {props.onLabelSelectedRT && selectedUvRt != null && (
                 <button
                   type="button"
-                  className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-50 shadow-xs whitespace-nowrap"
                   onClick={props.onLabelSelectedRT}
                   disabled={busy}
                   title="Annotate currently selected UV retention time with top MS spectrum peaks"
@@ -6769,7 +6827,7 @@ function UVChromatogramChart(props: {
               {props.onCustomUvLabel && (
                 <button
                   type="button"
-                  className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-50 shadow-xs whitespace-nowrap"
                   onClick={props.onCustomUvLabel}
                   disabled={busy}
                   title="Add custom text label at retention time"
@@ -6782,10 +6840,10 @@ function UVChromatogramChart(props: {
               <button
                 type="button"
                 className={clsx(
-                  "flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors",
+                  "flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors shadow-xs whitespace-nowrap",
                   showLabelOptions
-                    ? "border-brand-500 bg-brand-50 text-brand-700 font-semibold"
-                    : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
+                    ? "border-brand-500 bg-brand-50 text-brand-700 font-semibold ring-1 ring-brand-500"
+                    : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-50",
                 )}
                 onClick={() => setShowLabelOptions((prev) => !prev)}
                 title="Configure UV peak detection thresholds, label arrangement, and snapping"
@@ -6793,13 +6851,27 @@ function UVChromatogramChart(props: {
                 <span>🏷️</span>
                 <span>Label Options</span>
               </button>
+
+              {labels.length > 0 && (
+                <button
+                  type="button"
+                  className="rounded-md border border-red-200 bg-surface px-2 py-1 text-xs text-red-600 transition-colors hover:bg-red-50 shadow-xs whitespace-nowrap"
+                  onClick={onClearLabels}
+                  title="Delete all transferred UV labels"
+                >
+                  Clear labels ({labels.length})
+                </button>
+              )}
             </>
           )}
+        </div>
 
+        {/* Right Cluster: Standard controls, export, and file management */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {props.onOpenDesign && (
             <button
               type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
               onClick={props.onOpenDesign}
               title="Configure UV plot appearance, limits & labels"
             >
@@ -6808,16 +6880,6 @@ function UVChromatogramChart(props: {
             </button>
           )}
 
-          {available && (
-            <button
-              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50"
-              onClick={saveSvg}
-              disabled={busy}
-              title="Save the UV chromatogram as an SVG file"
-            >
-              Save SVG
-            </button>
-          )}
           <PaperFigureExportToolbar
             disabled={busy || !available}
             storageKey="mfp-publication-plot-export-lcms-uv"
@@ -6825,21 +6887,23 @@ function UVChromatogramChart(props: {
           />
 
           <button
-            className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-60"
+            type="button"
+            className="rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-60 shadow-xs whitespace-nowrap"
             onClick={onPickFile}
             disabled={busy}
             title="Attach a UV/DAD chromatogram exported from your LC"
           >
-            {busy ? "Working…" : available ? "Replace UV CSV…" : "Attach UV CSV(s)…"}
+            {busy ? "Working…" : available ? "Replace CSV…" : "Attach CSV…"}
           </button>
           {available && (
             <button
-              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600"
+              type="button"
+              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600 shadow-xs whitespace-nowrap"
               onClick={onRemove}
               disabled={busy}
               title="Detach UV chromatogram"
             >
-              Remove
+              ✕ Detach
             </button>
           )}
         </div>
@@ -7066,7 +7130,7 @@ function UVChromatogramChart(props: {
               layout={{
                 height: uvPlotSize.height,
                 width: uvPlotSize.width,
-                margin: { l: 60, r: 20, t: 10, b: 40 },
+                margin: { l: 65, r: 20, t: settings.title ? 28 : 15, b: 45 },
                 title: settings.title
                   ? { text: settings.title, font: { size: settings.titleSize } }
                   : undefined,
@@ -7284,91 +7348,121 @@ function SpectrumChart(props: {
   );
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-1 pb-1">
-        <h3 className="text-sm font-semibold">MS1 Spectrum</h3>
-        {(s || props.selectedRt != null) && (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-ink-500">
-            {s?.meta.rt_start != null && s.meta.rt_end != null ? (
-              <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
-                Region {formatRt(s.meta.rt_start, props.rtUnit)} - {formatRt(s.meta.rt_end, props.rtUnit)}
-              </span>
-            ) : props.selectedRt != null ? (
-              <span className="rounded-full bg-brand-50 px-2 py-0.5 font-medium text-brand-700">
-                Selected RT {formatRt(props.selectedRt, props.rtUnit)}
-              </span>
-            ) : null}
-            {s && (
-              <span>
-                {s.meta.polarity ?? "unk"} · {s.meta.n_peaks.toLocaleString()} peaks
-                {props.polymerEnabled || polymerLabelCount > 0
-                  ? ` · ${polymerLabelCount} polymer label${polymerLabelCount === 1 ? "" : "s"}`
-                  : ""}
-                {props.showDragHint && s.labels.length > 0
-                  ? " · drag labels to reposition"
-                  : ""}
-              </span>
-            )}
-            {s && props.onPeakClick ? <span>Click a peak for quick actions</span> : null}
-            {props.onTogglePolymerStudio && (
-              <button
-                type="button"
-                className={clsx(
-                  "rounded-md border px-2 py-0.5 text-xs font-semibold transition-all flex items-center gap-1 shadow-sm",
-                  props.polymerStudioOpen || props.polymerEnabled
-                    ? "border-brand-500 bg-brand-50 text-brand-700 hover:bg-brand-100"
-                    : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
-                )}
-                onClick={props.onTogglePolymerStudio}
-                title="Open Polymer & Reaction Studio (Live parameter tuning)"
-              >
-                <span>🧬</span>
-                <span>Polymer Studio</span>
-                {props.polymerEnabled && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-brand-600 animate-pulse" />
-                )}
-              </button>
-            )}
-            {props.onDeconvolution && (
-              <button
-                type="button"
-                className="rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={props.onDeconvolution}
-                disabled={!s}
-                title="Deconvolute multi-charged ESI envelope and isotopic spacing to true neutral mass"
-              >
-                ⚛ Deconvolute
-              </button>
-            )}
-            <PaperFigureExportToolbar
+      {/* Tier 1: Title & Status Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 min-h-[28px]">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
+            <span>📊</span>
+            <span>MS1 Spectrum</span>
+          </h3>
+          {s && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-700 whitespace-nowrap">
+              {s.meta.polarity === "positive" ? "ESI+" : s.meta.polarity === "negative" ? "ESI-" : s.meta.polarity ?? "ESI"}
+            </span>
+          )}
+          {s && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
+              {s.meta.n_peaks.toLocaleString()} peaks
+            </span>
+          )}
+          {s?.meta.n_scans != null && (
+            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
+              {s.meta.n_scans.toLocaleString()} scans ({s.meta.merge_mode ?? "sum"})
+            </span>
+          )}
+          {(props.polymerEnabled || polymerLabelCount > 0) && (
+            <span className="rounded-md bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 text-xs font-semibold whitespace-nowrap">
+              {polymerLabelCount} polymer match{polymerLabelCount === 1 ? "" : "es"}
+            </span>
+          )}
+          {s?.meta.ignored_peak_count ? (
+            <span className="rounded-md bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+              ignored {s.meta.ignored_peak_count} peak{s.meta.ignored_peak_count === 1 ? "" : "s"}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {s?.meta.rt_start != null && s.meta.rt_end != null ? (
+            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
+              Region {formatRt(s.meta.rt_start, props.rtUnit)} - {formatRt(s.meta.rt_end, props.rtUnit)}
+            </span>
+          ) : props.selectedRt != null ? (
+            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
+              RT {formatRt(props.selectedRt, props.rtUnit)}
+            </span>
+          ) : null}
+          {props.showDragHint && s?.labels.length ? (
+            <span className="text-xs text-ink-400 hidden xl:inline whitespace-nowrap">
+              Drag labels to reposition
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Tier 2: Action Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100/80 px-1 py-1.5">
+        {/* Left Cluster: Polymer Studio and Deconvolution */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {props.onTogglePolymerStudio && (
+            <button
+              type="button"
+              className={clsx(
+                "rounded-md border px-2.5 py-1 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs whitespace-nowrap",
+                props.polymerStudioOpen || props.polymerEnabled
+                  ? "border-purple-400 bg-purple-50 text-purple-700 hover:bg-purple-100 ring-1 ring-purple-400"
+                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-50",
+              )}
+              onClick={props.onTogglePolymerStudio}
+              title="Open Polymer & Reaction Studio (Live parameter tuning)"
+            >
+              <span>🧬</span>
+              <span>Polymer Studio</span>
+              {props.polymerEnabled && (
+                <span className="h-1.5 w-1.5 rounded-full bg-purple-600 animate-pulse" />
+              )}
+            </button>
+          )}
+
+          {props.onDeconvolution && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50 shadow-xs whitespace-nowrap"
+              onClick={props.onDeconvolution}
               disabled={!s}
-              storageKey="mfp-publication-plot-export-lcms-spectrum"
-              onExport={savePublication}
-            />
-            {props.onOpenDesign && (
-              <button
-                type="button"
-                className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-0.5 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100"
-                onClick={props.onOpenDesign}
-                title="Configure MS1 spectrum appearance, colors & peak labels"
-              >
-                <span>🎨</span>
-                <span>Design</span>
-              </button>
-            )}
-            {s?.meta.n_scans != null && (
-              <span>
-                {s.meta.n_scans.toLocaleString()} scans, {s.meta.merge_mode ?? "sum"} merge
-                {s.meta.bin_width != null ? `, ${s.meta.bin_width} m/z bins` : ""}
-              </span>
-            )}
-            {s?.meta.ignored_peak_count ? (
-              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
-                ignored {s.meta.ignored_peak_count} peak{s.meta.ignored_peak_count === 1 ? "" : "s"}
-                {s.meta.ignored_mz?.length ? ` near ${s.meta.ignored_mz.join(", ")}` : ""}
-              </span>
-            ) : null}
-          </div>
-        )}
+              title="Deconvolute multi-charged ESI envelope and isotopic spacing to true neutral mass"
+            >
+              <span>⚛</span>
+              <span>Deconvolute</span>
+            </button>
+          )}
+
+          {s && props.onPeakClick && (
+            <span className="text-xs text-ink-400 hidden lg:inline whitespace-nowrap">
+              Click a peak for quick actions
+            </span>
+          )}
+        </div>
+
+        {/* Right Cluster: Standard actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {props.onOpenDesign && (
+            <button
+              type="button"
+              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
+              onClick={props.onOpenDesign}
+              title="Configure MS1 spectrum appearance, colors & peak labels"
+            >
+              <span>🎨</span>
+              <span>Design</span>
+            </button>
+          )}
+          <PaperFigureExportToolbar
+            disabled={!s}
+            storageKey="mfp-publication-plot-export-lcms-spectrum"
+            onExport={savePublication}
+          />
+        </div>
       </div>
       {!s ? (
         <div className="flex h-72 items-center justify-center text-sm text-ink-500">
@@ -7397,7 +7491,7 @@ function SpectrumChart(props: {
             layout={{
               height: specPlotSize.height,
               width: specPlotSize.width,
-              margin: { l: 60, r: 20, t: 20, b: 40 },
+              margin: { l: 65, r: 20, t: props.settings.title ? 28 : 20, b: 45 },
               title: props.settings.title
                 ? {
                     text: props.settings.title,
