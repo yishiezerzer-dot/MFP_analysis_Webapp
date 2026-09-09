@@ -2418,24 +2418,88 @@ export function LCMSView() {
   // Navigation helpers
   const rtList = tic?.rt_min ?? [];
 
-  const goToIndex = (i: number) => {
-    if (i < 0 || i >= rtList.length) return;
-    loadSpectrum(rtList[i]);
-  };
-  const goFirst = () => goToIndex(0);
-  const goLast = () => goToIndex(rtList.length - 1);
-  const goPrev = () => {
+  const goToIndex = useCallback(
+    (i: number) => {
+      if (i < 0 || i >= rtList.length) return;
+      loadSpectrum(rtList[i]);
+    },
+    [rtList, loadSpectrum],
+  );
+  const goFirst = useCallback(() => goToIndex(0), [goToIndex]);
+  const goLast = useCallback(
+    () => goToIndex(rtList.length - 1),
+    [goToIndex, rtList.length],
+  );
+  const goPrev = useCallback(() => {
     if (rtList.length === 0) return;
     if (selectedRt == null) return goLast();
     const i = nearestIndex(rtList, selectedRt);
     goToIndex(Math.max(0, i - 1));
-  };
-  const goNext = () => {
+  }, [rtList, selectedRt, goLast, goToIndex]);
+  const goNext = useCallback(() => {
     if (rtList.length === 0) return;
     if (selectedRt == null) return goFirst();
     const i = nearestIndex(rtList, selectedRt);
     goToIndex(Math.min(rtList.length - 1, i + 1));
-  };
+  }, [rtList, selectedRt, goFirst, goToIndex]);
+
+  // Keyboard navigation: Left/Right arrow keys step through MS1 scans
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (
+        findMzOpen ||
+        eicOpen ||
+        graphSettingsOpen ||
+        designPlotId !== null ||
+        polymerDialogOpen ||
+        polymerStudioOpen ||
+        expectedProductsOpen ||
+        kendrickOpen ||
+        deconvolutionOpen ||
+        featureTableOpen ||
+        comparisonMatrixOpen ||
+        helpOpen ||
+        customUvLabelDraft !== null
+      ) {
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goPrev();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goNext();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    goPrev,
+    goNext,
+    findMzOpen,
+    eicOpen,
+    graphSettingsOpen,
+    designPlotId,
+    polymerDialogOpen,
+    polymerStudioOpen,
+    expectedProductsOpen,
+    kendrickOpen,
+    deconvolutionOpen,
+    featureTableOpen,
+    comparisonMatrixOpen,
+    helpOpen,
+    customUvLabelDraft,
+  ]);
   // Find m/z: scan every MS1 at current filter for the most intense near m/z
   const [findMzInput, setFindMzInput] = useState("");
   const [findMzTol, setFindMzTol] = useState(0.01);
@@ -3755,6 +3819,15 @@ export function LCMSView() {
                   setUvLabelStairXStep={setUvLabelStairXStep}
                   uvLabelStairYStep={uvLabelStairYStep}
                   setUvLabelStairYStep={setUvLabelStairYStep}
+                  uvOffsetText={uvOffsetText}
+                  setUvOffsetText={setUvOffsetText}
+                  onApplyOffset={() => {
+                    const v = parseFloat(uvOffsetText);
+                    setUvOffset(Number.isFinite(v) ? v : 0);
+                  }}
+                  autoAlignUv={autoAlignUv}
+                  setAutoAlignUv={setAutoAlignUv}
+                  onAutoAlignUV={() => dispatchUiAction("lcms.auto_align_uv")}
                 />
               )}
               {showSpectrum && (
@@ -4974,21 +5047,10 @@ function ToolsPanel(p: ToolsPanelProps) {
             activeTab={p.activeTab}
             setActiveTab={p.setActiveTab}
           >
-            {p.activeTab === "navigate" && <NavigateTab {...p} />}
-            {p.activeTab === "view" && <ViewTab {...p} />}
-            {p.activeTab === "annotate" && <AnnotateTab {...p} />}
-            {p.activeTab === "polymer" && (
-              <PolymerTab
-                polarity={p.polarity}
-                settings={p.polymerSettings}
-                onChange={p.setPolymerSettings}
-                onOpen={p.onPolymerDialog}
-                onExpectedProducts={p.onExpectedProducts}
-                onKendrick={p.onKendrick}
-                canOpenExpectedProducts={p.canOpenExpectedProducts}
-                canOpenKendrick={p.canOpenKendrick}
-                onSaveDefaults={p.onSavePolymerDefaults}
-              />
+            {p.activeTab === "view" ? (
+              <DisplayTab {...p} />
+            ) : (
+              <ToolsTab {...p} />
             )}
           </WorkflowTools>
         </>
@@ -5152,30 +5214,30 @@ function WorkflowTools({
             />
           </div>
 
-          <div className="flex items-center gap-1 border-b border-ink-200 bg-surface/70px-3 pt-2">
-            {(
-              [
-                { id: "navigate", label: "Browse" },
-                { id: "view", label: "Display" },
-                { id: "annotate", label: "Labels" },
-                ...(showPolymerControls
-                  ? [{ id: "polymer" as const, label: "Polymer Match" }]
-                  : []),
-              ] as { id: TabId; label: string }[]
-            ).map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id)}
-                className={clsx(
-                  "-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition-colors",
-                  activeTab === t.id
-                    ? "border-brand-500 text-ink-900"
-                    : "border-transparent text-ink-500 hover:text-ink-800",
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-1 border-b border-ink-200 bg-surface/70 px-3 pt-2">
+            {[
+              { id: "navigate" as const, label: "Tools & Analysis" },
+              { id: "view" as const, label: "Display & Overlays" },
+            ].map((t) => {
+              const isSelected =
+                t.id === "view"
+                  ? activeTab === "view"
+                  : activeTab === "navigate" || activeTab === "annotate" || activeTab === "polymer";
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTab(t.id)}
+                  className={clsx(
+                    "-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition-colors",
+                    isSelected
+                      ? "border-brand-500 text-ink-900"
+                      : "border-transparent text-ink-500 hover:text-ink-800",
+                  )}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex-1 p-4">{children}</div>
@@ -5187,10 +5249,19 @@ function WorkflowTools({
 
 // --- Tabs --------------------------------------------------------------------
 
-function NavigateTab(p: ToolsPanelProps) {
+function ToolsTab(p: ToolsPanelProps) {
+  const polymerDisabled = p.polarity === "all";
+  const polymerStatus =
+    p.polarity === "positive"
+      ? "Positive mode: +H, optional +Na/+K."
+      : p.polarity === "negative"
+        ? "Negative mode: -H, optional +Cl/+HCOO/+Ac."
+        : "Choose Positive or Negative polarity to enable polymer matching.";
+
   return (
     <div className="flex flex-col gap-4">
-      <GroupBox title="Spectrum">
+      {/* 1. Scan Navigation */}
+      <GroupBox title="Scan Navigation">
         <div className="grid grid-cols-4 gap-2">
           <NavyButton onClick={p.onPrev} disabled={!p.activeLoaded}>
             ◄ Prev
@@ -5205,18 +5276,21 @@ function NavigateTab(p: ToolsPanelProps) {
             Last
           </NavyButton>
         </div>
-        <NavyButton className="mt-2 w-full" onClick={p.onFindMz} disabled={!p.activeLoaded}>
-          Find m/z…
-        </NavyButton>
-        <NavyButton className="mt-2 w-full" onClick={p.onAutoAlignUV} disabled={!p.activeLoaded}>
-          Auto-align UV↔MS
-        </NavyButton>
-        <NavyButton className="mt-2 w-full" onClick={p.onEICDialog} disabled={!p.activeLoaded}>
-          EIC…
-        </NavyButton>
+        <div className="mt-1 flex items-center justify-between text-[11px] text-ink-500">
+          <span>Tip: use ← / → keys to step</span>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <NavyButton onClick={p.onFindMz} disabled={!p.activeLoaded}>
+            Find m/z…
+          </NavyButton>
+          <NavyButton onClick={p.onEICDialog} disabled={!p.activeLoaded}>
+            EIC…
+          </NavyButton>
+        </div>
       </GroupBox>
 
-      <GroupBox title="Jump">
+      {/* 2. Jump to RT */}
+      <GroupBox title="Jump to RT">
         <div className="flex items-center gap-2">
           <label className="text-xs text-ink-700">
             RT ({p.rtUnit === "seconds" ? "s" : "min"}):
@@ -5237,14 +5311,113 @@ function NavigateTab(p: ToolsPanelProps) {
           </NavyButton>
         </div>
       </GroupBox>
+
+      {/* 3. Spectrum Peak Labels */}
+      <GroupBox title="Spectrum Peak Labels">
+        <Check
+          label="Annotate spectrum peaks with m/z"
+          checked={p.annotateSpectrum}
+          onChange={p.setAnnotateSpectrum}
+        />
+        <Row label="Top N">
+          <input
+            type="number"
+            min={1}
+            className="input w-24"
+            value={p.spectrumTopN}
+            onChange={(e) =>
+              p.setSpectrumTopN(Math.max(1, parseInt(e.target.value || "0", 10) || 0))
+            }
+          />
+        </Row>
+        <Row label="Min rel">
+          <input
+            type="number"
+            step="0.01"
+            min={0}
+            className="input w-24"
+            value={p.spectrumMinRel}
+            onChange={(e) =>
+              p.setSpectrumMinRel(Math.max(0, parseFloat(e.target.value || "0") || 0))
+            }
+          />
+        </Row>
+        <Check
+          label="Enable dragging labels with mouse"
+          checked={p.enableDragLabels}
+          onChange={p.setEnableDragLabels}
+        />
+      </GroupBox>
+
+      {/* 4. Polymer & Reaction Matching */}
+      {p.showPolymerControls && (
+        <GroupBox title="Polymer & Reaction Matching">
+          <label
+            className={clsx(
+              "flex items-center gap-2 text-sm text-ink-800",
+              polymerDisabled && "opacity-60",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={p.polymerSettings.shared.enabled && !polymerDisabled}
+              disabled={polymerDisabled}
+              onChange={(e) =>
+                p.setPolymerSettings({
+                  ...p.polymerSettings,
+                  shared: { ...p.polymerSettings.shared, enabled: e.target.checked },
+                })
+              }
+            />
+            <span>Enable polymer/reaction matching</span>
+          </label>
+          <p className="mt-1 text-xs text-ink-500">{polymerStatus}</p>
+          <NavyButton className="mt-2 w-full" onClick={p.onPolymerDialog}>
+            Polymer Match…
+          </NavyButton>
+          <button
+            type="button"
+            className="mt-2 w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+            onClick={p.onExpectedProducts}
+            disabled={!p.canOpenExpectedProducts}
+            title={
+              p.canOpenExpectedProducts
+                ? "Match expected monomer/dimer/trimer products against the current MS1 spectrum"
+                : "Select polarity, monomers, and load an MS1 spectrum first"
+            }
+          >
+            Expected Products...
+          </button>
+          <button
+            type="button"
+            className="mt-2 w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+            onClick={p.onKendrick}
+            disabled={!p.canOpenKendrick}
+            title={
+              p.canOpenKendrick
+                ? "Open a Kendrick mass defect plot for the current MS1 spectrum"
+                : "Load an MS1 spectrum first"
+            }
+          >
+            Kendrick Plot...
+          </button>
+          <button
+            type="button"
+            className="mt-2 w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+            onClick={p.onSavePolymerDefaults}
+          >
+            Save current as defaults
+          </button>
+        </GroupBox>
+      )}
     </div>
   );
 }
 
-function ViewTab(p: ToolsPanelProps) {
+function DisplayTab(p: ToolsPanelProps) {
   return (
     <div className="flex flex-col gap-4">
-      <GroupBox title="Filters">
+      <GroupBox title="Filters & Units">
         <Row label="RT unit">
           <select
             className="input"
@@ -5270,100 +5443,6 @@ function ViewTab(p: ToolsPanelProps) {
               {v === "all" ? "All" : v.charAt(0).toUpperCase() + v.slice(1)}
             </label>
           ))}
-        </div>
-      </GroupBox>
-
-      <GroupBox title="UV↔MS alignment">
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
-            <div className="label">Offset (min)</div>
-            <input
-              type="number"
-              step="0.001"
-              className="input mt-1 w-full"
-              value={p.uvOffsetText}
-              onChange={(e) => p.setUvOffsetText(e.target.value)}
-            />
-          </div>
-          <button className="btn-primary" onClick={p.onApplyOffset}>
-            Apply
-          </button>
-        </div>
-        <Check
-          className="mt-2"
-          label="Enable auto-align"
-          checked={p.autoAlignUv}
-          onChange={p.setAutoAlignUv}
-        />
-      </GroupBox>
-
-      <NavyButton className="w-full" onClick={p.onGraphSettings}>
-        Graph Settings…
-      </NavyButton>
-
-      <GroupBox title="Overlays and exports">
-        <Check
-          label="Overlay loaded TICs"
-          checked={p.overlayTicEnabled}
-          onChange={p.setOverlayTicEnabled}
-        />
-        <Check
-          label="Overlay attached UV traces"
-          checked={p.overlayUvEnabled}
-          onChange={p.setOverlayUvEnabled}
-        />
-        <Check
-          label="Overlay spectra at selected RT"
-          checked={p.overlaySpectrumEnabled}
-          onChange={p.setOverlaySpectrumEnabled}
-        />
-        <Check
-          label="Overlay generated EICs"
-          checked={p.overlayEicEnabled}
-          onChange={p.setOverlayEicEnabled}
-        />
-        <div>
-          <button
-            type="button"
-            className="w-full rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
-            disabled={p.overlaySessionIds.length === 0}
-            onClick={() => p.setOverlaySessionIds([])}
-          >
-            Clear TIC/UV selection
-          </button>
-        </div>
-        <div className="max-h-28 overflow-auto rounded-md border border-ink-200 bg-surface p-2">
-          {p.sessions.map((session) => (
-            <label key={session.session_id} className="flex items-center gap-2 py-0.5 text-xs">
-              <input
-                type="checkbox"
-                checked={p.overlaySessionIds.includes(session.session_id)}
-                onChange={(event) => {
-                  const checked = event.target.checked;
-                  p.setOverlaySessionIds(
-                    checked
-                      ? [...p.overlaySessionIds, session.session_id]
-                      : p.overlaySessionIds.filter((sid) => sid !== session.session_id),
-                  );
-                }}
-              />
-              <span className="truncate">{session.display_name}</span>
-            </label>
-          ))}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <NavyButton onClick={p.onExportSpectrum} disabled={!p.activeLoaded}>
-            Spectrum CSV
-          </NavyButton>
-          <NavyButton onClick={p.onExportUV} disabled={!p.activeLoaded}>
-            UV CSV
-          </NavyButton>
-          <NavyButton onClick={p.onExportTICOverlay} disabled={!p.activeLoaded}>
-            TIC overlay CSV
-          </NavyButton>
-          <NavyButton onClick={p.onSumRegionSpectrum} disabled={!p.activeLoaded}>
-            Sum RT window
-          </NavyButton>
         </div>
       </GroupBox>
 
@@ -5418,314 +5497,83 @@ function ViewTab(p: ToolsPanelProps) {
           Clear Region
         </button>
       </GroupBox>
-    </div>
-  );
-}
 
-function AnnotateTab(p: ToolsPanelProps) {
-  return (
-    <div className="flex flex-col gap-4">
-      <GroupBox title="Spectrum labels">
+      <GroupBox title="Overlays and exports">
         <Check
-          label="Annotate spectrum peaks with m/z"
-          checked={p.annotateSpectrum}
-          onChange={p.setAnnotateSpectrum}
+          label="Overlay loaded TICs"
+          checked={p.overlayTicEnabled}
+          onChange={p.setOverlayTicEnabled}
         />
-        <Row label="Top N">
-          <input
-            type="number"
-            min={1}
-            className="input w-24"
-            value={p.spectrumTopN}
-            onChange={(e) =>
-              p.setSpectrumTopN(Math.max(1, parseInt(e.target.value || "0", 10) || 0))
-            }
-          />
-        </Row>
-        <Row label="Min rel">
-          <input
-            type="number"
-            step="0.01"
-            min={0}
-            className="input w-24"
-            value={p.spectrumMinRel}
-            onChange={(e) =>
-              p.setSpectrumMinRel(Math.max(0, parseFloat(e.target.value || "0") || 0))
-            }
-          />
-        </Row>
         <Check
-          label="Enable dragging labels with mouse"
-          checked={p.enableDragLabels}
-          onChange={p.setEnableDragLabels}
+          label="Overlay attached UV traces"
+          checked={p.overlayUvEnabled}
+          onChange={p.setOverlayUvEnabled}
         />
-      </GroupBox>
-
-      <GroupBox title="UV labels">
         <Check
-          label="Transfer top MS peaks to UV labels at selected RT"
-          checked={p.transferMsToUv}
-          onChange={p.setTransferMsToUv}
+          label="Overlay spectra at selected RT"
+          checked={p.overlaySpectrumEnabled}
+          onChange={p.setOverlaySpectrumEnabled}
         />
-        <Row label="How many peaks">
-          <select
-            className="input w-24"
-            value={p.uvTransferCount}
-            onChange={(e) => p.setUvTransferCount(parseInt(e.target.value, 10))}
+        <Check
+          label="Overlay generated EICs"
+          checked={p.overlayEicEnabled}
+          onChange={p.setOverlayEicEnabled}
+        />
+        <div>
+          <button
+            type="button"
+            className="w-full rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+            disabled={p.overlaySessionIds.length === 0}
+            onClick={() => p.setOverlaySessionIds([])}
           >
-            {[1, 2, 3, 5, 8, 10].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </Row>
-        <Row label="Auto UV prominence">
-          <input
-            type="number"
-            step="0.01"
-            min={0}
-            className="input w-24"
-            value={p.uvProminence}
-            onChange={(e) =>
-              p.setUvProminence(Math.max(0, parseFloat(e.target.value || "0") || 0))
-            }
-          />
-        </Row>
-        <Row label="Auto UV min distance (min)">
-          <input
-            type="number"
-            step="0.05"
-            min={0}
-            className="input w-24"
-            value={p.uvMinDistance}
-            onChange={(e) =>
-              p.setUvMinDistance(Math.max(0, parseFloat(e.target.value || "0") || 0))
-            }
-          />
-        </Row>
-        <Check
-          label="Snap labels to nearest UV peak"
-          checked={p.snapUvLabels}
-          onChange={p.setSnapUvLabels}
-        />
-        <Row label="Label orientation">
-          <select
-            className="input w-32"
-            value={p.uvLabelOrientation}
-            onChange={(e) => p.setUvLabelOrientation(e.target.value as UVLabelOrientation)}
-          >
-            <option value="vertical">vertical</option>
-            <option value="horizontal">horizontal</option>
-          </select>
-        </Row>
-        <div className="rounded-md border border-ink-200 bg-ink-50/60 px-3 py-2 text-xs text-ink-600">
-          Auto arrange splits labels into local RT clusters and places each
-          cluster in a descending series stair near its own UV peak group.
+            Clear TIC/UV selection
+          </button>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <div className="mb-1 text-xs font-medium text-ink-600">Stair x spacing</div>
-            <input
-              type="number"
-              step="0.05"
-              min={0}
-              className="input w-full"
-              value={p.uvLabelStairXStep}
-              onChange={(e) =>
-                p.setUvLabelStairXStep(Math.max(0, parseFloat(e.target.value || "0") || 0))
-              }
-            />
-            <div className="mt-0.5 text-[11px] text-ink-500">minutes</div>
-          </label>
-          <label className="block">
-            <div className="mb-1 text-xs font-medium text-ink-600">Stair y spacing</div>
-            <input
-              type="number"
-              step="1"
-              min={0}
-              className="input w-full"
-              value={p.uvLabelStairYStep}
-              onChange={(e) =>
-                p.setUvLabelStairYStep(Math.max(0, parseFloat(e.target.value || "0") || 0))
-              }
-            />
-            <div className="mt-0.5 text-[11px] text-ink-500">pixels</div>
-          </label>
+        <div className="max-h-28 overflow-auto rounded-md border border-ink-200 bg-surface p-2">
+          {p.sessions.map((session) => (
+            <label key={session.session_id} className="flex items-center gap-2 py-0.5 text-xs">
+              <input
+                type="checkbox"
+                checked={p.overlaySessionIds.includes(session.session_id)}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  p.setOverlaySessionIds(
+                    checked
+                      ? [...p.overlaySessionIds, session.session_id]
+                      : p.overlaySessionIds.filter((sid) => sid !== session.session_id),
+                  );
+                }}
+              />
+              <span className="truncate">{session.display_name}</span>
+            </label>
+          ))}
+        </div>
+        <div className="mt-2">
+          <Check
+            label="Show labels for all overlayed spectra"
+            checked={p.showOverlayLabels}
+            onChange={p.setShowOverlayLabels}
+          />
+          <Check
+            label="Multi-drag labels across overlay"
+            checked={p.multiDragOverlay}
+            onChange={p.setMultiDragOverlay}
+          />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <button
-            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!p.activeLoaded}
-            onClick={p.onLabelSelectedRT}
-          >
-            Label selected RT
-          </button>
-          <button
-            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
-            onClick={p.onAutoLabelUV}
-            disabled={!p.activeLoaded}
-          >
-            Auto Label UV Peaks
-          </button>
+          <NavyButton onClick={p.onExportSpectrum} disabled={!p.activeLoaded}>
+            Spectrum CSV
+          </NavyButton>
+          <NavyButton onClick={p.onExportUV} disabled={!p.activeLoaded}>
+            UV CSV
+          </NavyButton>
+          <NavyButton onClick={p.onExportTICOverlay} disabled={!p.activeLoaded}>
+            TIC overlay CSV
+          </NavyButton>
+          <NavyButton onClick={p.onSumRegionSpectrum} disabled={!p.activeLoaded}>
+            Sum RT window
+          </NavyButton>
         </div>
-      </GroupBox>
-
-      <div className="flex flex-col gap-2">
-        <button
-          className="rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
-          onClick={p.onAutoArrangeLabels}
-          disabled={p.uvLabelCount === 0}
-        >
-          Auto Arrange Labels
-        </button>
-        <button
-          className={clsx(
-            "rounded-md border px-2 py-1.5 text-xs transition-colors",
-            p.uvBunchLabels
-              ? "border-brand-500 bg-brand-500/10 text-brand-700 hover:bg-brand-500/15"
-              : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
-          )}
-          onClick={() => p.setUvBunchLabels(!p.uvBunchLabels)}
-          aria-pressed={p.uvBunchLabels}
-          title="Collapse repeated UV label text into one branched label"
-        >
-          Bunch same labels
-        </button>
-        {p.uvBunchLabels && (
-          <label className="col-span-2 flex items-center gap-2 text-xs text-ink-600">
-            <span className="shrink-0">Hub height</span>
-            <input
-              type="number"
-              step="0.01"
-              min={0}
-              max={1}
-              className="input w-20"
-              value={p.uvBunchHubOffset}
-              onChange={(e) =>
-                p.setUvBunchHubOffset(Math.max(0, parseFloat(e.target.value || "0") || 0))
-              }
-            />
-            <span className="text-ink-400">× signal range</span>
-          </label>
-        )}
-        <button
-          className="rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!p.canAddCustomUvLabel}
-          title={
-            p.canAddCustomUvLabel
-              ? "Add a custom UV label at the selected RT"
-              : "Select an RT on the UV chromatogram first"
-          }
-          onClick={p.onCustomUvLabel}
-        >
-          Custom Labels…
-        </button>
-      </div>
-
-      <GroupBox title="Overlay labels">
-        <Check
-          label="Show labels for all overlayed spectra"
-          checked={p.showOverlayLabels}
-          onChange={p.setShowOverlayLabels}
-        />
-        <Check
-          label="Multi-drag labels across overlay"
-          checked={p.multiDragOverlay}
-          onChange={p.setMultiDragOverlay}
-        />
-      </GroupBox>
-    </div>
-  );
-}
-
-function PolymerTab({
-  polarity,
-  settings,
-  onChange,
-  onOpen,
-  onExpectedProducts,
-  onKendrick,
-  canOpenExpectedProducts,
-  canOpenKendrick,
-  onSaveDefaults,
-}: {
-  polarity: Polarity;
-  settings: PolymerUiSettings;
-  onChange: (settings: PolymerUiSettings) => void;
-  onOpen: () => void;
-  onExpectedProducts: () => void;
-  onKendrick: () => void;
-  canOpenExpectedProducts: boolean;
-  canOpenKendrick: boolean;
-  onSaveDefaults: () => void;
-}) {
-  const disabled = polarity === "all";
-  const status =
-    polarity === "positive"
-      ? "Positive mode: +H, optional +Na/+K."
-      : polarity === "negative"
-        ? "Negative mode: -H, optional +Cl/+HCOO/+Ac."
-        : "Choose Positive or Negative polarity to enable polymer matching.";
-  return (
-    <div className="flex flex-col gap-3">
-      <GroupBox title="Polymer matching">
-        <label
-          className={clsx(
-            "flex items-center gap-2 text-sm text-ink-800",
-            disabled && "opacity-60",
-          )}
-        >
-          <input
-            type="checkbox"
-            checked={settings.shared.enabled && !disabled}
-            disabled={disabled}
-            onChange={(e) =>
-              onChange({
-                ...settings,
-                shared: { ...settings.shared, enabled: e.target.checked },
-              })
-            }
-          />
-          <span>Enable polymer/reaction matching</span>
-        </label>
-        <p className="mt-1 text-xs text-ink-500">{status}</p>
-        <NavyButton className="mt-2 w-full" onClick={onOpen}>
-          Polymer Match…
-        </NavyButton>
-        <button
-          type="button"
-          className="w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
-          onClick={onExpectedProducts}
-          disabled={!canOpenExpectedProducts}
-          title={
-            canOpenExpectedProducts
-              ? "Match expected monomer/dimer/trimer products against the current MS1 spectrum"
-              : "Select polarity, monomers, and load an MS1 spectrum first"
-          }
-        >
-          Expected Products...
-        </button>
-        <button
-          type="button"
-          className="w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
-          onClick={onKendrick}
-          disabled={!canOpenKendrick}
-          title={
-            canOpenKendrick
-              ? "Open a Kendrick mass defect plot for the current MS1 spectrum"
-              : "Load an MS1 spectrum first"
-          }
-        >
-          Kendrick Plot...
-        </button>
-        <button
-          type="button"
-          className="w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
-          onClick={onSaveDefaults}
-        >
-          Save current as defaults
-        </button>
       </GroupBox>
     </div>
   );
@@ -6486,6 +6334,12 @@ function UVChromatogramChart(props: {
   setUvLabelStairXStep?: (v: number) => void;
   uvLabelStairYStep?: number;
   setUvLabelStairYStep?: (v: number) => void;
+  uvOffsetText?: string;
+  setUvOffsetText?: (v: string) => void;
+  onApplyOffset?: () => void;
+  autoAlignUv?: boolean;
+  setAutoAlignUv?: (v: boolean) => void;
+  onAutoAlignUV?: () => void;
 }) {
   const {
     uv,
@@ -6941,7 +6795,7 @@ function UVChromatogramChart(props: {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {/* Peak Detection */}
             <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
@@ -7079,6 +6933,48 @@ function UVChromatogramChart(props: {
                   }
                 />
               </div>
+            </div>
+
+            {/* UV↔MS Alignment */}
+            <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+                UV↔MS Alignment
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-ink-600">Offset (min):</span>
+                <input
+                  type="number"
+                  step="0.001"
+                  className="input h-7 w-20 text-xs"
+                  value={props.uvOffsetText ?? "0.000"}
+                  onChange={(e) => props.setUvOffsetText?.(e.target.value)}
+                />
+              </div>
+              <button
+                type="button"
+                className="w-full rounded border border-ink-300 bg-surface py-1 text-xs font-semibold text-ink-700 hover:bg-ink-100"
+                onClick={props.onApplyOffset}
+              >
+                Apply Offset
+              </button>
+              <button
+                type="button"
+                className="w-full rounded bg-brand-600 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                onClick={props.onAutoAlignUV}
+                disabled={!available || busy}
+                title="Automatically cross-correlate TIC and UV to find optimal offset"
+              >
+                Auto-align UV↔MS
+              </button>
+              <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="rounded border-ink-300 text-brand-600"
+                  checked={props.autoAlignUv ?? false}
+                  onChange={(e) => props.setAutoAlignUv?.(e.target.checked)}
+                />
+                <span>Enable auto-align</span>
+              </label>
             </div>
           </div>
         </div>
