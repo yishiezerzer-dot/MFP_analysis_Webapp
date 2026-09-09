@@ -24,6 +24,7 @@ describe("SinglePlotDesignDialog", () => {
     expect(screen.getByText(/Total Ion Chromatogram \(TIC\) Design/i)).toBeDefined();
     expect(screen.getByText(/Line Appearance/i)).toBeDefined();
     expect(screen.queryByText(/MS Peak Labels/i)).toBeNull();
+    expect(screen.queryByText(/Polymer Match Labels/i)).toBeNull();
     expect(screen.queryByText(/UV Peak Labels & Connectors/i)).toBeNull();
     expect(screen.queryByText(/EIC Overlay & Stacking/i)).toBeNull();
   });
@@ -63,6 +64,9 @@ describe("SinglePlotDesignDialog", () => {
     expect(screen.getByText(/MS1 Spectrum Design/i)).toBeDefined();
     expect(screen.getByText(/Bar Appearance/i)).toBeDefined();
     expect(screen.getByText(/MS Peak Labels/i)).toBeDefined();
+    expect(screen.getByText(/Polymer Match Labels/i)).toBeDefined();
+    expect(screen.getByText(/Show surrounding box/i)).toBeDefined();
+    expect(screen.getByText(/Show arrow pointer to peak/i)).toBeDefined();
     expect(screen.queryByText(/Connector line color/i)).toBeNull();
   });
 

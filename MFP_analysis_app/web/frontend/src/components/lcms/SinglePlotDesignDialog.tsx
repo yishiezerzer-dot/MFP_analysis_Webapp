@@ -1,11 +1,13 @@
-import type {
-  AxisLimits,
-  ChartSettings,
-  EICOverlaySettings,
-  FrameMode,
-  GraphId,
-  GraphSettings,
-  LabelSettings,
+import {
+  DEFAULT_POLYMER_LABEL_SETTINGS,
+  type AxisLimits,
+  type ChartSettings,
+  type EICOverlaySettings,
+  type FrameMode,
+  type GraphId,
+  type GraphSettings,
+  type LabelSettings,
+  type PolymerLabelSettings,
 } from "../../lcms/settings";
 import {
   ColorSetting,
@@ -77,6 +79,21 @@ export function SinglePlotDesignDialog({
     onChange((prev) => ({
       ...prev,
       [graphId]: { ...prev[graphId], labels: { ...prev[graphId].labels, ...patch } },
+    }));
+  };
+
+  const polySettings = s.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS;
+
+  const updatePolymerLabels = (patch: Partial<PolymerLabelSettings>) => {
+    onChange((prev) => ({
+      ...prev,
+      [graphId]: {
+        ...prev[graphId],
+        polymerLabels: {
+          ...(prev[graphId].polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS),
+          ...patch,
+        },
+      },
     }));
   };
 
@@ -303,6 +320,63 @@ export function SinglePlotDesignDialog({
                 value={s.labels.color}
                 onChange={(value) => updateLabels({ color: value })}
               />
+            </div>
+          </GroupBox>
+        )}
+
+        {/* Plot-specific: Polymer Match Labels */}
+        {graphId === "spectrum" && (
+          <GroupBox title="Polymer Match Labels">
+            <p className="mb-2.5 text-[11px] text-ink-500">
+              Customize the orientation, box, font size, and color of matched polymer peak labels.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ColorSetting
+                label="Label & accent color"
+                value={polySettings.color}
+                onChange={(value) => updatePolymerLabels({ color: value })}
+              />
+              <NumberSetting
+                label="Font size"
+                value={polySettings.fontSize}
+                min={6}
+                max={24}
+                step={1}
+                onChange={(value) =>
+                  updatePolymerLabels({ fontSize: value ?? polySettings.fontSize })
+                }
+              />
+              <SelectSetting
+                label="Text orientation"
+                value={polySettings.orientation}
+                options={[
+                  { value: "horizontal", label: "Horizontal (0°)" },
+                  { value: "vertical", label: "Vertical (-90°)" },
+                ]}
+                onChange={(value) =>
+                  updatePolymerLabels({ orientation: value as "horizontal" | "vertical" })
+                }
+              />
+              <div className="flex flex-col justify-center gap-2 pt-1">
+                <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                    checked={polySettings.showBox}
+                    onChange={(e) => updatePolymerLabels({ showBox: e.target.checked })}
+                  />
+                  <span>Show surrounding box</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                    checked={polySettings.showArrow}
+                    onChange={(e) => updatePolymerLabels({ showArrow: e.target.checked })}
+                  />
+                  <span>Show arrow pointer to peak</span>
+                </label>
+              </div>
             </div>
           </GroupBox>
         )}

@@ -1,11 +1,13 @@
-import type {
-  AxisLimits,
-  ChartSettings,
-  EICOverlaySettings,
-  FrameMode,
-  GraphId,
-  GraphSettings,
-  LabelSettings,
+import {
+  DEFAULT_POLYMER_LABEL_SETTINGS,
+  type AxisLimits,
+  type ChartSettings,
+  type EICOverlaySettings,
+  type FrameMode,
+  type GraphId,
+  type GraphSettings,
+  type LabelSettings,
+  type PolymerLabelSettings,
 } from "../../lcms/settings";
 import {
   ColorSetting,
@@ -45,6 +47,18 @@ export function GraphSettingsDialog({
     onChange((prev) => ({
       ...prev,
       [id]: { ...prev[id], labels: { ...prev[id].labels, ...patch } },
+    }));
+  };
+  const updatePolymerLabels = (id: GraphId, patch: Partial<PolymerLabelSettings>) => {
+    onChange((prev) => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        polymerLabels: {
+          ...(prev[id].polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS),
+          ...patch,
+        },
+      },
     }));
   };
   const updateEicOverlay = (patch: Partial<EICOverlaySettings>) => {
@@ -324,6 +338,60 @@ export function GraphSettingsDialog({
             </p>
           )}
         </div>
+
+        {id === "spectrum" && (
+          <div className="mt-4 rounded-md border border-ink-200 bg-ink-50/40 p-3">
+            <div className="mb-2 label">Polymer match labels</div>
+            <div className="grid grid-cols-2 gap-3">
+              <ColorSetting
+                label="Label & accent color"
+                value={(s.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS).color}
+                onChange={(value) => updatePolymerLabels(id, { color: value })}
+              />
+              <NumberSetting
+                label="Font size"
+                value={(s.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS).fontSize}
+                min={6}
+                max={24}
+                step={1}
+                onChange={(value) =>
+                  updatePolymerLabels(id, {
+                    fontSize: value ?? (s.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS).fontSize,
+                  })
+                }
+              />
+              <SelectSetting
+                label="Orientation"
+                value={(s.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS).orientation}
+                options={[
+                  { value: "horizontal", label: "Horizontal (0°)" },
+                  { value: "vertical", label: "Vertical (-90°)" },
+                ]}
+                onChange={(value) =>
+                  updatePolymerLabels(id, { orientation: value as "horizontal" | "vertical" })
+                }
+              />
+              <div className="flex flex-col justify-center gap-2 pt-1">
+                <label className="flex items-center gap-2 text-xs text-ink-600">
+                  <input
+                    type="checkbox"
+                    checked={(s.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS).showBox}
+                    onChange={(e) => updatePolymerLabels(id, { showBox: e.target.checked })}
+                  />
+                  Show box around label
+                </label>
+                <label className="flex items-center gap-2 text-xs text-ink-600">
+                  <input
+                    type="checkbox"
+                    checked={(s.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS).showArrow}
+                    onChange={(e) => updatePolymerLabels(id, { showArrow: e.target.checked })}
+                  />
+                  Show arrow pointer to peak
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
     );
   };

@@ -82,6 +82,7 @@ import {
   cloneGraphSettings,
   DEFAULT_AXIS_LIMITS,
   DEFAULT_GRAPH_SETTINGS,
+  DEFAULT_POLYMER_LABEL_SETTINGS,
   GRAPH_SETTINGS_DEFAULT_STORAGE_KEY,
   loadGraphSettingsDefault,
   mergeChartSettings,
@@ -93,6 +94,7 @@ import {
   type FrameMode,
   type GraphSettings,
   type LabelSettings,
+  type PolymerLabelSettings,
 } from "../lcms/settings";
 import { NumberSetting } from "../components/lcms/DialogControls";
 import { FeatureTableDialog } from "../components/lcms/FeatureTableDialog";
@@ -7124,6 +7126,23 @@ function UVChromatogramChart(props: {
   );
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = (hex || "#7c3aed").replace("#", "").trim();
+  if (clean.length === 6) {
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  if (clean.length === 3) {
+    const r = parseInt(clean[0] + clean[0], 16);
+    const g = parseInt(clean[1] + clean[1], 16);
+    const b = parseInt(clean[2] + clean[2], 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return hex;
+}
+
 function SpectrumChart(props: {
   spectrum: SpectrumData | null;
   overlayTraces: LCMSSpectrumOverlayTrace[];
@@ -7416,28 +7435,37 @@ function SpectrumChart(props: {
               },
               annotations: props.annotate
                 ? [
-                    ...visibleLabels.map((lbl) => ({
-                      x: lbl.mz,
-                      y: lbl.intensity,
-                      text: lbl.text ? cleanLabelText(lbl.text) : lbl.mz.toFixed(4),
-                      showarrow: lbl.source === "polymer",
-                      arrowhead: 2,
-                      arrowsize: 0.8,
-                      arrowwidth: 1,
-                      arrowcolor: "#7c3aed",
-                      ax: 0,
-                      ay: lbl.source === "polymer" ? -34 : 0,
-                      yshift: lbl.source === "polymer" ? 0 : 10,
-                      bgcolor:
-                        lbl.source === "polymer" ? "rgba(124, 58, 237, 0.10)" : undefined,
-                      bordercolor: lbl.source === "polymer" ? "#7c3aed" : undefined,
-                      borderpad: lbl.source === "polymer" ? 3 : undefined,
-                      font: {
-                        size: props.settings.labels.fontSize,
-                        color:
-                          lbl.source === "polymer" ? "#7c3aed" : props.settings.labels.color,
-                      },
-                    })),
+                    ...visibleLabels.map((lbl) => {
+                      const isPoly = lbl.source === "polymer";
+                      const polyCfg = props.settings.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS;
+                      const isVertical = isPoly && polyCfg.orientation === "vertical";
+                      const showBox = isPoly ? polyCfg.showBox : false;
+                      const showArrow = isPoly ? (polyCfg.showArrow ?? true) : false;
+                      const color = isPoly ? (polyCfg.color || "#7c3aed") : props.settings.labels.color;
+                      const fontSize = isPoly ? (polyCfg.fontSize || 10) : props.settings.labels.fontSize;
+
+                      return {
+                        x: lbl.mz,
+                        y: lbl.intensity,
+                        text: lbl.text ? cleanLabelText(lbl.text) : lbl.mz.toFixed(4),
+                        textangle: isVertical ? -90 : 0,
+                        showarrow: showArrow,
+                        arrowhead: 2,
+                        arrowsize: 0.8,
+                        arrowwidth: 1,
+                        arrowcolor: color,
+                        ax: 0,
+                        ay: isPoly ? (isVertical ? -46 : -34) : 0,
+                        yshift: isPoly ? (showArrow ? 0 : isVertical ? 22 : 12) : 10,
+                        bgcolor: showBox ? hexToRgba(color, 0.12) : undefined,
+                        bordercolor: showBox ? color : undefined,
+                        borderpad: showBox ? 3 : undefined,
+                        font: {
+                          size: fontSize,
+                          color: color,
+                        },
+                      };
+                    }),
                     ...overlayAnnotations,
                   ]
                 : [],

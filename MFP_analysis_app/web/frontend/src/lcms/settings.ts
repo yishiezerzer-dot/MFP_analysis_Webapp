@@ -13,6 +13,22 @@ export interface LabelSettings {
   color: string;
 }
 
+export interface PolymerLabelSettings {
+  color: string;
+  fontSize: number;
+  orientation: "horizontal" | "vertical";
+  showBox: boolean;
+  showArrow: boolean;
+}
+
+export const DEFAULT_POLYMER_LABEL_SETTINGS: PolymerLabelSettings = {
+  color: "#7c3aed",
+  fontSize: 10,
+  orientation: "horizontal",
+  showBox: true,
+  showArrow: true,
+};
+
 export interface ChartSettings {
   title: string;
   xTitle: string;
@@ -29,6 +45,7 @@ export interface ChartSettings {
   showScaleBars: boolean;
   annotationConnectorColor?: string;
   annotationConnectorOpacity?: number;
+  polymerLabels?: PolymerLabelSettings;
   axis: AxisLimits;
   labels: LabelSettings;
 }
@@ -113,6 +130,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
     showScaleBars: true,
     axis: { ...DEFAULT_AXIS_LIMITS },
     labels: { enabled: true, fontSize: 10, color: "#46536a" },
+    polymerLabels: { ...DEFAULT_POLYMER_LABEL_SETTINGS },
   },
   eic: {
     title: "",
@@ -150,6 +168,12 @@ export function mergeChartSettings(base: ChartSettings, saved?: Partial<ChartSet
     ...(saved ?? {}),
     axis: { ...base.axis, ...(saved?.axis ?? {}) },
     labels: { ...base.labels, ...(saved?.labels ?? {}) },
+    polymerLabels: base.polymerLabels || saved?.polymerLabels
+      ? {
+          ...(base.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS),
+          ...(saved?.polymerLabels ?? {}),
+        }
+      : undefined,
   };
 }
 
