@@ -453,6 +453,7 @@ const DEFAULT_POLYMER_UI_SETTINGS: PolymerUiSettings = {
     adduct_cl: false,
     adduct_formate: false,
     adduct_acetate: false,
+    custom_adducts: [],
   },
   negative: {
     adduct_mass: -1.007276,
@@ -462,6 +463,7 @@ const DEFAULT_POLYMER_UI_SETTINGS: PolymerUiSettings = {
     adduct_cl: false,
     adduct_formate: false,
     adduct_acetate: false,
+    custom_adducts: [],
   },
   monomers: BUILT_IN_POLYMER_MONOMERS,
 };

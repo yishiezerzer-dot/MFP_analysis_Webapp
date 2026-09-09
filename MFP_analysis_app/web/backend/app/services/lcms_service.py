@@ -750,6 +750,7 @@ def polymer_match_labels(
         enable_cl=bool(settings.get("adduct_cl")),
         enable_formate=bool(settings.get("adduct_formate")),
         enable_acetate=bool(settings.get("adduct_acetate")),
+        custom_adducts=settings.get("custom_adducts"),
         tol_value=float(settings.get("tol_value", 0.02) or 0.02),
         tol_unit=str(settings.get("tol_unit") or "Da"),
         min_rel_int=float(settings.get("min_rel_int", 0.01) or 0.01),

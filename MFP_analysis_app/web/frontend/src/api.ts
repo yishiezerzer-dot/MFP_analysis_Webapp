@@ -113,6 +113,14 @@ export interface SpectrumLabel {
   peak_index?: number;
 }
 
+export interface CustomAdduct {
+  id: string;
+  name: string;
+  mass: number;
+  charge: number;
+  enabled: boolean;
+}
+
 export interface PolymerSettings {
   enabled: boolean;
   monomers_text: string;
@@ -134,6 +142,7 @@ export interface PolymerSettings {
   tol_value: number;
   tol_unit: "Da" | "ppm";
   min_rel_int: number;
+  custom_adducts?: CustomAdduct[];
 }
 
 export interface SpectrumData {

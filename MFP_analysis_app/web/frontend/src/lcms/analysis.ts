@@ -1,5 +1,6 @@
-import type { LCMSEICData, PolymerSettings, SpectrumData } from "../api";
+import type { CustomAdduct, LCMSEICData, PolymerSettings, SpectrumData } from "../api";
 
+export type { CustomAdduct } from "../api";
 export type LCMSPolarity = "all" | "positive" | "negative";
 export type ExpectedProductResolutionMode = "normal" | "low";
 export type FeatureMatrixMetric = "area" | "height";
@@ -41,6 +42,7 @@ export interface PolymerModeSettings {
   adduct_cl: boolean;
   adduct_formate: boolean;
   adduct_acetate: boolean;
+  custom_adducts?: CustomAdduct[];
 }
 
 export type Polarity = "all" | "positive" | "negative";
@@ -112,6 +114,7 @@ export const DEFAULT_POLYMER_UI_SETTINGS: PolymerUiSettings = {
     adduct_cl: false,
     adduct_formate: false,
     adduct_acetate: false,
+    custom_adducts: [],
   },
   negative: {
     adduct_mass: -1.007276,
@@ -121,6 +124,7 @@ export const DEFAULT_POLYMER_UI_SETTINGS: PolymerUiSettings = {
     adduct_cl: false,
     adduct_formate: false,
     adduct_acetate: false,
+    custom_adducts: [],
   },
   monomers: BUILT_IN_POLYMER_MONOMERS,
 };
@@ -768,14 +772,26 @@ export function buildExpectedProductHits(
   const dpMax = Math.max(1, Math.min(EXPECTED_PRODUCT_MAX_DP, Math.round(maxDp)));
   const baseAdduct = autoSignedProtonLike(profile.adduct_mass, polarity);
   const clusterAdduct = autoSignedProtonLike(profile.cluster_adduct_mass, polarity);
-  const adducts: Array<{ label: string; mass: number }> = [{ label: "", mass: baseAdduct }];
+  const adducts: Array<{ label: string; mass: number; charge?: number }> = [{ label: "", mass: baseAdduct, charge: 1 }];
   if (polarity === "positive") {
-    if (profile.adduct_na) adducts.push({ label: "+Na", mass: NA_MASS });
-    if (profile.adduct_k) adducts.push({ label: "+K", mass: K_MASS });
+    if (profile.adduct_na) adducts.push({ label: "+Na", mass: NA_MASS, charge: 1 });
+    if (profile.adduct_k) adducts.push({ label: "+K", mass: K_MASS, charge: 1 });
   } else {
-    if (profile.adduct_cl) adducts.push({ label: "+Cl", mass: CL_MASS });
-    if (profile.adduct_formate) adducts.push({ label: "+HCOO", mass: FORMATE_MASS });
-    if (profile.adduct_acetate) adducts.push({ label: "+Ac", mass: ACETATE_MASS });
+    if (profile.adduct_cl) adducts.push({ label: "+Cl", mass: CL_MASS, charge: 1 });
+    if (profile.adduct_formate) adducts.push({ label: "+HCOO", mass: FORMATE_MASS, charge: 1 });
+    if (profile.adduct_acetate) adducts.push({ label: "+Ac", mass: ACETATE_MASS, charge: 1 });
+  }
+  if (profile.custom_adducts) {
+    for (const ca of profile.custom_adducts) {
+      if (ca.enabled && Number.isFinite(ca.mass) && ca.mass !== 0) {
+        const lbl = ca.name.startsWith("+") || ca.name.startsWith("-") ? ca.name : `+${ca.name}`;
+        adducts.push({
+          label: lbl,
+          mass: ca.mass,
+          charge: Math.max(1, Math.round(Math.abs(ca.charge || 1))),
+        });
+      }
+    }
   }
   const variants: Array<{ label: string; delta: number }> = [{ label: "", delta: 0 }];
   if (shared.h2o_loss) variants.push({ label: "-H2O", delta: -H2O_LOSS_MASS });
@@ -821,10 +837,17 @@ export function buildExpectedProductHits(
     const neutralBase = composition.mass + (composition.dp - 1) * shared.bond_delta + shared.extra_delta;
     for (const variant of variants) {
       const neutralMass = neutralBase + variant.delta;
-      for (const charge of charges) {
-        for (const adduct of adducts) {
+      for (const adduct of adducts) {
+        const effectiveCharges = adduct.charge && adduct.charge > 1 ? [adduct.charge] : charges;
+        for (const charge of effectiveCharges) {
           const expectedMz = (neutralMass + adduct.mass) / charge;
-          addHit(composition.label, neutralMass, variant.label, ionLabel("M", adduct.label, adduct.mass, charge, polarity), expectedMz);
+          addHit(
+            composition.label,
+            neutralMass,
+            variant.label,
+            ionLabel("M", adduct.label, adduct.mass, charge, polarity),
+            expectedMz,
+          );
         }
       }
     }
@@ -863,6 +886,7 @@ export function toApiPolymerSettings(
     adduct_cl: polarity === "negative" ? profile.adduct_cl : false,
     adduct_formate: polarity === "negative" ? profile.adduct_formate : false,
     adduct_acetate: polarity === "negative" ? profile.adduct_acetate : false,
+    custom_adducts: (profile.custom_adducts ?? []).filter((a) => a.enabled),
   };
 }
 

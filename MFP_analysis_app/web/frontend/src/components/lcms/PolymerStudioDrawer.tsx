@@ -46,6 +46,9 @@ export function PolymerStudioModal({
   onSaveDefaults,
 }: PolymerStudioDrawerProps) {
   const [activeSubTab, setActiveSubTab] = useState<"monomers" | "parameters" | "advanced">("monomers");
+  const [customName, setCustomName] = useState("");
+  const [customMass, setCustomMass] = useState("");
+  const [customCharge, setCustomCharge] = useState("1");
   const activeMode = polarity === "negative" ? "negative" : "positive";
   const disabled = polarity === "all";
   const shared = settings.shared;
@@ -61,6 +64,25 @@ export function PolymerStudioModal({
 
   const patchMonomers = (monomers: PolymerMonomerPreset[]) =>
     onChange({ ...settings, monomers });
+
+  const handleAddCustomAdduct = () => {
+    const trimmed = customName.trim();
+    const massVal = parseFloat(customMass);
+    const chargeVal = parseInt(customCharge, 10);
+    if (!trimmed || !Number.isFinite(massVal)) return;
+    const newAdduct = {
+      id: `custom:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
+      name: trimmed.startsWith("+") || trimmed.startsWith("-") ? trimmed : `+${trimmed}`,
+      mass: massVal,
+      charge: Number.isFinite(chargeVal) && chargeVal > 0 ? chargeVal : 1,
+      enabled: true,
+    };
+    const existing = profile.custom_adducts ?? [];
+    patchProfile({ custom_adducts: [...existing, newAdduct] });
+    setCustomName("");
+    setCustomMass("");
+    setCustomCharge("1");
+  };
 
   const selectedSummary = polymerMonomerText(settings)
     .split(/\r?\n/)
@@ -311,6 +333,147 @@ export function PolymerStudioModal({
                     />
                   </>
                 )}
+              </div>
+            </GroupBox>
+
+            <GroupBox title="Custom Adducts">
+              <div className="space-y-3">
+                {/* List of active custom adducts */}
+                {(profile.custom_adducts ?? []).length > 0 ? (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto rounded-md border border-ink-200 bg-surface p-2">
+                    {(profile.custom_adducts ?? []).map((adduct) => (
+                      <div
+                        key={adduct.id}
+                        className="flex items-center justify-between gap-2 rounded px-2.5 py-1.5 bg-ink-50 hover:bg-ink-100/70 text-xs transition-colors"
+                      >
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                            checked={adduct.enabled}
+                            onChange={(e) => {
+                              const updated = (profile.custom_adducts ?? []).map((a) =>
+                                a.id === adduct.id ? { ...a, enabled: e.target.checked } : a,
+                              );
+                              patchProfile({ custom_adducts: updated });
+                            }}
+                          />
+                          <span className="font-semibold text-ink-900">{adduct.name}</span>
+                        </label>
+                        <div className="flex items-center gap-3 text-ink-600">
+                          <span className="font-mono text-xs">
+                            {adduct.mass >= 0 ? `+${adduct.mass.toFixed(4)}` : adduct.mass.toFixed(4)} Da
+                          </span>
+                          <span className="rounded bg-ink-200/80 px-1.5 py-0.5 text-[10px] font-mono text-ink-800 font-medium">
+                            z = {adduct.charge}
+                          </span>
+                          <button
+                            type="button"
+                            className="flex h-5 w-5 items-center justify-center rounded text-ink-400 hover:bg-rose-100 hover:text-rose-600 font-bold transition-colors"
+                            title="Remove custom adduct"
+                            onClick={() => {
+                              const updated = (profile.custom_adducts ?? []).filter((a) => a.id !== adduct.id);
+                              patchProfile({ custom_adducts: updated });
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-500 italic">
+                    No custom adducts added yet. Use the inputs or presets below to add custom adducts with specific charge states.
+                  </p>
+                )}
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-ink-500">
+                  <span className="font-medium text-ink-600">Quick presets:</span>
+                  {(polarity === "negative"
+                    ? [
+                        { name: "TFA", mass: 112.9856, charge: 1 },
+                        { name: "Br", mass: 78.9183, charge: 1 },
+                        { name: "SO4", mass: 95.9517, charge: 2 },
+                      ]
+                    : [
+                        { name: "NH4", mass: 18.0338, charge: 1 },
+                        { name: "Li", mass: 6.941, charge: 1 },
+                        { name: "Ca", mass: 39.9626, charge: 2 },
+                        { name: "Mg", mass: 23.985, charge: 2 },
+                      ]
+                  ).map((p) => (
+                    <button
+                      key={p.name}
+                      type="button"
+                      className="rounded border border-ink-200 bg-surface px-2 py-0.5 text-[11px] text-ink-700 hover:bg-brand-50 hover:border-brand-300 hover:text-brand-700 transition-colors"
+                      onClick={() => {
+                        setCustomName(p.name);
+                        setCustomMass(p.mass.toString());
+                        setCustomCharge(p.charge.toString());
+                      }}
+                      title={`Fill ${p.name} (+${p.mass} Da, z=${p.charge})`}
+                    >
+                      +{p.name} ({p.mass} Da, z={p.charge})
+                    </button>
+                  ))}
+                </div>
+
+                {/* Add Custom Adduct Form */}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 items-end rounded-md border border-ink-200 bg-surface p-2.5">
+                  <div>
+                    <label className="block text-[11px] font-medium text-ink-600">Adduct Name</label>
+                    <input
+                      type="text"
+                      className="input h-7 w-full text-xs"
+                      placeholder="e.g. NH4 or Ca"
+                      value={customName}
+                      onChange={(e) => setCustomName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleAddCustomAdduct();
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-ink-600">Mass Delta (Da)</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      className="input h-7 w-full text-xs"
+                      placeholder="e.g. 18.0338"
+                      value={customMass}
+                      onChange={(e) => setCustomMass(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleAddCustomAdduct();
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-ink-600">Charge State (z)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="6"
+                      step="1"
+                      className="input h-7 w-full text-xs"
+                      placeholder="1"
+                      value={customCharge}
+                      onChange={(e) => setCustomCharge(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleAddCustomAdduct();
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-primary h-7 text-xs whitespace-nowrap flex items-center justify-center disabled:opacity-50"
+                    disabled={!customName.trim() || !Number.isFinite(parseFloat(customMass))}
+                    onClick={handleAddCustomAdduct}
+                  >
+                    ➕ Add Adduct
+                  </button>
+                </div>
               </div>
             </GroupBox>
           </div>

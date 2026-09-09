@@ -381,6 +381,41 @@ def _kind_for_variant(tag: str) -> str:
     return "poly"
 
 
+def _parse_custom_adducts(custom_adducts: Optional[Sequence[Any]]) -> List[Tuple[str, float, Optional[int]]]:
+    """Parse custom adduct inputs into list of (label, mass_delta, explicit_charge)."""
+    parsed: List[Tuple[str, float, Optional[int]]] = []
+    if not custom_adducts:
+        return parsed
+    for ca in custom_adducts:
+        if isinstance(ca, dict):
+            if not ca.get("enabled", True):
+                continue
+            name = str(ca.get("name") or "").strip()
+            try:
+                mass = float(ca.get("mass", 0.0))
+            except (ValueError, TypeError):
+                continue
+            try:
+                ch = int(ca.get("charge", 1))
+            except (ValueError, TypeError):
+                ch = 1
+        elif isinstance(ca, (list, tuple)):
+            name = str(ca[0]).strip()
+            try:
+                mass = float(ca[1])
+            except (ValueError, TypeError, IndexError):
+                continue
+            ch = int(ca[2]) if len(ca) > 2 else 1
+        else:
+            continue
+
+        if not name or mass == 0.0:
+            continue
+        lbl = name if (name.startswith("+") or name.startswith("-")) else f"+{name}"
+        parsed.append((lbl, mass, ch if ch > 1 else None))
+    return parsed
+
+
 def compute_polymer_best_by_peak_sorted(
     mz_sorted: np.ndarray,
     int_sorted: np.ndarray,
@@ -403,6 +438,7 @@ def compute_polymer_best_by_peak_sorted(
     enable_formate: bool,
     enable_acetate: bool = False,
     enable_h2o_loss: bool = False,
+    custom_adducts: Optional[Sequence[Any]] = None,
     tol_value: float,
     tol_unit: str,
     min_rel_int: float,
@@ -452,7 +488,7 @@ def compute_polymer_best_by_peak_sorted(
     max_dp_i = max(1, min(200, int(max_dp)))
 
     # Adduct list for label compatibility ("", "+Na", etc)
-    poly_adducts = build_default_adduct_deltas(
+    poly_adducts_base = build_default_adduct_deltas(
         polarity=polarity,
         base_adduct_mass=float(base_adduct_mass),
         enable_na=bool(enable_na),
@@ -461,6 +497,10 @@ def compute_polymer_best_by_peak_sorted(
         enable_formate=bool(enable_formate),
         enable_acetate_default=bool(enable_acetate),
     )
+    poly_adducts: List[Tuple[str, float, Optional[int]]] = [
+        (lbl, dm, None) for lbl, dm in poly_adducts_base
+    ]
+    poly_adducts.extend(_parse_custom_adducts(custom_adducts))
 
     cluster_adducts = build_default_adduct_deltas(
         polarity=polarity,
@@ -506,12 +546,16 @@ def compute_polymer_best_by_peak_sorted(
     var_min = float(min(v.mass_delta for v in variants)) if variants else 0.0
     var_max = float(max(v.mass_delta for v in variants)) if variants else 0.0
 
-    adduct_min = float(min(dm for _lbl, dm in poly_adducts)) if poly_adducts else 0.0
-    adduct_max = float(max(dm for _lbl, dm in poly_adducts)) if poly_adducts else 0.0
+    adduct_min = float(min(dm for _lbl, dm, _ch in poly_adducts)) if poly_adducts else 0.0
+    adduct_max = float(max(dm for _lbl, dm, _ch in poly_adducts)) if poly_adducts else 0.0
 
     neutral_min_allowed = None
     neutral_max_allowed = None
-    for z in charges_use:
+    all_charges_use = set(charges_use)
+    for _lbl, _dm, ch in poly_adducts:
+        if ch is not None and ch > 0:
+            all_charges_use.add(ch)
+    for z in all_charges_use:
         lo = float(mz_lo) * float(z) - (adduct_max + var_max)
         hi = float(mz_hi) * float(z) - (adduct_min + var_min)
         neutral_min_allowed = lo if neutral_min_allowed is None else min(neutral_min_allowed, lo)
@@ -661,8 +705,9 @@ def compute_polymer_best_by_peak_sorted(
             kind = _kind_for_variant(str(v.tag))
             tag_txt = ("" if not v.tag else f" {str(v.tag)}")
 
-            for z in charges_use:
-                for adduct_lbl, adduct_mass_val in poly_adducts:
+            for adduct_lbl, adduct_mass_val, explicit_ch in poly_adducts:
+                eff_charges = [explicit_ch] if (explicit_ch and explicit_ch > 1) else charges_use
+                for z in eff_charges:
                     mz_pred = (float(neutral_var) + float(adduct_mass_val)) / float(z)
                     tol_da, tol_ppm = _tol_to_da(mz_pred=float(mz_pred), tol_value=float(tol_value), tol_unit=str(tol_unit))
 
@@ -802,6 +847,7 @@ def explain_best_match_for_peak_sorted(
     enable_formate: bool,
     enable_acetate: bool = False,
     enable_h2o_loss: bool = False,
+    custom_adducts: Optional[Sequence[Any]] = None,
     tol_value: float,
     tol_unit: str,
     min_rel_int: float,
@@ -844,7 +890,7 @@ def explain_best_match_for_peak_sorted(
         charges_use = [1]
     max_dp_i = max(1, min(200, int(max_dp)))
 
-    poly_adducts = build_default_adduct_deltas(
+    poly_adducts_base = build_default_adduct_deltas(
         polarity=polarity,
         base_adduct_mass=float(base_adduct_mass),
         enable_na=bool(enable_na),
@@ -853,6 +899,10 @@ def explain_best_match_for_peak_sorted(
         enable_formate=bool(enable_formate),
         enable_acetate_default=bool(enable_acetate),
     )
+    poly_adducts: List[Tuple[str, float, Optional[int]]] = [
+        (lbl, dm, None) for lbl, dm in poly_adducts_base
+    ]
+    poly_adducts.extend(_parse_custom_adducts(custom_adducts))
     cluster_adducts = build_default_adduct_deltas(
         polarity=polarity,
         base_adduct_mass=float(cluster_adduct_mass),
@@ -965,8 +1015,9 @@ def explain_best_match_for_peak_sorted(
             neutral_var = float(neutral_poly) + float(v.mass_delta)
             kind = _kind_for_variant(str(v.tag))
             comp = f"{base_label}{('' if not v.tag else ' ' + str(v.tag))}".strip()
-            for z in charges_use:
-                for adduct_lbl, adduct_mass_val in poly_adducts:
+            for adduct_lbl, adduct_mass_val, explicit_ch in poly_adducts:
+                eff_charges = [explicit_ch] if (explicit_ch and explicit_ch > 1) else charges_use
+                for z in eff_charges:
                     mz_pred = (float(neutral_var) + float(adduct_mass_val)) / float(z)
                     consider_candidate(
                         kind=str(kind),
@@ -1067,6 +1118,37 @@ def run_polymer_self_checks() -> Dict[str, Any]:
     )
     checks["neg_has_minus_H"] = any(abs(dm - (-PROTON_MASS)) < 1e-9 for _lbl, dm in adducts_neg)
     if not checks["neg_has_minus_H"]:
+        results["ok"] = False
+
+    # 5) Custom adduct matching with charge > 1 (e.g. Ca2+ at m/z = (200 + 40) / 2 = 120.0)
+    mz_test = np.array([100.0, 120.0], dtype=float)
+    int_test = np.array([10.0, 50.0], dtype=float)
+    best_poly = compute_polymer_best_by_peak_sorted(
+        mz_test,
+        int_test,
+        monomer_names=["M"],
+        monomer_masses=[200.0],
+        charges=[1],
+        max_dp=1,
+        bond_delta=0.0,
+        extra_delta=0.0,
+        polarity="positive",
+        base_adduct_mass=1.007276,
+        enable_decarb=False,
+        enable_oxid=False,
+        enable_cluster=False,
+        cluster_adduct_mass=1.007276,
+        enable_na=False,
+        enable_k=False,
+        enable_cl=False,
+        enable_formate=False,
+        custom_adducts=[{"name": "+Ca", "mass": 40.0, "charge": 2, "enabled": True}],
+        tol_value=0.05,
+        tol_unit="Da",
+        min_rel_int=0.01,
+    )
+    checks["custom_adduct_hit"] = len(best_poly) > 0
+    if not checks["custom_adduct_hit"]:
         results["ok"] = False
 
     return results

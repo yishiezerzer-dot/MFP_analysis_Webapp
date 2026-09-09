@@ -8,8 +8,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 # Ensure the project root is on sys.path so we can import `lab_gui.*`
@@ -58,4 +59,15 @@ app.include_router(automation.router, prefix="/api/automation", tags=["automatio
 
 _FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if _FRONTEND_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")
+    _assets_dir = _FRONTEND_DIST / "assets"
+    if _assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        if full_path.startswith("api/") or full_path == "api":
+            raise HTTPException(status_code=404, detail="Not Found")
+        target_file = (_FRONTEND_DIST / full_path).resolve()
+        if target_file.is_relative_to(_FRONTEND_DIST.resolve()) and target_file.is_file():
+            return FileResponse(target_file)
+        return FileResponse(_FRONTEND_DIST / "index.html")
