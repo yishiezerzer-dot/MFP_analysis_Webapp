@@ -57,7 +57,7 @@ export const DEFAULT_OVERLAY_LABEL_SETTINGS: OverlayLabelSettings = {
   color: "#475569",
   useTraceColor: true,
   orientation: "horizontal",
-  showBox: false,
+  showBox: true,
   showArrow: true,
 };
 

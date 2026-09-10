@@ -6995,7 +6995,7 @@ function UVChromatogramChart(props: {
 
       const effOrientation = overlayLabelCfg.orientation ?? labelOrientation;
       const isVertical = effOrientation === "vertical";
-      const showBox = overlayLabelCfg.showBox ?? false;
+      const showBox = overlayLabelCfg.showBox ?? true;
       const showArrow = overlayLabelCfg.showArrow ?? true;
       const fontSize = overlayLabelCfg.fontSize ?? Math.max(8, settings.labels.fontSize - 1);
 
@@ -7024,8 +7024,10 @@ function UVChromatogramChart(props: {
             text: cleanLabelText(label.text),
             textangle: isVertical ? ("-90" as const) : ("0" as const),
             showarrow: showArrow,
-            arrowhead: 0,
-            arrowcolor: connectorArrowColor,
+            arrowhead: 2,
+            arrowsize: 0.8,
+            arrowwidth: 1,
+            arrowcolor: labelColor,
             ax: label.ax ?? 0,
             axref: label.axRef === "x" ? ("x" as const) : ("pixel" as const),
             ayref: label.ayRef === "y" ? ("y" as const) : ("pixel" as const),
@@ -8031,8 +8033,8 @@ function SpectrumChart(props: {
   const overlayAnnotations = useMemo(() => {
     if (!props.annotate || !props.showOverlayLabels || overlayLabelCfg.enabled === false) return [];
     const isVertical = overlayLabelCfg.orientation === "vertical";
-    const showBox = overlayLabelCfg.showBox ?? false;
-    const showArrow = overlayLabelCfg.showArrow ?? false;
+    const showBox = overlayLabelCfg.showBox ?? true;
+    const showArrow = overlayLabelCfg.showArrow ?? true;
     const fontSize = overlayLabelCfg.fontSize ?? Math.max(8, props.settings.labels.fontSize - 1);
 
     return props.overlayTraces.flatMap((trace, traceIndex) => {
@@ -8059,12 +8061,12 @@ function SpectrumChart(props: {
         .map((label, labelIndex) => {
           let labelY = label.intensity;
           let yshift = 18 + traceIndex * 10 + labelIndex * 2;
-          let ay = isVertical ? -46 : -34;
+          let ay = isVertical ? -46 - traceIndex * 14 : -34 - traceIndex * 14;
 
           if (isButterfly) {
             labelY = isNorm ? -((label.intensity / traceBasePeak) * 100) : -label.intensity;
             yshift = -(18 + traceIndex * 10 + labelIndex * 2);
-            ay = isVertical ? 46 : 34;
+            ay = isVertical ? 46 + traceIndex * 14 : 34 + traceIndex * 14;
           } else if (isNorm) {
             labelY = (label.intensity / traceBasePeak) * 100;
           }

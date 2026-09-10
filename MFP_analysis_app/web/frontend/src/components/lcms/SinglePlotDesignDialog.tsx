@@ -424,7 +424,7 @@ export function SinglePlotDesignDialog({
                     <input
                       type="checkbox"
                       className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
-                      checked={overlayLabels.showBox}
+                      checked={overlayLabels.showBox ?? true}
                       onChange={(e) => updateOverlayLabels({ showBox: e.target.checked })}
                     />
                     <span>Show surrounding box</span>
@@ -433,7 +433,7 @@ export function SinglePlotDesignDialog({
                     <input
                       type="checkbox"
                       className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
-                      checked={overlayLabels.showArrow}
+                      checked={overlayLabels.showArrow ?? true}
                       onChange={(e) => updateOverlayLabels({ showArrow: e.target.checked })}
                     />
                     <span>Show arrow pointer to peak</span>
