@@ -7,6 +7,8 @@ export interface PeakContextData {
   relIntensity?: number;
   label?: string;
   source?: string;
+  sessionId?: string;
+  fileName?: string;
   x: number; // Client or container X
   y: number; // Client or container Y
 }
@@ -14,9 +16,9 @@ export interface PeakContextData {
 export interface PeakContextPopoverProps {
   peak: PeakContextData | null;
   onClose: () => void;
-  onExtractEic?: (mz: number) => void;
-  onDeconvolute?: (mz: number) => void;
-  onMatchPolymer?: (mz: number) => void;
+  onExtractEic?: (mz: number, sessionId?: string) => void;
+  onDeconvolute?: (mz: number, sessionId?: string) => void;
+  onMatchPolymer?: (mz: number, sessionId?: string) => void;
   className?: string;
 }
 
@@ -104,6 +106,11 @@ export function PeakContextPopover({
               <span> · {(peak.relIntensity * 100).toFixed(1)}% rel</span>
             )}
           </div>
+          {peak.fileName && (
+            <div className="mt-0.5 truncate text-[11px] font-medium text-ink-600" title={peak.fileName}>
+              Source: {peak.fileName}
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -121,7 +128,7 @@ export function PeakContextPopover({
             type="button"
             className="flex items-center gap-2 rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-brand-600"
             onClick={() => {
-              onExtractEic(peak.mz);
+              onExtractEic(peak.mz, peak.sessionId);
               onClose();
             }}
           >
@@ -136,7 +143,7 @@ export function PeakContextPopover({
               type="button"
               className="flex items-center justify-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100 hover:text-ink-900"
               onClick={() => {
-                onDeconvolute(peak.mz);
+                onDeconvolute(peak.mz, peak.sessionId);
                 onClose();
               }}
               title="Deconvolute multicharge ESI cluster around this m/z"
@@ -151,7 +158,7 @@ export function PeakContextPopover({
               type="button"
               className="flex items-center justify-center gap-1.5 rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-100 hover:text-ink-900"
               onClick={() => {
-                onMatchPolymer(peak.mz);
+                onMatchPolymer(peak.mz, peak.sessionId);
                 onClose();
               }}
               title="Inspect monomer composition & Kendrick defect"

@@ -2,6 +2,7 @@ import {
   DEFAULT_POLYMER_LABEL_SETTINGS,
   OVERLAY_PALETTE,
   type AxisLimits,
+  type ChartOverlaySettings,
   type ChartSettings,
   type EICOverlaySettings,
   type FrameMode,
@@ -11,10 +12,12 @@ import {
   type PolymerLabelSettings,
 } from "../../lcms/settings";
 import {
+  Check,
   ColorSetting,
   GroupBox,
   Modal,
   NumberSetting,
+  Row,
   SelectSetting,
   TextSetting,
 } from "./DialogControls";
@@ -26,6 +29,7 @@ export interface SinglePlotDesignDialogProps {
   overlayEicEnabled?: boolean;
   setOverlayEicEnabled?: (value: boolean) => void;
   overlayTraceNames?: string[];
+  overlaySessions?: Array<{ sessionId: string; displayName: string }>;
   onSetDefault: () => void;
   onReset: () => void;
   onClose: () => void;
@@ -57,6 +61,7 @@ export function SinglePlotDesignDialog({
   overlayEicEnabled = false,
   setOverlayEicEnabled,
   overlayTraceNames = [],
+  overlaySessions = [],
   onSetDefault,
   onReset,
   onClose,
@@ -104,6 +109,18 @@ export function SinglePlotDesignDialog({
     onChange((prev) => ({
       ...prev,
       eicOverlay: { ...prev.eicOverlay, ...patch },
+    }));
+  };
+
+  const overlayCfg = s.overlaySettings ?? {};
+
+  const updateOverlaySettings = (patch: Partial<ChartOverlaySettings>) => {
+    onChange((prev) => ({
+      ...prev,
+      [graphId]: {
+        ...prev[graphId],
+        overlaySettings: { ...(prev[graphId].overlaySettings ?? {}), ...patch },
+      },
     }));
   };
 
@@ -214,32 +231,185 @@ export function SinglePlotDesignDialog({
           </div>
         </GroupBox>
 
+        {/* Overlay Configuration & Comparison Modes */}
+        {(graphId === "tic" || graphId === "uv" || graphId === "spectrum") && (
+          <GroupBox title="Overlay & Multi-Trace Settings">
+            <p className="mb-2 text-[11px] text-ink-500">
+              Control visualization modes, stacking, opacity, and peak alignment when multiple traces/files are compared.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {(graphId === "tic" || graphId === "uv") && (
+                <SelectSetting
+                  label="Display mode"
+                  value={
+                    overlayCfg.mode === "normalized" || overlayCfg.chromatogramMode === "normalized"
+                      ? "normalized"
+                      : overlayCfg.mode === "stacked" || overlayCfg.chromatogramMode === "stacked"
+                      ? "stacked"
+                      : "raw"
+                  }
+                  options={[
+                    { value: "raw", label: "Standard Overlay (Shared Axis)" },
+                    { value: "normalized", label: "Normalized (% Base Peak 0–100%)" },
+                    { value: "stacked", label: "Stacked / Waterfall" },
+                  ]}
+                  onChange={(v) =>
+                    updateOverlaySettings({
+                      mode: v as any,
+                      chromatogramMode: v as any,
+                    })
+                  }
+                />
+              )}
+              {graphId === "spectrum" && (
+                <SelectSetting
+                  label="Display mode"
+                  value={
+                    overlayCfg.mode === "butterfly" || overlayCfg.spectrumMode === "butterfly"
+                      ? "butterfly"
+                      : overlayCfg.mode === "normalized" || overlayCfg.spectrumMode === "normalized"
+                      ? "normalized"
+                      : "raw"
+                  }
+                  options={[
+                    { value: "raw", label: "Standard Overlay (Shared bars)" },
+                    { value: "butterfly", label: "Mirrored / Butterfly (Head-to-Tail)" },
+                    { value: "normalized", label: "Normalized (% Base Peak 0–100%)" },
+                  ]}
+                  onChange={(v) =>
+                    updateOverlaySettings({
+                      mode: v as any,
+                      spectrumMode: (v === "raw" ? "overlay" : v) as any,
+                    })
+                  }
+                />
+              )}
+              <NumberSetting
+                label="Trace opacity"
+                value={overlayCfg.opacity ?? overlayCfg.traceOpacity ?? 0.85}
+                min={0.1}
+                max={1.0}
+                step={0.05}
+                onChange={(v) =>
+                  updateOverlaySettings({
+                    opacity: v ?? 0.85,
+                    traceOpacity: v ?? 0.85,
+                  })
+                }
+              />
+              {(graphId === "tic" || graphId === "uv") &&
+                (overlayCfg.mode === "stacked" || overlayCfg.chromatogramMode === "stacked") && (
+                  <NumberSetting
+                    label="Stacking gap (% offset)"
+                    value={overlayCfg.stackGap ?? overlayCfg.stackingGapPercent ?? 15}
+                    min={5}
+                    max={100}
+                    step={5}
+                    onChange={(v) =>
+                      updateOverlaySettings({
+                        stackGap: v ?? 15,
+                        stackingGapPercent: v ?? 15,
+                      })
+                    }
+                  />
+                )}
+            </div>
+
+            {graphId === "spectrum" && (
+              <div className="mt-2 flex flex-col gap-2 rounded border border-ink-100 bg-ink-50/40 p-2.5">
+                <Check
+                  label="Snap comparison spectrum to nearest local TIC apex"
+                  checked={overlayCfg.snapApex ?? false}
+                  onChange={(v) => updateOverlaySettings({ snapApex: v })}
+                />
+                {overlayCfg.snapApex && (
+                  <div className="w-full sm:w-1/2">
+                    <NumberSetting
+                      label="Apex search window (± min)"
+                      value={overlayCfg.snapToleranceMin ?? 0.05}
+                      min={0.01}
+                      max={0.5}
+                      step={0.01}
+                      onChange={(v) =>
+                        updateOverlaySettings({ snapToleranceMin: v ?? 0.05 })
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </GroupBox>
+        )}
+
         {/* Overlay Trace Colors */}
-        {overlayTraceNames && overlayTraceNames.length > 0 && (
+        {((overlaySessions && overlaySessions.length > 0) ||
+          (overlayTraceNames && overlayTraceNames.length > 0)) && (
           <GroupBox title="Overlay Trace Colors">
             <p className="mb-2.5 text-[11px] text-ink-500">
               Customize colors for each overlaid trace on this plot.
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {overlayTraceNames.map((name, i) => {
-                const currentColor =
-                  s.overlayColors?.[i] ?? OVERLAY_PALETTE[i % OVERLAY_PALETTE.length];
-                return (
-                  <ColorSetting
-                    key={i}
-                    label={`Overlay ${i + 1}: ${name}`}
-                    value={currentColor}
-                    onChange={(newColor) => {
-                      const updated = [...(s.overlayColors ?? OVERLAY_PALETTE.slice(0, overlayTraceNames.length))];
-                      while (updated.length <= i) {
-                        updated.push(OVERLAY_PALETTE[updated.length % OVERLAY_PALETTE.length]);
-                      }
-                      updated[i] = newColor;
-                      updateChart({ overlayColors: updated });
-                    }}
-                  />
-                );
-              })}
+              {overlaySessions && overlaySessions.length > 0
+                ? overlaySessions.map((sess, i) => {
+                    const currentColor =
+                      s.overlayColorsBySessionId?.[sess.sessionId] ??
+                      s.overlayColors?.[i] ??
+                      OVERLAY_PALETTE[i % OVERLAY_PALETTE.length];
+                    return (
+                      <ColorSetting
+                        key={sess.sessionId}
+                        label={`Overlay ${i + 1}: ${sess.displayName}`}
+                        value={currentColor}
+                        onChange={(newColor) => {
+                          const updated = [
+                            ...(s.overlayColors ??
+                              OVERLAY_PALETTE.slice(0, overlaySessions.length)),
+                          ];
+                          while (updated.length <= i) {
+                            updated.push(
+                              OVERLAY_PALETTE[
+                                updated.length % OVERLAY_PALETTE.length
+                              ],
+                            );
+                          }
+                          updated[i] = newColor;
+                          updateChart({
+                            overlayColors: updated,
+                            overlayColorsBySessionId: {
+                              ...(s.overlayColorsBySessionId ?? {}),
+                              [sess.sessionId]: newColor,
+                            },
+                          });
+                        }}
+                      />
+                    );
+                  })
+                : overlayTraceNames.map((name, i) => {
+                    const currentColor =
+                      s.overlayColors?.[i] ?? OVERLAY_PALETTE[i % OVERLAY_PALETTE.length];
+                    return (
+                      <ColorSetting
+                        key={i}
+                        label={`Overlay ${i + 1}: ${name}`}
+                        value={currentColor}
+                        onChange={(newColor) => {
+                          const updated = [
+                            ...(s.overlayColors ??
+                              OVERLAY_PALETTE.slice(0, overlayTraceNames.length)),
+                          ];
+                          while (updated.length <= i) {
+                            updated.push(
+                              OVERLAY_PALETTE[
+                                updated.length % OVERLAY_PALETTE.length
+                              ],
+                            );
+                          }
+                          updated[i] = newColor;
+                          updateChart({ overlayColors: updated });
+                        }}
+                      />
+                    );
+                  })}
             </div>
           </GroupBox>
         )}

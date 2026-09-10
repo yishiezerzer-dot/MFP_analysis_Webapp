@@ -90,12 +90,15 @@ import {
   OVERLAY_PALETTE,
   saveGraphSettingsDefault,
   type AxisLimits,
+  type ChartOverlaySettings,
   type ChartSettings,
+  type ChromatogramOverlayMode,
   type EICOverlaySettings,
   type FrameMode,
   type GraphSettings,
   type LabelSettings,
   type PolymerLabelSettings,
+  type SpectrumOverlayMode,
 } from "../lcms/settings";
 import { NumberSetting } from "../components/lcms/DialogControls";
 import { FeatureTableDialog } from "../components/lcms/FeatureTableDialog";
@@ -269,10 +272,12 @@ interface LCMSUVOverlayTrace {
   session_id: string;
   display_name: string;
   uv: AvailableUVChromatogram;
+  offset?: number;
 }
 
 interface LCMSUVOverlayChartTrace extends LCMSUVOverlayTrace {
   labels: UVTextLabel[];
+  offset?: number;
 }
 
 interface LCMSSpectrumOverlayTrace {
@@ -1222,6 +1227,10 @@ export function LCMSView() {
   // UV↔MS alignment
   const [uvOffsetText, setUvOffsetText] = useStoredState(`${LCMS_STORAGE_PREFIX}.uvOffsetText`, "0.000");
   const [uvOffset, setUvOffset] = useStoredState(`${LCMS_STORAGE_PREFIX}.uvOffset`, 0);
+  const [uvOffsetBySessionId, setUvOffsetBySessionId] = useStoredState<Record<string, number>>(
+    `${LCMS_STORAGE_PREFIX}.uvOffsetBySessionId`,
+    {},
+  );
   const [autoAlignUv, setAutoAlignUv] = useStoredState(`${LCMS_STORAGE_PREFIX}.autoAlignUv`, false);
 
   // Annotate – spectrum
@@ -1416,6 +1425,23 @@ export function LCMSView() {
   const [graphSettings, setGraphSettings] = useState<GraphSettings>(() =>
     loadGraphSettingsDefault(),
   );
+
+  const updateGraphOverlayMode = useCallback(
+    (graphId: "tic" | "uv" | "spectrum", mode: any) => {
+      setGraphSettings((prev) => ({
+        ...prev,
+        [graphId]: {
+          ...prev[graphId],
+          overlaySettings: {
+            ...(prev[graphId].overlaySettings ?? {}),
+            mode,
+            ...(graphId === "spectrum" ? { spectrumMode: mode } : { chromatogramMode: mode }),
+          },
+        },
+      }));
+    },
+    [],
+  );
   const [polymerDialogOpen, setPolymerDialogOpen] = useState(false);
   const [polymerStudioOpen, setPolymerStudioOpen] = useState(false);
   const [activePeakContext, setActivePeakContext] = useState<PeakContextData | null>(null);
@@ -1579,8 +1605,13 @@ export function LCMSView() {
       setSpectrum(null);
       setSelectedRt(null);
       setSelectedUvRt(null);
+      if (activeSid && activeSid in uvOffsetBySessionId) {
+        const off = uvOffsetBySessionId[activeSid] ?? 0;
+        setUvOffset(off);
+        setUvOffsetText(off.toFixed(3));
+      }
     }
-  }, [activeSid]);
+  }, [activeSid, setUvOffset, setUvOffsetText, uvOffsetBySessionId]);
 
   const pol = polarity === "all" ? undefined : polarity;
 
@@ -1848,9 +1879,10 @@ export function LCMSView() {
     () =>
       uvOverlay.map((trace) => ({
         ...trace,
+        offset: uvOffsetBySessionId[trace.session_id] ?? 0,
         labels: uvLabelsBySessionId[trace.session_id] ?? [],
       })),
-    [uvLabelsBySessionId, uvOverlay],
+    [uvLabelsBySessionId, uvOffsetBySessionId, uvOverlay],
   );
 
   // --- callbacks ------------------------------------------------------------
@@ -2602,16 +2634,18 @@ export function LCMSView() {
       toleranceOverride?: number,
       metadata?: Partial<LCMSEICMetadata>,
       toleranceUnitOverride?: "da" | "ppm",
+      sessionIdOverride?: string,
     ) => {
-      if (!activeSid) return;
+      const sourceSid = sessionIdOverride ?? activeSid;
+      if (!sourceSid) return;
       if (!Number.isFinite(target)) {
         setInfo("Enter a valid m/z before generating an EIC.");
         return;
       }
       const tolerance = Math.max(0.000001, toleranceOverride ?? eicTol);
       const toleranceUnit = toleranceUnitOverride ?? eicUnit;
-      const sourceSid = activeSid;
-      const sourceFile = active?.display_name ?? "LCMS session";
+      const targetSession = sessions.find((s) => s.session_id === sourceSid);
+      const sourceFile = targetSession?.display_name ?? active?.display_name ?? "LCMS session";
       setBusy(true);
       setError(null);
       try {
@@ -2639,7 +2673,7 @@ export function LCMSView() {
         setBusy(false);
       }
     },
-    [actionDispatch, active?.display_name, activeSid, eicTol, eicUnit, pol],
+    [actionDispatch, active?.display_name, activeSid, eicTol, eicUnit, pol, sessions],
   );
 
   const runEIC = async () => {
@@ -2647,20 +2681,39 @@ export function LCMSView() {
   };
 
   const onSpectrumPeakClick = useCallback(
-    (mz: number, intensity?: number, mouseEvent?: MouseEvent) => {
+    (
+      mz: number,
+      intensity?: number,
+      mouseEvent?: MouseEvent,
+      target?: { sessionId?: string; displayName?: string },
+    ) => {
       const clientX = mouseEvent?.clientX ?? (window.innerWidth / 2 - 140);
       const clientY = mouseEvent?.clientY ?? (window.innerHeight / 2);
-      const matchedLabel = spectrum?.labels.find((l) => Math.abs(l.mz - mz) < 0.05);
+      const targetSid = target?.sessionId ?? activeSid;
+      const targetSession = sessions.find((s) => s.session_id === targetSid);
+      const targetFile =
+        target?.displayName ?? targetSession?.display_name ?? active?.display_name ?? "LCMS session";
+
+      let matchedLabel: SpectrumLabel | undefined;
+      if (!target?.sessionId || target.sessionId === activeSid) {
+        matchedLabel = spectrum?.labels.find((l) => Math.abs(l.mz - mz) < 0.05);
+      } else {
+        const trace = spectrumOverlay.find((t) => t.session_id === target.sessionId);
+        matchedLabel = trace?.spectrum.labels.find((l) => Math.abs(l.mz - mz) < 0.05);
+      }
+
       setActivePeakContext({
         mz,
         intensity: intensity ?? matchedLabel?.intensity ?? 0,
         label: matchedLabel?.text,
         source: matchedLabel?.source,
+        sessionId: targetSid ?? undefined,
+        fileName: targetFile,
         x: clientX,
         y: clientY,
       });
     },
-    [spectrum],
+    [active?.display_name, activeSid, sessions, spectrum, spectrumOverlay],
   );
 
   const integrateEicPlot = useCallback(
@@ -2745,6 +2798,9 @@ export function LCMSView() {
     const offset = -bestLag * step;
     setUvOffset(offset);
     setUvOffsetText(offset.toFixed(3));
+    if (activeSid) {
+      setUvOffsetBySessionId((prev) => ({ ...prev, [activeSid]: offset }));
+    }
     setInfo(`Auto-aligned UV to MS: offset ${offset.toFixed(3)} min`);
   };
 
@@ -2897,7 +2953,7 @@ export function LCMSView() {
 
   useEffect(() => {
     const ids = overlaySessionIds.filter((sid) => sid !== activeSid);
-    const shouldOverlay = (overlaySpectrumEnabled || overlayTicEnabled) && ids.length > 0;
+    const shouldOverlay = overlaySpectrumEnabled && ids.length > 0;
     if (!shouldOverlay) {
       setSpectrumOverlay([]);
       return;
@@ -2942,12 +2998,37 @@ export function LCMSView() {
         );
       });
     } else if (selectedRt != null) {
+      const snapApex = Boolean(graphSettings.spectrum.overlaySettings?.snapApex);
+      const snapTolerance = graphSettings.spectrum.overlaySettings?.snapToleranceMin ?? 0.05;
+
       Promise.all(
         ids.map(async (sid) => {
           const session = sessions.find((item) => item.session_id === sid);
+          let targetRt = selectedRt;
+          if (snapApex && Number.isFinite(selectedRt)) {
+            const trace = ticOverlay.find((t) => t.session_id === sid);
+            if (trace && trace.rt_min.length > 0) {
+              let maxTic = -Infinity;
+              let bestRt = selectedRt;
+              const minRt = selectedRt - snapTolerance;
+              const maxRt = selectedRt + snapTolerance;
+              for (let i = 0; i < trace.rt_min.length; i += 1) {
+                const rt = trace.rt_min[i];
+                if (rt >= minRt && rt <= maxRt) {
+                  if (trace.tic[i] > maxTic) {
+                    maxTic = trace.tic[i];
+                    bestRt = rt;
+                  }
+                }
+              }
+              if (Number.isFinite(bestRt)) {
+                targetRt = bestRt;
+              }
+            }
+          }
           try {
             const payload = await api.lcms.spectrum(sid, {
-              rt_min: selectedRt,
+              rt_min: targetRt,
               polarity: pol,
               top_n: spectrumTopN,
               min_rel: spectrumMinRel,
@@ -2978,9 +3059,10 @@ export function LCMSView() {
   }, [
     activeSid,
     getApiPolymerSettingsForSession,
+    graphSettings.spectrum.overlaySettings?.snapApex,
+    graphSettings.spectrum.overlaySettings?.snapToleranceMin,
     overlaySessionIds,
     overlaySpectrumEnabled,
-    overlayTicEnabled,
     pol,
     polymerSettingsBySessionId,
     reloadPulse,
@@ -2990,6 +3072,7 @@ export function LCMSView() {
     spectrumFromRegionData,
     spectrumMinRel,
     spectrumTopN,
+    ticOverlay,
   ]);
 
   const loadSummedRegionSpectrum = async () => {
@@ -3917,6 +4000,8 @@ export function LCMSView() {
             <>
               {showTIC && (
                 <TICChart
+                  activeSid={activeSid}
+                  activeDisplayName={active?.display_name}
                   tic={tic}
                   overlayTraces={ticOverlay}
                   onClick={onTICClick}
@@ -3939,6 +4024,7 @@ export function LCMSView() {
                   settings={graphSettings.tic}
                   onOpenDesign={() => setDesignPlotId("tic")}
                   onReload={handleReloadTIC}
+                  onUpdateOverlayMode={(mode) => updateGraphOverlayMode("tic", mode)}
                 />
               )}
               {visibleEicPlots.length > 0 && overlayEicEnabled ? (
@@ -4004,6 +4090,7 @@ export function LCMSView() {
                 <UVChromatogramChart
                   uv={uv}
                   overlayTraces={uvOverlayWithLabels}
+                  showOverlayLabels={showOverlayLabels}
                   busy={uvBusy}
                   xOffset={uvOffset}
                   selectedUvRt={
@@ -4055,11 +4142,16 @@ export function LCMSView() {
                   setUvOffsetText={setUvOffsetText}
                   onApplyOffset={() => {
                     const v = parseFloat(uvOffsetText);
-                    setUvOffset(Number.isFinite(v) ? v : 0);
+                    const parsed = Number.isFinite(v) ? v : 0;
+                    setUvOffset(parsed);
+                    if (activeSid) {
+                      setUvOffsetBySessionId((prev) => ({ ...prev, [activeSid]: parsed }));
+                    }
                   }}
                   autoAlignUv={autoAlignUv}
                   setAutoAlignUv={setAutoAlignUv}
                   onAutoAlignUV={() => dispatchUiAction("lcms.auto_align_uv")}
+                  onUpdateOverlayMode={(mode) => updateGraphOverlayMode("uv", mode)}
                 />
               )}
               {showSpectrum && (
@@ -4079,6 +4171,7 @@ export function LCMSView() {
                   onDeconvolution={() => setDeconvolutionOpen(true)}
                   onOpenDesign={() => setDesignPlotId("spectrum")}
                   onReload={handleReloadSpectrum}
+                  onUpdateOverlayMode={(mode) => updateGraphOverlayMode("spectrum", mode)}
                 />
               )}
             </>
@@ -4151,7 +4244,11 @@ export function LCMSView() {
           setUvOffsetText={setUvOffsetText}
           onApplyOffset={() => {
             const v = parseFloat(uvOffsetText);
-            setUvOffset(Number.isFinite(v) ? v : 0);
+            const parsed = Number.isFinite(v) ? v : 0;
+            setUvOffset(parsed);
+            if (activeSid) {
+              setUvOffsetBySessionId((prev) => ({ ...prev, [activeSid]: parsed }));
+            }
           }}
           autoAlignUv={autoAlignUv}
           setAutoAlignUv={setAutoAlignUv}
@@ -4238,11 +4335,20 @@ export function LCMSView() {
       <PeakContextPopover
         peak={activePeakContext}
         onClose={() => setActivePeakContext(null)}
-        onExtractEic={(mz) => {
+        onExtractEic={(mz, sessionId) => {
+          const sid = sessionId ?? activePeakContext?.sessionId;
           setEicInput(mz.toFixed(4));
-          void createEICForMz(mz, "spectrum", undefined, {
-            label: `MS1 peak ${mz.toFixed(4)}`,
-          });
+          void createEICForMz(
+            mz,
+            "spectrum",
+            undefined,
+            {
+              label: activePeakContext?.label ?? `MS1 peak ${mz.toFixed(4)}`,
+              annotation: activePeakContext?.source,
+            },
+            undefined,
+            sid,
+          );
         }}
         onDeconvolute={() => setDeconvolutionOpen(true)}
         onMatchPolymer={() => setPolymerStudioOpen(true)}
@@ -4305,6 +4411,15 @@ export function LCMSView() {
               : designPlotId === "eic" && visibleEicPlots.length > 1
               ? visibleEicPlots.map((p) => `${eicSourceFile(p)} m/z ${p.eic.target_mz.toFixed(4)}`)
               : []
+          }
+          overlaySessions={
+            designPlotId === "tic"
+              ? ticOverlay.map((t) => ({ sessionId: t.session_id, displayName: t.display_name }))
+              : designPlotId === "spectrum"
+              ? spectrumOverlay.map((t) => ({ sessionId: t.session_id, displayName: t.display_name }))
+              : designPlotId === "uv"
+              ? uvOverlayWithLabels.map((t) => ({ sessionId: t.session_id, displayName: t.display_name }))
+              : undefined
           }
           onSetDefault={() => {
             saveGraphSettingsDefault(graphSettings);
@@ -5911,6 +6026,8 @@ function NavyButton({
 function TICChart(props: {
   tic: TICData | null;
   overlayTraces: LCMSTICOverlayTrace[];
+  activeSid?: string | null;
+  activeDisplayName?: string | null;
   onClick: (e: Readonly<PlotMouseEvent>) => void;
   onRegionSelected?: (rtMin: number, rtMax: number) => void;
   onUndoRegion?: () => void;
@@ -5927,11 +6044,26 @@ function TICChart(props: {
   settings: ChartSettings;
   onOpenDesign?: () => void;
   onReload?: () => void;
+  onUpdateOverlayMode?: (mode: ChromatogramOverlayMode) => void;
 }) {
   const [localRevision, setLocalRevision] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<PlotlyHTMLElement | null>(null);
   const plotSize = useContainerSize(containerRef, props.settings.height);
+
+  const nonActiveOverlayTraces = useMemo(
+    () => props.overlayTraces.filter((trace) => !props.activeSid || trace.session_id !== props.activeSid),
+    [props.activeSid, props.overlayTraces],
+  );
+  const overlayMode: ChromatogramOverlayMode =
+    props.settings.overlaySettings?.mode === "normalized" || props.settings.overlaySettings?.chromatogramMode === "normalized"
+      ? "normalized"
+      : props.settings.overlaySettings?.mode === "stacked" || props.settings.overlaySettings?.chromatogramMode === "stacked"
+      ? "stacked"
+      : "raw";
+  const stackGap = props.settings.overlaySettings?.stackGap ?? props.settings.overlaySettings?.stackingGapPercent ?? 15;
+  const traceOpacity = props.settings.overlaySettings?.opacity ?? props.settings.overlaySettings?.traceOpacity ?? 0.85;
+
   usePlotResizePulses([
     localRevision,
     props.regionSelect,
@@ -5953,8 +6085,11 @@ function TICChart(props: {
     props.settings.yTitle,
     props.tic?.rt_min.length,
     props.tic?.tic.length,
-    props.overlayTraces.length,
+    nonActiveOverlayTraces.length,
     props.rtUnit,
+    overlayMode,
+    stackGap,
+    traceOpacity,
   ], plotRef);
   const pt = usePlotlyTheme();
   const scale = props.rtUnit === "seconds" ? 60 : 1;
@@ -5963,23 +6098,60 @@ function TICChart(props: {
     () => (props.tic ? props.tic.rt_min.map((v) => v * scale) : []),
     [props.tic, scale],
   );
+
+  const { activeY, overlaySeries } = useMemo(() => {
+    if (!props.tic) return { activeY: [] as number[], overlaySeries: [] };
+    const activeMax = maxFinite(props.tic.tic, 0);
+
+    if (overlayMode === "normalized" || overlayMode === "stacked") {
+      const normActiveY = activeMax > 0 ? props.tic.tic.map((v) => (v / activeMax) * 100) : props.tic.tic;
+      const series = nonActiveOverlayTraces.map((trace, index) => {
+        const traceMax = maxFinite(trace.tic, 0);
+        const normBaseY = traceMax > 0 ? trace.tic.map((v) => (v / traceMax) * 100) : trace.tic;
+        const stackOffset = overlayMode === "stacked" ? (index + 1) * (100 + stackGap) : 0;
+        const y = stackOffset === 0 ? normBaseY : normBaseY.map((v) => v + stackOffset);
+        return {
+          trace,
+          y,
+          customdata: trace.tic,
+        };
+      });
+      return { activeY: normActiveY, overlaySeries: series };
+    }
+
+    return {
+      activeY: props.tic.tic,
+      overlaySeries: nonActiveOverlayTraces.map((trace) => ({
+        trace,
+        y: trace.tic,
+        customdata: trace.tic,
+      })),
+    };
+  }, [nonActiveOverlayTraces, overlayMode, props.tic, stackGap]);
+
   const overlayData = useMemo(
     () =>
-      props.overlayTraces.map((trace, index) => ({
+      overlaySeries.map(({ trace, y, customdata }, index) => ({
         type: "scattergl" as const,
         mode: "lines" as const,
         x: trace.rt_min.map((v) => v * scale),
-        y: trace.tic,
+        y,
+        customdata,
+        opacity: traceOpacity,
         line: {
           color:
+            props.settings.overlayColorsBySessionId?.[trace.session_id] ??
             props.settings.overlayColors?.[index] ??
             OVERLAY_PALETTE[index % OVERLAY_PALETTE.length],
           width: Math.max(1, props.settings.lineWidth * 0.9),
         },
-        hovertemplate: `${trace.display_name}<br>RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`,
+        hovertemplate:
+          overlayMode === "raw"
+            ? `${trace.display_name}<br>RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`
+            : `${trace.display_name}<br>RT: %{x:.3f} ${unit}<br>Rel: %{y:.1f}%<br>TIC: %{customdata:.3e}<extra></extra>`,
         name: trace.display_name,
       })),
-    [props.overlayTraces, props.settings.lineWidth, props.settings.overlayColors, scale, unit],
+    [overlayMode, overlaySeries, props.settings.lineWidth, props.settings.overlayColors, props.settings.overlayColorsBySessionId, scale, traceOpacity, unit],
   );
 
   const emitSelectedRtRegion = useCallback(
@@ -6077,9 +6249,9 @@ function TICChart(props: {
               {props.tic.rt_min.length.toLocaleString()} points
             </span>
           )}
-          {props.overlayTraces && props.overlayTraces.length > 0 && (
+          {nonActiveOverlayTraces.length > 0 && (
             <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
-              {props.overlayTraces.length} overlay{props.overlayTraces.length === 1 ? "" : "s"}
+              {nonActiveOverlayTraces.length} overlay{nonActiveOverlayTraces.length === 1 ? "" : "s"}
             </span>
           )}
         </div>
@@ -6164,6 +6336,49 @@ function TICChart(props: {
 
         {/* Right Cluster: Standard actions */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {nonActiveOverlayTraces.length > 0 && props.onUpdateOverlayMode && (
+            <div className="flex items-center rounded-md border border-ink-200 bg-ink-50/70 p-0.5 shadow-xs text-xs">
+              <button
+                type="button"
+                className={clsx(
+                  "rounded px-2 py-0.5 font-medium transition-colors",
+                  overlayMode === "raw"
+                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
+                    : "text-ink-600 hover:text-ink-900",
+                )}
+                onClick={() => props.onUpdateOverlayMode?.("raw")}
+                title="Overlay on shared absolute scale"
+              >
+                Raw
+              </button>
+              <button
+                type="button"
+                className={clsx(
+                  "rounded px-2 py-0.5 font-medium transition-colors",
+                  overlayMode === "normalized"
+                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
+                    : "text-ink-600 hover:text-ink-900",
+                )}
+                onClick={() => props.onUpdateOverlayMode?.("normalized")}
+                title="Normalize each trace to 0–100% base peak"
+              >
+                % Norm
+              </button>
+              <button
+                type="button"
+                className={clsx(
+                  "rounded px-2 py-0.5 font-medium transition-colors",
+                  overlayMode === "stacked"
+                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
+                    : "text-ink-600 hover:text-ink-900",
+                )}
+                onClick={() => props.onUpdateOverlayMode?.("stacked")}
+                title="Waterfall stacked chromatograms"
+              >
+                Stacked
+              </button>
+            </div>
+          )}
           {props.onOpenDesign && (
             <button
               type="button"
@@ -6213,10 +6428,14 @@ function TICChart(props: {
                 type: props.regionSelect ? "scatter" : "scattergl",
                 mode: "lines",
                 x: xs,
-                y: props.tic.tic,
+                y: activeY,
+                customdata: props.tic.tic,
                 line: { color: props.settings.color, width: props.settings.lineWidth },
-                hovertemplate: `RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`,
-                name: "TIC",
+                hovertemplate:
+                  overlayMode === "raw"
+                    ? `RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`
+                    : `RT: %{x:.3f} ${unit}<br>Rel: %{y:.1f}%<br>TIC: %{customdata:.3e}<extra></extra>`,
+                name: props.activeDisplayName ? `${props.activeDisplayName} (Active)` : "TIC",
               },
               ...overlayData,
             ]}
@@ -6237,11 +6456,24 @@ function TICChart(props: {
                 ...axisFrame(props.settings),
               },
               yaxis: {
-                title: axisTitle(props.settings.yTitle, props.settings.axisTitleSize),
+                title: axisTitle(
+                  props.settings.yTitle ||
+                    (overlayMode === "normalized"
+                      ? "TIC (% Base Peak)"
+                      : overlayMode === "stacked"
+                      ? "Stacked (% Base Peak)"
+                      : "TIC"),
+                  props.settings.axisTitleSize,
+                ),
                 zeroline: false,
                 exponentformat: "e",
                 showgrid: props.settings.showGrid,
-                range: axisRange(props.settings.axis.yMin, props.settings.axis.yMax),
+                range:
+                  overlayMode === "raw"
+                    ? axisRange(props.settings.axis.yMin, props.settings.axis.yMax)
+                    : props.settings.axis.yMin != null || props.settings.axis.yMax != null
+                    ? axisRange(props.settings.axis.yMin, props.settings.axis.yMax)
+                    : undefined,
                 tickfont: { size: props.settings.tickSize },
                 ...axisFrame(props.settings),
               },
@@ -6596,6 +6828,7 @@ function UVChromatogramChart(props: {
   selectedUvRt: number | null;
   selectedScanId?: string | null;
   labels: UVTextLabel[];
+  showOverlayLabels?: boolean;
   rtUnit: RtUnit;
   onPickFile: () => void;
   onRemove: () => void;
@@ -6611,6 +6844,7 @@ function UVChromatogramChart(props: {
   settings: ChartSettings;
   onOpenDesign?: () => void;
   onReload?: () => void;
+  onUpdateOverlayMode?: (mode: ChromatogramOverlayMode) => void;
   onAutoLabelUV?: () => void;
   onLabelSelectedRT?: () => void;
   onCustomUvLabel?: () => void;
@@ -6675,40 +6909,99 @@ function UVChromatogramChart(props: {
   const connectorOpacity = Math.min(1, Math.max(0, settings.annotationConnectorOpacity ?? 0.7));
   const connectorArrowColor = withAlpha(connectorColor, connectorOpacity);
 
+  const overlayMode: ChromatogramOverlayMode =
+    settings.overlaySettings?.mode === "normalized" || settings.overlaySettings?.chromatogramMode === "normalized"
+      ? "normalized"
+      : settings.overlaySettings?.mode === "stacked" || settings.overlaySettings?.chromatogramMode === "stacked"
+      ? "stacked"
+      : "raw";
+  const stackGap = settings.overlaySettings?.stackGap ?? settings.overlaySettings?.stackingGapPercent ?? 15;
+  const traceOpacity = settings.overlaySettings?.opacity ?? settings.overlaySettings?.traceOpacity ?? 0.85;
+
   const xs = available ? uv.rt_min.map((v) => (v + xOffset) * scale) : [];
+
+  const { activeY, overlaySeries } = useMemo(() => {
+    const rawActive = available ? uv.signal : [];
+    const activeMax = maxFinite(rawActive, 0);
+
+    if (overlayMode === "normalized" || overlayMode === "stacked") {
+      const normActiveY = activeMax > 0 ? rawActive.map((v) => (v / activeMax) * 100) : rawActive;
+      const series = overlayTraces.map((trace, index) => {
+        const traceMax = maxFinite(trace.uv.signal, 0);
+        const normBaseY = traceMax > 0 ? trace.uv.signal.map((v) => (v / traceMax) * 100) : trace.uv.signal;
+        const stackOffset = overlayMode === "stacked" ? (index + 1) * (100 + stackGap) : 0;
+        const y = stackOffset === 0 ? normBaseY : normBaseY.map((v) => v + stackOffset);
+        return {
+          trace,
+          y,
+          traceMax,
+          stackOffset,
+          customdata: trace.uv.signal,
+        };
+      });
+      return { activeY: normActiveY, overlaySeries: series };
+    }
+
+    return {
+      activeY: rawActive,
+      overlaySeries: overlayTraces.map((trace) => ({
+        trace,
+        y: trace.uv.signal,
+        traceMax: 0,
+        stackOffset: 0,
+        customdata: trace.uv.signal,
+      })),
+    };
+  }, [available, overlayMode, overlayTraces, stackGap, uv && uv.available ? uv.signal : undefined]);
+
   const overlayData = useMemo(
     () =>
-      overlayTraces.map((trace, index) => ({
-        type: "scattergl" as const,
-        mode: "lines" as const,
-        x: trace.uv.rt_min.map((v) => (v + xOffset) * scale),
-        y: trace.uv.signal,
-        line: {
-          color:
-            settings.overlayColors?.[index] ??
-            OVERLAY_PALETTE[index % OVERLAY_PALETTE.length],
-          width: Math.max(1, settings.lineWidth * 0.9),
-        },
-        hovertemplate: `${trace.display_name}<br>RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`,
-        name: trace.display_name,
-      })),
-    [overlayTraces, scale, settings.lineWidth, settings.overlayColors, unit, xOffset],
+      overlaySeries.map(({ trace, y, customdata }, index) => {
+        const traceOffset = trace.offset ?? 0;
+        return {
+          type: "scattergl" as const,
+          mode: "lines" as const,
+          x: trace.uv.rt_min.map((v) => (v + traceOffset) * scale),
+          y,
+          customdata,
+          opacity: traceOpacity,
+          line: {
+            color:
+              settings.overlayColorsBySessionId?.[trace.session_id] ??
+              settings.overlayColors?.[index] ??
+              OVERLAY_PALETTE[index % OVERLAY_PALETTE.length],
+            width: Math.max(1, settings.lineWidth * 0.9),
+          },
+          hovertemplate:
+            overlayMode === "raw"
+              ? `${trace.display_name}<br>RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`
+              : `${trace.display_name}<br>RT: %{x:.3f} ${unit}<br>Rel: %{y:.1f}%<br>Signal: %{customdata:.3e}<extra></extra>`,
+          name: trace.display_name,
+        };
+      }),
+    [overlayMode, overlaySeries, scale, settings.lineWidth, settings.overlayColors, settings.overlayColorsBySessionId, traceOpacity, unit],
   );
   const overlayLabelCount = useMemo(
     () => overlayTraces.reduce((count, trace) => count + trace.labels.length, 0),
     [overlayTraces],
   );
   const overlayAnnotations = useMemo(
-    () =>
-      overlayTraces.flatMap((trace, traceIndex) =>
-        trace.labels.map((label, labelIndex) => {
+    () => {
+      if (!props.showOverlayLabels) return [];
+      return overlaySeries.flatMap(({ trace, traceMax, stackOffset }, traceIndex) => {
+        const traceOffset = trace.offset ?? 0;
+        return trace.labels.map((label, labelIndex) => {
           const stackShift = -14 * (traceIndex + 1);
           const fallbackAy =
             labelOrientation === "vertical" ? -78 - labelIndex * 26 : -42 - labelIndex * 22;
           const ay = label.ay ?? fallbackAy;
+          const labelY =
+            (overlayMode === "normalized" || overlayMode === "stacked") && traceMax > 0
+              ? (label.signal / traceMax) * 100 + stackOffset
+              : label.signal;
           return {
-            x: (label.uv_rt_min + xOffset) * scale,
-            y: label.signal,
+            x: (label.uv_rt_min + traceOffset) * scale,
+            y: labelY,
             text: cleanLabelText(label.text),
             textangle: labelOrientation === "vertical" ? ("-90" as const) : ("0" as const),
             showarrow: true,
@@ -6721,12 +7014,16 @@ function UVChromatogramChart(props: {
             editable: false,
             font: {
               size: Math.max(8, settings.labels.fontSize - 1),
-              color: OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length],
+              color:
+                settings.overlayColorsBySessionId?.[trace.session_id] ??
+                settings.overlayColors?.[traceIndex] ??
+                OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length],
             },
           };
-        }),
-      ),
-    [connectorArrowColor, labelOrientation, overlayTraces, scale, settings.labels.fontSize, xOffset],
+        });
+      });
+    },
+    [connectorArrowColor, labelOrientation, overlayMode, overlaySeries, props.showOverlayLabels, scale, settings.labels.fontSize, settings.overlayColors, settings.overlayColorsBySessionId],
   );
   const primaryLabelLayer = useMemo(() => {
     const signalValues =
@@ -6735,6 +7032,7 @@ function UVChromatogramChart(props: {
         : labels.map((label) => label.signal);
     const signalMin = signalValues.length > 0 ? Math.min(...signalValues) : 0;
     const signalMax = signalValues.length > 0 ? Math.max(...signalValues) : 1;
+    const isNorm = overlayMode === "normalized" || overlayMode === "stacked";
     if (bunchLabels) {
       return buildBunchedAnnotations(labels, {
         xOffset,
@@ -6753,7 +7051,7 @@ function UVChromatogramChart(props: {
     return {
       annotations: labels.map((label, index) => ({
         x: (label.uv_rt_min + xOffset) * scale,
-        y: label.signal,
+        y: isNorm && signalMax > 0 ? (label.signal / signalMax) * 100 : label.signal,
         text: cleanLabelText(label.text),
         textangle: labelOrientation === "vertical" ? ("-90" as const) : ("0" as const),
         showarrow: true,
@@ -6781,6 +7079,7 @@ function UVChromatogramChart(props: {
     connectorColor,
     labelOrientation,
     labels,
+    overlayMode,
     scale,
     settings.labels.color,
     settings.labels.fontSize,
@@ -7027,6 +7326,49 @@ function UVChromatogramChart(props: {
 
         {/* Right Cluster: Standard controls, export, and file management */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {overlayTraces.length > 0 && props.onUpdateOverlayMode && (
+            <div className="flex items-center rounded-md border border-ink-200 bg-ink-50/70 p-0.5 shadow-xs text-xs">
+              <button
+                type="button"
+                className={clsx(
+                  "rounded px-2 py-0.5 font-medium transition-colors",
+                  overlayMode === "raw"
+                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
+                    : "text-ink-600 hover:text-ink-900",
+                )}
+                onClick={() => props.onUpdateOverlayMode?.("raw")}
+                title="Overlay on shared absolute scale"
+              >
+                Raw
+              </button>
+              <button
+                type="button"
+                className={clsx(
+                  "rounded px-2 py-0.5 font-medium transition-colors",
+                  overlayMode === "normalized"
+                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
+                    : "text-ink-600 hover:text-ink-900",
+                )}
+                onClick={() => props.onUpdateOverlayMode?.("normalized")}
+                title="Normalize each trace to 0–100% base peak"
+              >
+                % Norm
+              </button>
+              <button
+                type="button"
+                className={clsx(
+                  "rounded px-2 py-0.5 font-medium transition-colors",
+                  overlayMode === "stacked"
+                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
+                    : "text-ink-600 hover:text-ink-900",
+                )}
+                onClick={() => props.onUpdateOverlayMode?.("stacked")}
+                title="Waterfall stacked chromatograms"
+              >
+                Stacked
+              </button>
+            </div>
+          )}
           {props.onOpenDesign && (
             <button
               type="button"
@@ -7333,10 +7675,14 @@ function UVChromatogramChart(props: {
                         type: "scattergl" as const,
                         mode: "lines" as const,
                         x: xs,
-                        y: uv.signal,
+                        y: activeY,
+                        customdata: uv.signal,
                         line: { color: settings.color, width: settings.lineWidth },
-                        hovertemplate: `RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`,
-                        name: "UV",
+                        hovertemplate:
+                          overlayMode === "raw"
+                            ? `RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`
+                            : `RT: %{x:.3f} ${unit}<br>Rel: %{y:.1f}%<br>Signal: %{customdata:.3e}<extra></extra>`,
+                        name: "UV (Active)",
                       },
                     ]
                   : []),
@@ -7360,18 +7706,28 @@ function UVChromatogramChart(props: {
                 },
                 yaxis: {
                   title: axisTitle(
-                    settings.yTitle || meta?.y_label || meta?.y_col || "Signal (AU)",
+                    settings.yTitle ||
+                      (overlayMode === "normalized"
+                        ? "UV (% Base Peak)"
+                        : overlayMode === "stacked"
+                        ? "Stacked (% Base Peak)"
+                        : meta?.y_label || meta?.y_col || "Signal (AU)"),
                     settings.axisTitleSize,
                   ),
                   zeroline: false,
                   exponentformat: "e",
                   showgrid: settings.showGrid,
-                  range: axisRange(settings.axis.yMin, settings.axis.yMax),
+                  range:
+                    overlayMode === "raw"
+                      ? axisRange(settings.axis.yMin, settings.axis.yMax)
+                      : settings.axis.yMin != null || settings.axis.yMax != null
+                      ? axisRange(settings.axis.yMin, settings.axis.yMax)
+                      : undefined,
                   tickfont: { size: settings.tickSize },
                   ...axisFrame(settings),
                 },
                 hovermode: "x",
-                annotations: [...primaryLabelLayer.annotations, ...overlayAnnotations],
+                annotations: [...primaryLabelLayer.annotations, ...(props.showOverlayLabels ? overlayAnnotations : [])],
                 colorway: pt.colorway,
                 plot_bgcolor: pt.plot_bgcolor,
                 paper_bgcolor: pt.paper_bgcolor,
@@ -7470,10 +7826,16 @@ function SpectrumChart(props: {
   polymerEnabled: boolean;
   polymerStudioOpen?: boolean;
   onTogglePolymerStudio?: () => void;
-  onPeakClick?: (mz: number, intensity?: number, event?: MouseEvent) => void;
+  onPeakClick?: (
+    mz: number,
+    intensity?: number,
+    event?: MouseEvent,
+    target?: { sessionId?: string; displayName?: string },
+  ) => void;
   onDeconvolution?: () => void;
   onOpenDesign?: () => void;
   onReload?: () => void;
+  onUpdateOverlayMode?: (mode: SpectrumOverlayMode) => void;
 }) {
   const [localRevision, setLocalRevision] = useState(0);
   const s = props.spectrum;
@@ -7481,8 +7843,13 @@ function SpectrumChart(props: {
   const specPlotRef = useRef<PlotlyHTMLElement | null>(null);
   const specPlotSize = useContainerSize(specContainerRef, props.settings.height);
   const pt = usePlotlyTheme();
+
+  const overlayMode: SpectrumOverlayMode = props.settings.overlaySettings?.spectrumMode ?? "overlay";
+  const traceOpacity = props.settings.overlaySettings?.traceOpacity ?? 0.38;
+
   usePlotResizePulses([
     localRevision,
+    overlayMode,
     props.annotate,
     props.polymerEnabled,
     props.rtUnit,
@@ -7500,6 +7867,7 @@ function SpectrumChart(props: {
     props.settings.labels.enabled,
     props.settings.labels.fontSize,
     props.settings.overlayColors,
+    props.settings.overlayColorsBySessionId,
     props.settings.showGrid,
     props.settings.tickSize,
     props.settings.title,
@@ -7510,65 +7878,175 @@ function SpectrumChart(props: {
     props.spectrum?.polymer_labels?.length,
     ...props.overlayTraces.map((trace) => trace.spectrum.mz.length),
   ], specPlotRef);
+
   const polymerLabelCount = s
     ? (s.polymer_labels ?? s.labels.filter((label) => label.source === "polymer")).length
     : 0;
   const visibleLabels = s
     ? s.labels.filter((label) => props.settings.labels.enabled || label.source === "polymer")
     : [];
+
   const handleSpectrumClick = (event: Readonly<PlotMouseEvent>) => {
     const point = event.points?.[0];
     const mz = Number(point?.x);
-    const intensity = Number(point?.y);
+    const rawY = Number(point?.y);
+    const customdata = Number((point as unknown as { customdata?: number })?.customdata);
+    const intensity = Number.isFinite(customdata)
+      ? customdata
+      : Number.isFinite(rawY)
+      ? Math.abs(rawY)
+      : undefined;
+
     if (!Number.isFinite(mz) || !props.onPeakClick) return;
     const clientEvent = (event as unknown as { event?: MouseEvent }).event;
-    props.onPeakClick(mz, intensity, clientEvent);
+
+    // Detect if click was on active spectrum (curveNumber === 0) or an overlay trace (curveNumber >= 1)
+    const curveNumber = point?.curveNumber;
+    let target: { sessionId?: string; displayName?: string } | undefined;
+    if (typeof curveNumber === "number" && curveNumber > 0 && curveNumber <= props.overlayTraces.length) {
+      const clickedTrace = props.overlayTraces[curveNumber - 1];
+      if (clickedTrace) {
+        target = {
+          sessionId: clickedTrace.session_id,
+          displayName: clickedTrace.display_name,
+        };
+      }
+    }
+
+    props.onPeakClick(mz, intensity, clientEvent, target);
   };
+
+  const activeBasePeak = useMemo(() => {
+    if (!s || s.intensity.length === 0) return 1;
+    let max = 0;
+    for (let i = 0; i < s.intensity.length; i++) {
+      if (s.intensity[i] > max) max = s.intensity[i];
+    }
+    return max > 0 ? max : 1;
+  }, [s]);
+
+  const activeY = useMemo(() => {
+    if (!s) return [];
+    if (overlayMode === "normalized") {
+      return s.intensity.map((v) => (v / activeBasePeak) * 100);
+    }
+    return s.intensity;
+  }, [activeBasePeak, overlayMode, s]);
+
   const overlayData = useMemo(
     () =>
-      props.overlayTraces.map((trace, index) => ({
-        type: "bar" as const,
-        x: trace.spectrum.mz,
-        y: trace.spectrum.intensity,
-        width: props.settings.barWidth,
-        marker: {
-          color:
-            props.settings.overlayColors?.[index] ??
-            OVERLAY_PALETTE[index % OVERLAY_PALETTE.length],
-        },
-        opacity: 0.38,
-        hovertemplate: `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>`,
-        name: trace.display_name,
-      })),
-    [props.overlayTraces, props.settings.barWidth, props.settings.overlayColors],
+      props.overlayTraces.map((trace, index) => {
+        let traceBasePeak = 1;
+        if (overlayMode === "normalized") {
+          let max = 0;
+          for (let i = 0; i < trace.spectrum.intensity.length; i++) {
+            if (trace.spectrum.intensity[i] > max) max = trace.spectrum.intensity[i];
+          }
+          traceBasePeak = max > 0 ? max : 1;
+        }
+
+        const isButterfly = overlayMode === "butterfly";
+        const isNorm = overlayMode === "normalized";
+
+        let yValues: number[];
+        let hovertemplate: string;
+
+        if (isButterfly) {
+          yValues = trace.spectrum.intensity.map((v) => -v);
+          hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{customdata:.3e}<extra></extra>`;
+        } else if (isNorm) {
+          yValues = trace.spectrum.intensity.map((v) => (v / traceBasePeak) * 100);
+          hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata:.3e}<extra></extra>`;
+        } else {
+          yValues = trace.spectrum.intensity;
+          hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>`;
+        }
+
+        const traceColor =
+          props.settings.overlayColorsBySessionId?.[trace.session_id] ??
+          props.settings.overlayColors?.[index] ??
+          OVERLAY_PALETTE[index % OVERLAY_PALETTE.length];
+
+        return {
+          type: "bar" as const,
+          x: trace.spectrum.mz,
+          y: yValues,
+          customdata: trace.spectrum.intensity,
+          width: props.settings.barWidth,
+          marker: {
+            color: traceColor,
+          },
+          opacity: isButterfly ? Math.max(0.75, traceOpacity) : traceOpacity,
+          hovertemplate,
+          name: trace.display_name,
+        };
+      }),
+    [
+      overlayMode,
+      props.overlayTraces,
+      props.settings.barWidth,
+      props.settings.overlayColors,
+      props.settings.overlayColorsBySessionId,
+      traceOpacity,
+    ],
   );
+
   const overlayAnnotations = useMemo(() => {
     if (!props.annotate || !props.showOverlayLabels) return [];
-    return props.overlayTraces.flatMap((trace, traceIndex) =>
-      trace.spectrum.labels
+    const isButterfly = overlayMode === "butterfly";
+    const isNorm = overlayMode === "normalized";
+
+    return props.overlayTraces.flatMap((trace, traceIndex) => {
+      let traceBasePeak = 1;
+      if (isNorm) {
+        let max = 0;
+        for (let i = 0; i < trace.spectrum.intensity.length; i++) {
+          if (trace.spectrum.intensity[i] > max) max = trace.spectrum.intensity[i];
+        }
+        traceBasePeak = max > 0 ? max : 1;
+      }
+
+      const traceColor =
+        props.settings.overlayColorsBySessionId?.[trace.session_id] ??
+        props.settings.overlayColors?.[traceIndex] ??
+        OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length];
+
+      return trace.spectrum.labels
         .filter((label) => props.settings.labels.enabled || label.source === "polymer")
-        .map((label, labelIndex) => ({
-          x: label.mz,
-          y: label.intensity,
-          text: label.text ? cleanLabelText(label.text) : label.mz.toFixed(4),
-          showarrow: false,
-          yshift: 18 + traceIndex * 10 + labelIndex * 2,
-          font: {
-            size: Math.max(8, props.settings.labels.fontSize - 1),
-            color:
-              props.settings.overlayColors?.[traceIndex] ??
-              OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length],
-          },
-        })),
-    );
+        .map((label, labelIndex) => {
+          let labelY = label.intensity;
+          let yshift = 18 + traceIndex * 10 + labelIndex * 2;
+          if (isButterfly) {
+            labelY = -label.intensity;
+            yshift = -(18 + traceIndex * 10 + labelIndex * 2);
+          } else if (isNorm) {
+            labelY = (label.intensity / traceBasePeak) * 100;
+          }
+
+          return {
+            x: label.mz,
+            y: labelY,
+            text: label.text ? cleanLabelText(label.text) : label.mz.toFixed(4),
+            showarrow: false,
+            yshift,
+            font: {
+              size: Math.max(8, props.settings.labels.fontSize - 1),
+              color: traceColor,
+            },
+          };
+        });
+    });
   }, [
+    overlayMode,
     props.annotate,
     props.overlayTraces,
     props.settings.labels.enabled,
     props.settings.labels.fontSize,
     props.settings.overlayColors,
+    props.settings.overlayColorsBySessionId,
     props.showOverlayLabels,
   ]);
+
   const savePublication = useCallback(
     (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
       if (!specPlotRef.current || !s) return;
@@ -7589,6 +8067,7 @@ function SpectrumChart(props: {
     },
     [props.settings.title, s],
   );
+
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       {/* Tier 1: Title & Status Bar */}
@@ -7687,8 +8166,51 @@ function SpectrumChart(props: {
           )}
         </div>
 
-        {/* Right Cluster: Standard actions */}
+        {/* Right Cluster: Quick Mode Pills, Design, Reload & Export */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {props.overlayTraces.length > 0 && props.onUpdateOverlayMode && (
+            <div className="flex items-center rounded-md border border-ink-200 bg-ink-50/70 p-0.5 shadow-xs text-xs">
+              <button
+                type="button"
+                className={clsx(
+                  "rounded px-2 py-0.5 font-medium transition-colors",
+                  overlayMode === "overlay"
+                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
+                    : "text-ink-600 hover:text-ink-900",
+                )}
+                onClick={() => props.onUpdateOverlayMode?.("overlay")}
+                title="Standard overlaid spectra"
+              >
+                Overlay
+              </button>
+              <button
+                type="button"
+                className={clsx(
+                  "rounded px-2 py-0.5 font-medium transition-colors",
+                  overlayMode === "butterfly"
+                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
+                    : "text-ink-600 hover:text-ink-900",
+                )}
+                onClick={() => props.onUpdateOverlayMode?.("butterfly")}
+                title="Mirrored butterfly plot (Head-to-Tail comparison)"
+              >
+                Butterfly
+              </button>
+              <button
+                type="button"
+                className={clsx(
+                  "rounded px-2 py-0.5 font-medium transition-colors",
+                  overlayMode === "normalized"
+                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
+                    : "text-ink-600 hover:text-ink-900",
+                )}
+                onClick={() => props.onUpdateOverlayMode?.("normalized")}
+                title="Normalize each spectrum to 0–100% base peak"
+              >
+                % Norm
+              </button>
+            </div>
+          )}
           {props.onOpenDesign && (
             <button
               type="button"
@@ -7737,11 +8259,15 @@ function SpectrumChart(props: {
               {
                 type: "bar",
                 x: s.mz,
-                y: s.intensity,
+                y: activeY,
+                customdata: s.intensity,
                 width: props.settings.barWidth,
                 marker: { color: props.settings.color },
-                hovertemplate: "m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>",
-                name: "MS1",
+                hovertemplate:
+                  overlayMode === "normalized"
+                    ? "m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata:.3e}<extra></extra>"
+                    : "m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>",
+                name: props.overlayTraces.length > 0 ? "MS1 (Active)" : "MS1",
               },
               ...overlayData,
             ]}
@@ -7765,11 +8291,26 @@ function SpectrumChart(props: {
                 ...axisFrame(props.settings),
               },
               yaxis: {
-                title: axisTitle(props.settings.yTitle, props.settings.axisTitleSize),
-                zeroline: false,
+                title: axisTitle(
+                  props.settings.yTitle ||
+                    (overlayMode === "normalized"
+                      ? "MS1 (% Base Peak)"
+                      : overlayMode === "butterfly"
+                      ? "Intensity (AU) [Top: Active / Bottom: Overlay]"
+                      : "Intensity (AU)"),
+                  props.settings.axisTitleSize,
+                ),
+                zeroline: overlayMode === "butterfly",
+                zerolinecolor: overlayMode === "butterfly" ? "#94a3b8" : undefined,
+                zerolinewidth: overlayMode === "butterfly" ? 1.5 : undefined,
                 exponentformat: "e",
                 showgrid: props.settings.showGrid,
-                range: axisRange(props.settings.axis.yMin, props.settings.axis.yMax),
+                range:
+                  overlayMode === "butterfly"
+                    ? undefined
+                    : overlayMode === "normalized"
+                    ? axisRange(props.settings.axis.yMin, props.settings.axis.yMax)
+                    : axisRange(props.settings.axis.yMin, props.settings.axis.yMax),
                 tickfont: { size: props.settings.tickSize },
                 ...axisFrame(props.settings),
               },
@@ -7784,9 +8325,12 @@ function SpectrumChart(props: {
                       const color = isPoly ? (polyCfg.color || "#7c3aed") : props.settings.labels.color;
                       const fontSize = isPoly ? (polyCfg.fontSize || 10) : props.settings.labels.fontSize;
 
+                      const isNorm = overlayMode === "normalized";
+                      const labelY = isNorm ? (lbl.intensity / activeBasePeak) * 100 : lbl.intensity;
+
                       return {
                         x: lbl.mz,
-                        y: lbl.intensity,
+                        y: labelY,
                         text: lbl.text ? cleanLabelText(lbl.text) : lbl.mz.toFixed(4),
                         textangle: isVertical ? -90 : 0,
                         showarrow: showArrow,

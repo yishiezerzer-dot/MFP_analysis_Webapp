@@ -58,8 +58,25 @@ export interface ChartSettings {
   annotationConnectorOpacity?: number;
   polymerLabels?: PolymerLabelSettings;
   overlayColors?: string[];
+  overlayColorsBySessionId?: Record<string, string>;
+  overlaySettings?: ChartOverlaySettings;
   axis: AxisLimits;
   labels: LabelSettings;
+}
+
+export type ChromatogramOverlayMode = "raw" | "normalized" | "stacked";
+export type SpectrumOverlayMode = "overlay" | "butterfly" | "normalized";
+
+export interface ChartOverlaySettings {
+  mode?: "raw" | "normalized" | "stacked" | "butterfly";
+  chromatogramMode?: ChromatogramOverlayMode;
+  spectrumMode?: SpectrumOverlayMode;
+  stackGap?: number;
+  stackingGapPercent?: number;
+  opacity?: number;
+  traceOpacity?: number;
+  snapApex?: boolean;
+  snapToleranceMin?: number;
 }
 
 export interface EICOverlaySettings {
@@ -187,6 +204,11 @@ export function mergeChartSettings(base: ChartSettings, saved?: Partial<ChartSet
         }
       : undefined,
     overlayColors: saved?.overlayColors ?? base.overlayColors,
+    overlayColorsBySessionId: saved?.overlayColorsBySessionId ?? base.overlayColorsBySessionId,
+    overlaySettings: {
+      ...(base.overlaySettings ?? {}),
+      ...(saved?.overlaySettings ?? {}),
+    },
   };
 }
 
