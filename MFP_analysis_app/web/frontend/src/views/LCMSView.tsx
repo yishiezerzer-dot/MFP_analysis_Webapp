@@ -87,6 +87,7 @@ import {
   loadGraphSettingsDefault,
   mergeChartSettings,
   mergeGraphSettings,
+  DEFAULT_OVERLAY_LABEL_SETTINGS,
   OVERLAY_PALETTE,
   saveGraphSettingsDefault,
   type AxisLimits,
@@ -97,6 +98,7 @@ import {
   type FrameMode,
   type GraphSettings,
   type LabelSettings,
+  type OverlayLabelSettings,
   type PolymerLabelSettings,
   type SpectrumOverlayMode,
 } from "../lcms/settings";
@@ -6988,12 +6990,29 @@ function UVChromatogramChart(props: {
   const overlayAnnotations = useMemo(
     () => {
       if (!props.showOverlayLabels) return [];
+      const overlayLabelCfg = settings.overlayLabels ?? DEFAULT_OVERLAY_LABEL_SETTINGS;
+      if (overlayLabelCfg.enabled === false) return [];
+
+      const effOrientation = overlayLabelCfg.orientation ?? labelOrientation;
+      const isVertical = effOrientation === "vertical";
+      const showBox = overlayLabelCfg.showBox ?? false;
+      const showArrow = overlayLabelCfg.showArrow ?? true;
+      const fontSize = overlayLabelCfg.fontSize ?? Math.max(8, settings.labels.fontSize - 1);
+
       return overlaySeries.flatMap(({ trace, traceMax, stackOffset }, traceIndex) => {
         const traceOffset = trace.offset ?? 0;
+        const traceColor =
+          settings.overlayColorsBySessionId?.[trace.session_id] ??
+          settings.overlayColors?.[traceIndex] ??
+          OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length];
+        const labelColor =
+          overlayLabelCfg.colorsBySessionId?.[trace.session_id] ??
+          (overlayLabelCfg.useTraceColor ? traceColor : overlayLabelCfg.color || traceColor);
+
         return trace.labels.map((label, labelIndex) => {
           const stackShift = -14 * (traceIndex + 1);
           const fallbackAy =
-            labelOrientation === "vertical" ? -78 - labelIndex * 26 : -42 - labelIndex * 22;
+            isVertical ? -78 - labelIndex * 26 : -42 - labelIndex * 22;
           const ay = label.ay ?? fallbackAy;
           const labelY =
             (overlayMode === "normalized" || overlayMode === "stacked") && traceMax > 0
@@ -7003,27 +7022,38 @@ function UVChromatogramChart(props: {
             x: (label.uv_rt_min + traceOffset) * scale,
             y: labelY,
             text: cleanLabelText(label.text),
-            textangle: labelOrientation === "vertical" ? ("-90" as const) : ("0" as const),
-            showarrow: true,
+            textangle: isVertical ? ("-90" as const) : ("0" as const),
+            showarrow: showArrow,
             arrowhead: 0,
             arrowcolor: connectorArrowColor,
             ax: label.ax ?? 0,
             axref: label.axRef === "x" ? ("x" as const) : ("pixel" as const),
             ayref: label.ayRef === "y" ? ("y" as const) : ("pixel" as const),
             ay: label.ayRef === "y" ? ay : ay + stackShift,
+            bgcolor: showBox ? hexToRgba(labelColor, 0.12) : undefined,
+            bordercolor: showBox ? labelColor : undefined,
+            borderpad: showBox ? 3 : undefined,
             editable: false,
             font: {
-              size: Math.max(8, settings.labels.fontSize - 1),
-              color:
-                settings.overlayColorsBySessionId?.[trace.session_id] ??
-                settings.overlayColors?.[traceIndex] ??
-                OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length],
+              size: fontSize,
+              color: labelColor,
             },
           };
         });
       });
     },
-    [connectorArrowColor, labelOrientation, overlayMode, overlaySeries, props.showOverlayLabels, scale, settings.labels.fontSize, settings.overlayColors, settings.overlayColorsBySessionId],
+    [
+      connectorArrowColor,
+      labelOrientation,
+      overlayMode,
+      overlaySeries,
+      props.showOverlayLabels,
+      scale,
+      settings.labels.fontSize,
+      settings.overlayColors,
+      settings.overlayColorsBySessionId,
+      settings.overlayLabels,
+    ],
   );
   const primaryLabelLayer = useMemo(() => {
     const signalValues =
@@ -7925,19 +7955,22 @@ function SpectrumChart(props: {
     return max > 0 ? max : 1;
   }, [s]);
 
+  const isButterfly = overlayMode === "butterfly" || overlayMode === "butterfly_normalized";
+  const isNorm = overlayMode === "normalized" || overlayMode === "butterfly_normalized";
+
   const activeY = useMemo(() => {
     if (!s) return [];
-    if (overlayMode === "normalized") {
+    if (isNorm) {
       return s.intensity.map((v) => (v / activeBasePeak) * 100);
     }
     return s.intensity;
-  }, [activeBasePeak, overlayMode, s]);
+  }, [activeBasePeak, isNorm, s]);
 
   const overlayData = useMemo(
     () =>
       props.overlayTraces.map((trace, index) => {
         let traceBasePeak = 1;
-        if (overlayMode === "normalized") {
+        if (isNorm) {
           let max = 0;
           for (let i = 0; i < trace.spectrum.intensity.length; i++) {
             if (trace.spectrum.intensity[i] > max) max = trace.spectrum.intensity[i];
@@ -7945,18 +7978,18 @@ function SpectrumChart(props: {
           traceBasePeak = max > 0 ? max : 1;
         }
 
-        const isButterfly = overlayMode === "butterfly";
-        const isNorm = overlayMode === "normalized";
-
         let yValues: number[];
         let hovertemplate: string;
 
-        if (isButterfly) {
+        if (overlayMode === "butterfly_normalized") {
+          yValues = trace.spectrum.intensity.map((v) => -((v / traceBasePeak) * 100));
+          hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>rel: %{customdata[1]:.1f}%<br>int: %{customdata[0]:.3e}<extra></extra>`;
+        } else if (overlayMode === "butterfly") {
           yValues = trace.spectrum.intensity.map((v) => -v);
-          hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{customdata:.3e}<extra></extra>`;
-        } else if (isNorm) {
+          hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{customdata[0]:.3e}<extra></extra>`;
+        } else if (overlayMode === "normalized") {
           yValues = trace.spectrum.intensity.map((v) => (v / traceBasePeak) * 100);
-          hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata:.3e}<extra></extra>`;
+          hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata[0]:.3e}<extra></extra>`;
         } else {
           yValues = trace.spectrum.intensity;
           hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>`;
@@ -7971,7 +8004,7 @@ function SpectrumChart(props: {
           type: "bar" as const,
           x: trace.spectrum.mz,
           y: yValues,
-          customdata: trace.spectrum.intensity,
+          customdata: trace.spectrum.intensity.map((v) => [v, (v / traceBasePeak) * 100]),
           width: props.settings.barWidth,
           marker: {
             color: traceColor,
@@ -7982,6 +8015,8 @@ function SpectrumChart(props: {
         };
       }),
     [
+      isButterfly,
+      isNorm,
       overlayMode,
       props.overlayTraces,
       props.settings.barWidth,
@@ -7991,10 +8026,14 @@ function SpectrumChart(props: {
     ],
   );
 
+  const overlayLabelCfg = props.settings.overlayLabels ?? DEFAULT_OVERLAY_LABEL_SETTINGS;
+
   const overlayAnnotations = useMemo(() => {
-    if (!props.annotate || !props.showOverlayLabels) return [];
-    const isButterfly = overlayMode === "butterfly";
-    const isNorm = overlayMode === "normalized";
+    if (!props.annotate || !props.showOverlayLabels || overlayLabelCfg.enabled === false) return [];
+    const isVertical = overlayLabelCfg.orientation === "vertical";
+    const showBox = overlayLabelCfg.showBox ?? false;
+    const showArrow = overlayLabelCfg.showArrow ?? false;
+    const fontSize = overlayLabelCfg.fontSize ?? Math.max(8, props.settings.labels.fontSize - 1);
 
     return props.overlayTraces.flatMap((trace, traceIndex) => {
       let traceBasePeak = 1;
@@ -8011,14 +8050,21 @@ function SpectrumChart(props: {
         props.settings.overlayColors?.[traceIndex] ??
         OVERLAY_PALETTE[traceIndex % OVERLAY_PALETTE.length];
 
+      const labelColor =
+        overlayLabelCfg.colorsBySessionId?.[trace.session_id] ??
+        (overlayLabelCfg.useTraceColor ? traceColor : overlayLabelCfg.color || traceColor);
+
       return trace.spectrum.labels
         .filter((label) => props.settings.labels.enabled || label.source === "polymer")
         .map((label, labelIndex) => {
           let labelY = label.intensity;
           let yshift = 18 + traceIndex * 10 + labelIndex * 2;
+          let ay = isVertical ? -46 : -34;
+
           if (isButterfly) {
-            labelY = -label.intensity;
+            labelY = isNorm ? -((label.intensity / traceBasePeak) * 100) : -label.intensity;
             yshift = -(18 + traceIndex * 10 + labelIndex * 2);
+            ay = isVertical ? 46 : 34;
           } else if (isNorm) {
             labelY = (label.intensity / traceBasePeak) * 100;
           }
@@ -8027,17 +8073,29 @@ function SpectrumChart(props: {
             x: label.mz,
             y: labelY,
             text: label.text ? cleanLabelText(label.text) : label.mz.toFixed(4),
-            showarrow: false,
-            yshift,
+            textangle: isVertical ? ("-90" as const) : ("0" as const),
+            showarrow: showArrow,
+            arrowhead: 2,
+            arrowsize: 0.8,
+            arrowwidth: 1,
+            arrowcolor: labelColor,
+            ax: 0,
+            ay: showArrow ? ay : 0,
+            yshift: showArrow ? 0 : (isButterfly ? -(isVertical ? 22 : 12) : (isVertical ? 22 : 12)),
+            bgcolor: showBox ? hexToRgba(labelColor, 0.12) : undefined,
+            bordercolor: showBox ? labelColor : undefined,
+            borderpad: showBox ? 3 : undefined,
             font: {
-              size: Math.max(8, props.settings.labels.fontSize - 1),
-              color: traceColor,
+              size: fontSize,
+              color: labelColor,
             },
           };
         });
     });
   }, [
-    overlayMode,
+    isButterfly,
+    isNorm,
+    overlayLabelCfg,
     props.annotate,
     props.overlayTraces,
     props.settings.labels.enabled,
@@ -8179,7 +8237,7 @@ function SpectrumChart(props: {
                     : "text-ink-600 hover:text-ink-900",
                 )}
                 onClick={() => props.onUpdateOverlayMode?.("overlay")}
-                title="Standard overlaid spectra"
+                title="Standard overlaid spectra (raw intensity)"
               >
                 Overlay
               </button>
@@ -8192,9 +8250,22 @@ function SpectrumChart(props: {
                     : "text-ink-600 hover:text-ink-900",
                 )}
                 onClick={() => props.onUpdateOverlayMode?.("butterfly")}
-                title="Mirrored butterfly plot (Head-to-Tail comparison)"
+                title="Mirrored butterfly plot (Head-to-Tail, raw AU)"
               >
                 Butterfly
+              </button>
+              <button
+                type="button"
+                className={clsx(
+                  "rounded px-2 py-0.5 font-medium transition-colors",
+                  overlayMode === "butterfly_normalized"
+                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
+                    : "text-ink-600 hover:text-ink-900",
+                )}
+                onClick={() => props.onUpdateOverlayMode?.("butterfly_normalized")}
+                title="Mirrored butterfly plot normalized to base peak (Head-to-Tail, 0 to ±100%)"
+              >
+                Butterfly %
               </button>
               <button
                 type="button"
@@ -8260,12 +8331,12 @@ function SpectrumChart(props: {
                 type: "bar",
                 x: s.mz,
                 y: activeY,
-                customdata: s.intensity,
+                customdata: s.intensity.map((v) => [v, (v / activeBasePeak) * 100]),
                 width: props.settings.barWidth,
                 marker: { color: props.settings.color },
                 hovertemplate:
-                  overlayMode === "normalized"
-                    ? "m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata:.3e}<extra></extra>"
+                  isNorm
+                    ? "m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata[0]:.3e}<extra></extra>"
                     : "m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>",
                 name: props.overlayTraces.length > 0 ? "MS1 (Active)" : "MS1",
               },
@@ -8293,20 +8364,22 @@ function SpectrumChart(props: {
               yaxis: {
                 title: axisTitle(
                   props.settings.yTitle ||
-                    (overlayMode === "normalized"
-                      ? "MS1 (% Base Peak)"
+                    (overlayMode === "butterfly_normalized"
+                      ? "MS1 (% Base Peak) [Top: Active (+100%) / Bottom: Overlay (-100%)]"
                       : overlayMode === "butterfly"
                       ? "Intensity (AU) [Top: Active / Bottom: Overlay]"
+                      : overlayMode === "normalized"
+                      ? "MS1 (% Base Peak)"
                       : "Intensity (AU)"),
                   props.settings.axisTitleSize,
                 ),
-                zeroline: overlayMode === "butterfly",
-                zerolinecolor: overlayMode === "butterfly" ? "#94a3b8" : undefined,
-                zerolinewidth: overlayMode === "butterfly" ? 1.5 : undefined,
+                zeroline: isButterfly,
+                zerolinecolor: isButterfly ? "#94a3b8" : undefined,
+                zerolinewidth: isButterfly ? 1.5 : undefined,
                 exponentformat: "e",
                 showgrid: props.settings.showGrid,
                 range:
-                  overlayMode === "butterfly"
+                  isButterfly
                     ? undefined
                     : overlayMode === "normalized"
                     ? axisRange(props.settings.axis.yMin, props.settings.axis.yMax)
@@ -8325,14 +8398,13 @@ function SpectrumChart(props: {
                       const color = isPoly ? (polyCfg.color || "#7c3aed") : props.settings.labels.color;
                       const fontSize = isPoly ? (polyCfg.fontSize || 10) : props.settings.labels.fontSize;
 
-                      const isNorm = overlayMode === "normalized";
                       const labelY = isNorm ? (lbl.intensity / activeBasePeak) * 100 : lbl.intensity;
 
                       return {
                         x: lbl.mz,
                         y: labelY,
                         text: lbl.text ? cleanLabelText(lbl.text) : lbl.mz.toFixed(4),
-                        textangle: isVertical ? -90 : 0,
+                        textangle: isVertical ? ("-90" as const) : ("0" as const),
                         showarrow: showArrow,
                         arrowhead: 2,
                         arrowsize: 0.8,

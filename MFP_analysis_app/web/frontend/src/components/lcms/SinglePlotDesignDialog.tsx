@@ -1,4 +1,5 @@
 import {
+  DEFAULT_OVERLAY_LABEL_SETTINGS,
   DEFAULT_POLYMER_LABEL_SETTINGS,
   OVERLAY_PALETTE,
   type AxisLimits,
@@ -9,6 +10,7 @@ import {
   type GraphId,
   type GraphSettings,
   type LabelSettings,
+  type OverlayLabelSettings,
   type PolymerLabelSettings,
 } from "../../lcms/settings";
 import {
@@ -120,6 +122,21 @@ export function SinglePlotDesignDialog({
       [graphId]: {
         ...prev[graphId],
         overlaySettings: { ...(prev[graphId].overlaySettings ?? {}), ...patch },
+      },
+    }));
+  };
+
+  const overlayLabels = s.overlayLabels ?? DEFAULT_OVERLAY_LABEL_SETTINGS;
+
+  const updateOverlayLabels = (patch: Partial<OverlayLabelSettings>) => {
+    onChange((prev) => ({
+      ...prev,
+      [graphId]: {
+        ...prev[graphId],
+        overlayLabels: {
+          ...(prev[graphId].overlayLabels ?? DEFAULT_OVERLAY_LABEL_SETTINGS),
+          ...patch,
+        },
       },
     }));
   };
@@ -265,7 +282,9 @@ export function SinglePlotDesignDialog({
                 <SelectSetting
                   label="Display mode"
                   value={
-                    overlayCfg.mode === "butterfly" || overlayCfg.spectrumMode === "butterfly"
+                    overlayCfg.mode === "butterfly_normalized" || overlayCfg.spectrumMode === "butterfly_normalized"
+                      ? "butterfly_normalized"
+                      : overlayCfg.mode === "butterfly" || overlayCfg.spectrumMode === "butterfly"
                       ? "butterfly"
                       : overlayCfg.mode === "normalized" || overlayCfg.spectrumMode === "normalized"
                       ? "normalized"
@@ -273,7 +292,8 @@ export function SinglePlotDesignDialog({
                   }
                   options={[
                     { value: "raw", label: "Standard Overlay (Shared bars)" },
-                    { value: "butterfly", label: "Mirrored / Butterfly (Head-to-Tail)" },
+                    { value: "butterfly", label: "Mirrored / Butterfly (Head-to-Tail, absolute AU)" },
+                    { value: "butterfly_normalized", label: "Mirrored / Butterfly % (Head-to-Tail, 0 to ±100% Base Peak)" },
                     { value: "normalized", label: "Normalized (% Base Peak 0–100%)" },
                   ]}
                   onChange={(v) =>
@@ -341,12 +361,94 @@ export function SinglePlotDesignDialog({
           </GroupBox>
         )}
 
+        {/* Overlay Peak Labels */}
+        {(graphId === "spectrum" || graphId === "uv") &&
+          ((overlaySessions && overlaySessions.length > 0) ||
+            (overlayTraceNames && overlayTraceNames.length > 0)) && (
+            <GroupBox title="Overlay Peak Labels">
+              <p className="mb-2.5 text-[11px] text-ink-500">
+                Customize the orientation, box, font size, and color of overlaid peak labels.
+              </p>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                    checked={overlayLabels.enabled}
+                    onChange={(e) => updateOverlayLabels({ enabled: e.target.checked })}
+                  />
+                  <span className="font-medium">Enable overlay peak annotations</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                    checked={overlayLabels.useTraceColor}
+                    onChange={(e) => updateOverlayLabels({ useTraceColor: e.target.checked })}
+                  />
+                  <span>Match each overlay's trace color</span>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {!overlayLabels.useTraceColor && (
+                  <ColorSetting
+                    label="Label & accent color"
+                    value={overlayLabels.color}
+                    onChange={(value) => updateOverlayLabels({ color: value })}
+                  />
+                )}
+                <NumberSetting
+                  label="Font size"
+                  value={overlayLabels.fontSize}
+                  min={6}
+                  max={24}
+                  step={1}
+                  onChange={(value) =>
+                    updateOverlayLabels({ fontSize: value ?? overlayLabels.fontSize })
+                  }
+                />
+                <SelectSetting
+                  label="Text orientation"
+                  value={overlayLabels.orientation}
+                  options={[
+                    { value: "horizontal", label: "Horizontal (0°)" },
+                    { value: "vertical", label: "Vertical (-90°)" },
+                  ]}
+                  onChange={(value) =>
+                    updateOverlayLabels({ orientation: value as "horizontal" | "vertical" })
+                  }
+                />
+                <div className="flex flex-col justify-center gap-2 pt-1">
+                  <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                      checked={overlayLabels.showBox}
+                      onChange={(e) => updateOverlayLabels({ showBox: e.target.checked })}
+                    />
+                    <span>Show surrounding box</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                      checked={overlayLabels.showArrow}
+                      onChange={(e) => updateOverlayLabels({ showArrow: e.target.checked })}
+                    />
+                    <span>Show arrow pointer to peak</span>
+                  </label>
+                </div>
+              </div>
+            </GroupBox>
+          )}
+
         {/* Overlay Trace Colors */}
         {((overlaySessions && overlaySessions.length > 0) ||
           (overlayTraceNames && overlayTraceNames.length > 0)) && (
           <GroupBox title="Overlay Trace Colors">
             <p className="mb-2.5 text-[11px] text-ink-500">
-              Customize colors for each overlaid trace on this plot.
+              Customize line/bar colors and peak label colors for each overlaid trace.
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {overlaySessions && overlaySessions.length > 0
@@ -355,33 +457,61 @@ export function SinglePlotDesignDialog({
                       s.overlayColorsBySessionId?.[sess.sessionId] ??
                       s.overlayColors?.[i] ??
                       OVERLAY_PALETTE[i % OVERLAY_PALETTE.length];
+                    const currentLabelColor =
+                      overlayLabels.colorsBySessionId?.[sess.sessionId] ?? currentColor;
                     return (
-                      <ColorSetting
+                      <div
                         key={sess.sessionId}
-                        label={`Overlay ${i + 1}: ${sess.displayName}`}
-                        value={currentColor}
-                        onChange={(newColor) => {
-                          const updated = [
-                            ...(s.overlayColors ??
-                              OVERLAY_PALETTE.slice(0, overlaySessions.length)),
-                          ];
-                          while (updated.length <= i) {
-                            updated.push(
-                              OVERLAY_PALETTE[
-                                updated.length % OVERLAY_PALETTE.length
-                              ],
-                            );
-                          }
-                          updated[i] = newColor;
-                          updateChart({
-                            overlayColors: updated,
-                            overlayColorsBySessionId: {
-                              ...(s.overlayColorsBySessionId ?? {}),
-                              [sess.sessionId]: newColor,
-                            },
-                          });
-                        }}
-                      />
+                        className="flex flex-col gap-2 rounded-lg border border-ink-200/80 bg-ink-50/40 p-2.5"
+                      >
+                        <div
+                          className="text-xs font-semibold text-ink-800 truncate"
+                          title={sess.displayName}
+                        >
+                          Overlay {i + 1}: {sess.displayName}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <ColorSetting
+                            label="Trace color"
+                            value={currentColor}
+                            onChange={(newColor) => {
+                              const updated = [
+                                ...(s.overlayColors ??
+                                  OVERLAY_PALETTE.slice(0, overlaySessions.length)),
+                              ];
+                              while (updated.length <= i) {
+                                updated.push(
+                                  OVERLAY_PALETTE[
+                                    updated.length % OVERLAY_PALETTE.length
+                                  ],
+                                );
+                              }
+                              updated[i] = newColor;
+                              updateChart({
+                                overlayColors: updated,
+                                overlayColorsBySessionId: {
+                                  ...(s.overlayColorsBySessionId ?? {}),
+                                  [sess.sessionId]: newColor,
+                                },
+                              });
+                            }}
+                          />
+                          {(graphId === "spectrum" || graphId === "uv") && (
+                            <ColorSetting
+                              label="Peak label color"
+                              value={currentLabelColor}
+                              onChange={(newLabelColor) => {
+                                updateOverlayLabels({
+                                  colorsBySessionId: {
+                                    ...(overlayLabels.colorsBySessionId ?? {}),
+                                    [sess.sessionId]: newLabelColor,
+                                  },
+                                });
+                              }}
+                            />
+                          )}
+                        </div>
+                      </div>
                     );
                   })
                 : overlayTraceNames.map((name, i) => {

@@ -40,6 +40,27 @@ export const OVERLAY_PALETTE = [
   "#c2410c",
 ];
 
+export interface OverlayLabelSettings {
+  enabled: boolean;
+  fontSize: number;
+  color: string;
+  useTraceColor: boolean;
+  orientation: "horizontal" | "vertical";
+  showBox: boolean;
+  showArrow: boolean;
+  colorsBySessionId?: Record<string, string>;
+}
+
+export const DEFAULT_OVERLAY_LABEL_SETTINGS: OverlayLabelSettings = {
+  enabled: true,
+  fontSize: 10,
+  color: "#475569",
+  useTraceColor: true,
+  orientation: "horizontal",
+  showBox: false,
+  showArrow: true,
+};
+
 export interface ChartSettings {
   title: string;
   xTitle: string;
@@ -57,6 +78,7 @@ export interface ChartSettings {
   annotationConnectorColor?: string;
   annotationConnectorOpacity?: number;
   polymerLabels?: PolymerLabelSettings;
+  overlayLabels?: OverlayLabelSettings;
   overlayColors?: string[];
   overlayColorsBySessionId?: Record<string, string>;
   overlaySettings?: ChartOverlaySettings;
@@ -65,10 +87,10 @@ export interface ChartSettings {
 }
 
 export type ChromatogramOverlayMode = "raw" | "normalized" | "stacked";
-export type SpectrumOverlayMode = "overlay" | "butterfly" | "normalized";
+export type SpectrumOverlayMode = "overlay" | "butterfly" | "butterfly_normalized" | "normalized";
 
 export interface ChartOverlaySettings {
-  mode?: "raw" | "normalized" | "stacked" | "butterfly";
+  mode?: "raw" | "normalized" | "stacked" | "butterfly" | "butterfly_normalized";
   chromatogramMode?: ChromatogramOverlayMode;
   spectrumMode?: SpectrumOverlayMode;
   stackGap?: number;
@@ -77,6 +99,7 @@ export interface ChartOverlaySettings {
   traceOpacity?: number;
   snapApex?: boolean;
   snapToleranceMin?: number;
+  overlayLabels?: OverlayLabelSettings;
 }
 
 export interface EICOverlaySettings {
@@ -201,6 +224,16 @@ export function mergeChartSettings(base: ChartSettings, saved?: Partial<ChartSet
       ? {
           ...(base.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS),
           ...(saved?.polymerLabels ?? {}),
+        }
+      : undefined,
+    overlayLabels: base.overlayLabels || saved?.overlayLabels
+      ? {
+          ...(base.overlayLabels ?? DEFAULT_OVERLAY_LABEL_SETTINGS),
+          ...(saved?.overlayLabels ?? {}),
+          colorsBySessionId: {
+            ...(base.overlayLabels?.colorsBySessionId ?? {}),
+            ...(saved?.overlayLabels?.colorsBySessionId ?? {}),
+          },
         }
       : undefined,
     overlayColors: saved?.overlayColors ?? base.overlayColors,
