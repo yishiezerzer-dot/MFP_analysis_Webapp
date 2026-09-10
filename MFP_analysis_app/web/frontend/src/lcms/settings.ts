@@ -90,7 +90,7 @@ export type ChromatogramOverlayMode = "raw" | "normalized" | "stacked";
 export type SpectrumOverlayMode = "overlay" | "butterfly" | "butterfly_normalized" | "normalized";
 
 export interface ChartOverlaySettings {
-  mode?: "raw" | "normalized" | "stacked" | "butterfly" | "butterfly_normalized";
+  mode?: "raw" | "normalized" | "stacked" | "butterfly" | "butterfly_normalized" | "overlay";
   chromatogramMode?: ChromatogramOverlayMode;
   spectrumMode?: SpectrumOverlayMode;
   stackGap?: number;

@@ -1,13 +1,14 @@
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import type { PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
-import { LCMSView } from "./views/LCMSView";
-import { PlateReaderView } from "./views/PlateReaderView";
-import { DataStudioView } from "./views/DataStudioView";
-import { FTIRView } from "./views/FTIRView";
-import { FigureBuilderView } from "./views/FigureBuilderView";
-import { AIView } from "./views/AIView";
+
+const LCMSView = lazy(() => import("./views/LCMSView").then((m) => ({ default: m.LCMSView })));
+const PlateReaderView = lazy(() => import("./views/PlateReaderView").then((m) => ({ default: m.PlateReaderView })));
+const DataStudioView = lazy(() => import("./views/DataStudioView").then((m) => ({ default: m.DataStudioView })));
+const FTIRView = lazy(() => import("./views/FTIRView").then((m) => ({ default: m.FTIRView })));
+const FigureBuilderView = lazy(() => import("./views/FigureBuilderView").then((m) => ({ default: m.FigureBuilderView })));
+const AIView = lazy(() => import("./views/AIView").then((m) => ({ default: m.AIView })));
 import type { PageHeaderContextValue } from "./layout/PageHeader";
 import { UserMenu, type AppUser } from "./layout/UserMenu";
 import { Tooltip } from "./components/Tooltip";
@@ -348,21 +349,34 @@ function Layout() {
   );
 }
 
+function ViewLoadingFallback() {
+  return (
+    <div className="flex h-[calc(100vh-4rem)] w-full items-center justify-center bg-canvas">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" />
+        <span className="text-xs font-medium text-ink-500">Loading module…</span>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <BrowserBridgeProvider>
       <FileIngestionProvider>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route path="/" element={<Navigate to="/lcms" replace />} />
-            <Route path="/lcms" element={<LCMSView />} />
-            <Route path="/ftir" element={<FTIRView />} />
-            <Route path="/plate-reader" element={<PlateReaderView />} />
-            <Route path="/data-studio" element={<DataStudioView />} />
-            <Route path="/figures" element={<FigureBuilderView />} />
-            <Route path="/ai" element={<AIView />} />
-          </Route>
-        </Routes>
+        <Suspense fallback={<ViewLoadingFallback />}>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Navigate to="/lcms" replace />} />
+              <Route path="/lcms" element={<LCMSView />} />
+              <Route path="/ftir" element={<FTIRView />} />
+              <Route path="/plate-reader" element={<PlateReaderView />} />
+              <Route path="/data-studio" element={<DataStudioView />} />
+              <Route path="/figures" element={<FigureBuilderView />} />
+              <Route path="/ai" element={<AIView />} />
+            </Route>
+          </Routes>
+        </Suspense>
       </FileIngestionProvider>
     </BrowserBridgeProvider>
   );

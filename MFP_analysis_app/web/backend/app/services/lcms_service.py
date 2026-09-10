@@ -66,6 +66,7 @@ class LCMSSessionState:
     _reader_lock: threading.Lock
     workspace_id: str = "general"
     uv: Optional[UVSessionState] = None
+    _scan_cache: Dict[str, Tuple[Dict[str, Any], np.ndarray, np.ndarray]] = field(default_factory=dict)
 
     def ms1_meta(self) -> List[Dict[str, Any]]:
         return [
@@ -294,7 +295,12 @@ def fetch_spectrum_at_rt(
     i = int(np.argmin(np.abs(rts - float(target_rt_min))))
     chosen = candidates[i]
 
+    cache_key = f"{chosen.spectrum_id}:{polarity}"
     with state._reader_lock:
+        cached = state._scan_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         rdr = mzml.MzML(str(state.path))
         try:
             mz_vals, int_vals = _spectrum_arrays_from_reader(rdr, str(chosen.spectrum_id))
@@ -303,14 +309,20 @@ def fetch_spectrum_at_rt(
             if callable(close):
                 close()
 
-    meta = {
-        "spectrum_id": chosen.spectrum_id,
-        "rt_min": float(chosen.rt_min),
-        "tic": float(chosen.tic),
-        "polarity": chosen.polarity,
-        "n_peaks": int(mz_vals.size),
-    }
-    return meta, mz_vals, int_vals
+        meta = {
+            "spectrum_id": chosen.spectrum_id,
+            "rt_min": float(chosen.rt_min),
+            "tic": float(chosen.tic),
+            "polarity": chosen.polarity,
+            "n_peaks": int(mz_vals.size),
+        }
+        res = (meta, mz_vals, int_vals)
+        if len(state._scan_cache) >= 120:
+            for _ in range(20):
+                if state._scan_cache:
+                    del state._scan_cache[next(iter(state._scan_cache))]
+        state._scan_cache[cache_key] = res
+        return res
 
 
 def iter_ms1_spectra(

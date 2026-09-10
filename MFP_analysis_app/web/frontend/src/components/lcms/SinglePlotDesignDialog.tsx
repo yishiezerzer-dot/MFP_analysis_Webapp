@@ -1,3 +1,5 @@
+import { useState } from "react";
+import clsx from "clsx";
 import {
   DEFAULT_OVERLAY_LABEL_SETTINGS,
   DEFAULT_POLYMER_LABEL_SETTINGS,
@@ -141,6 +143,15 @@ export function SinglePlotDesignDialog({
     }));
   };
 
+  const hasLabels = graphId === "spectrum" || graphId === "uv";
+  const tabs = [
+    { id: "layout" as const, label: "Layout & Titles", icon: "📐" },
+    { id: "traces" as const, label: "Traces & Overlays", icon: "🎨" },
+    ...(hasLabels ? [{ id: "labels" as const, label: "Peak Labels", icon: "🏷️" }] : []),
+    { id: "axes" as const, label: "Axes & Limits", icon: "📏" },
+  ];
+  const [activeTab, setActiveTab] = useState<"layout" | "traces" | "labels" | "axes">("layout");
+
   return (
     <Modal
       title={`🎨 ${meta.title} Design`}
@@ -172,8 +183,29 @@ export function SinglePlotDesignDialog({
     >
       <div className="mb-4 text-xs text-ink-600">{meta.desc}</div>
 
+      {/* Tab Navigation */}
+      <div className="mb-4 flex flex-wrap items-center gap-1.5 border-b border-ink-100 pb-2.5">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={clsx(
+              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              activeTab === t.id
+                ? "bg-brand-50 font-semibold text-brand-700 shadow-xs border border-brand-200"
+                : "text-ink-600 hover:bg-ink-100 hover:text-ink-900 border border-transparent",
+            )}
+            onClick={() => setActiveTab(t.id)}
+          >
+            <span>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-col gap-4">
         {/* Layout & Dimensions */}
+        <div className={activeTab === "layout" ? undefined : "hidden"}>
         <GroupBox title="Layout & Grid">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer select-none">
@@ -217,8 +249,10 @@ export function SinglePlotDesignDialog({
             />
           </div>
         </GroupBox>
+        </div>
 
         {/* Trace Styling */}
+        <div className={activeTab === "traces" ? undefined : "hidden"}>
         <GroupBox title={graphId === "spectrum" ? "Bar Appearance" : "Line Appearance"}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <ColorSetting
@@ -247,8 +281,10 @@ export function SinglePlotDesignDialog({
             )}
           </div>
         </GroupBox>
+        </div>
 
         {/* Overlay Configuration & Comparison Modes */}
+        <div className={activeTab === "traces" ? undefined : "hidden"}>
         {(graphId === "tic" || graphId === "uv" || graphId === "spectrum") && (
           <GroupBox title="Overlay & Multi-Trace Settings">
             <p className="mb-2 text-[11px] text-ink-500">
@@ -360,8 +396,10 @@ export function SinglePlotDesignDialog({
             )}
           </GroupBox>
         )}
+        </div>
 
         {/* Overlay Peak Labels */}
+        <div className={activeTab === "labels" ? undefined : "hidden"}>
         {(graphId === "spectrum" || graphId === "uv") &&
           ((overlaySessions && overlaySessions.length > 0) ||
             (overlayTraceNames && overlayTraceNames.length > 0)) && (
@@ -442,8 +480,10 @@ export function SinglePlotDesignDialog({
               </div>
             </GroupBox>
           )}
+        </div>
 
         {/* Overlay Trace Colors */}
+        <div className={activeTab === "traces" ? undefined : "hidden"}>
         {((overlaySessions && overlaySessions.length > 0) ||
           (overlayTraceNames && overlayTraceNames.length > 0)) && (
           <GroupBox title="Overlay Trace Colors">
@@ -543,8 +583,10 @@ export function SinglePlotDesignDialog({
             </div>
           </GroupBox>
         )}
+        </div>
 
         {/* Titles & Typography */}
+        <div className={activeTab === "layout" ? undefined : "hidden"}>
         <GroupBox title="Titles & Typography">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <TextSetting
@@ -589,8 +631,10 @@ export function SinglePlotDesignDialog({
             />
           </div>
         </GroupBox>
+        </div>
 
         {/* Axis Limits */}
+        <div className={activeTab === "axes" ? undefined : "hidden"}>
         <GroupBox title="Axis Limits">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <NumberSetting
@@ -622,8 +666,10 @@ export function SinglePlotDesignDialog({
             Leave blank to allow Plotly to dynamically auto-scale to visible data.
           </p>
         </GroupBox>
+        </div>
 
         {/* Plot-specific: Spectrum Peak Labels */}
+        <div className={activeTab === "labels" ? undefined : "hidden"}>
         {graphId === "spectrum" && (
           <GroupBox title="MS Peak Labels">
             <div className="mb-2">
@@ -656,8 +702,10 @@ export function SinglePlotDesignDialog({
             </div>
           </GroupBox>
         )}
+        </div>
 
         {/* Plot-specific: Polymer Match Labels */}
+        <div className={activeTab === "labels" ? undefined : "hidden"}>
         {graphId === "spectrum" && (
           <GroupBox title="Polymer Match Labels">
             <p className="mb-2.5 text-[11px] text-ink-500">
@@ -713,8 +761,10 @@ export function SinglePlotDesignDialog({
             </div>
           </GroupBox>
         )}
+        </div>
 
         {/* Plot-specific: UV Labels & Connectors */}
+        <div className={activeTab === "labels" ? undefined : "hidden"}>
         {graphId === "uv" && (
           <GroupBox title="UV Peak Labels & Connectors">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -753,8 +803,10 @@ export function SinglePlotDesignDialog({
             </div>
           </GroupBox>
         )}
+        </div>
 
         {/* Plot-specific: EIC Multi-trace Overlay */}
+        <div className={activeTab === "traces" ? undefined : "hidden"}>
         {graphId === "eic" && (
           <GroupBox title="EIC Overlay & Stacking">
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -821,6 +873,7 @@ export function SinglePlotDesignDialog({
             </div>
           </GroupBox>
         )}
+        </div>
       </div>
     </Modal>
   );

@@ -1234,6 +1234,8 @@ export function LCMSView() {
     {},
   );
   const [autoAlignUv, setAutoAlignUv] = useStoredState(`${LCMS_STORAGE_PREFIX}.autoAlignUv`, false);
+  const [syncChromatogramZoom, setSyncChromatogramZoom] = useStoredState(`${LCMS_STORAGE_PREFIX}.syncChromatogramZoom`, false);
+  const [syncedRtRange, setSyncedRtRange] = useState<[number, number] | null>(null);
 
   // Annotate – spectrum
   const [annotateSpectrum, setAnnotateSpectrum] = useStoredState(`${LCMS_STORAGE_PREFIX}.annotateSpectrum`, true);
@@ -1607,6 +1609,7 @@ export function LCMSView() {
       setSpectrum(null);
       setSelectedRt(null);
       setSelectedUvRt(null);
+      setSyncedRtRange(null);
       if (activeSid && activeSid in uvOffsetBySessionId) {
         const off = uvOffsetBySessionId[activeSid] ?? 0;
         setUvOffset(off);
@@ -2569,6 +2572,37 @@ export function LCMSView() {
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         goNext();
+      } else if (e.key === "b" || e.key === "B") {
+        e.preventDefault();
+        setGraphSettings((prev) => {
+          const current = prev.spectrum.overlaySettings?.spectrumMode ?? "overlay";
+          const cycle: Record<SpectrumOverlayMode, SpectrumOverlayMode> = {
+            overlay: "butterfly",
+            butterfly: "butterfly_normalized",
+            butterfly_normalized: "normalized",
+            normalized: "overlay",
+          };
+          const nextMode = cycle[current] ?? "overlay";
+          return {
+            ...prev,
+            spectrum: {
+              ...prev.spectrum,
+              overlaySettings: {
+                ...(prev.spectrum.overlaySettings ?? {}),
+                mode: nextMode,
+                spectrumMode: nextMode,
+              },
+            },
+          };
+        });
+      } else if (e.key === "o" || e.key === "O") {
+        e.preventDefault();
+        setOverlaySpectrumEnabled((v) => !v);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setRegionSelect(false);
+        setSelectedRegion(null);
+        setSyncedRtRange(null);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -2589,6 +2623,9 @@ export function LCMSView() {
     comparisonMatrixOpen,
     helpOpen,
     customUvLabelDraft,
+    setGraphSettings,
+    setOverlaySpectrumEnabled,
+    setSelectedRegion,
   ]);
   // Find m/z: scan every MS1 at current filter for the most intense near m/z
   const [findMzInput, setFindMzInput] = useState("");
@@ -4027,6 +4064,15 @@ export function LCMSView() {
                   onOpenDesign={() => setDesignPlotId("tic")}
                   onReload={handleReloadTIC}
                   onUpdateOverlayMode={(mode) => updateGraphOverlayMode("tic", mode)}
+                  syncZoom={syncChromatogramZoom}
+                  onToggleSyncZoom={() => {
+                    setSyncChromatogramZoom((v) => !v);
+                    if (syncChromatogramZoom) setSyncedRtRange(null);
+                  }}
+                  syncedRtRange={syncChromatogramZoom ? syncedRtRange : null}
+                  onZoomChange={(range) => {
+                    if (syncChromatogramZoom) setSyncedRtRange(range);
+                  }}
                 />
               )}
               {visibleEicPlots.length > 0 && overlayEicEnabled ? (
@@ -4154,6 +4200,15 @@ export function LCMSView() {
                   setAutoAlignUv={setAutoAlignUv}
                   onAutoAlignUV={() => dispatchUiAction("lcms.auto_align_uv")}
                   onUpdateOverlayMode={(mode) => updateGraphOverlayMode("uv", mode)}
+                  syncZoom={syncChromatogramZoom}
+                  onToggleSyncZoom={() => {
+                    setSyncChromatogramZoom((v) => !v);
+                    if (syncChromatogramZoom) setSyncedRtRange(null);
+                  }}
+                  syncedRtRange={syncChromatogramZoom ? syncedRtRange : null}
+                  onZoomChange={(range) => {
+                    if (syncChromatogramZoom) setSyncedRtRange(range);
+                  }}
                 />
               )}
               {showSpectrum && (
@@ -6047,6 +6102,10 @@ function TICChart(props: {
   onOpenDesign?: () => void;
   onReload?: () => void;
   onUpdateOverlayMode?: (mode: ChromatogramOverlayMode) => void;
+  syncZoom?: boolean;
+  onToggleSyncZoom?: () => void;
+  syncedRtRange?: [number, number] | null;
+  onZoomChange?: (range: [number, number] | null) => void;
 }) {
   const [localRevision, setLocalRevision] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -6183,6 +6242,15 @@ function TICChart(props: {
   };
 
   const handleRelayout = (event: Readonly<Record<string, unknown>>) => {
+    if (props.onZoomChange) {
+      const x0 = event["xaxis.range[0]"];
+      const x1 = event["xaxis.range[1]"];
+      if (x0 != null && x1 != null) {
+        props.onZoomChange([Number(x0) / scale, Number(x1) / scale]);
+      } else if (event["xaxis.autorange"] === true) {
+        props.onZoomChange(null);
+      }
+    }
     if (!props.regionSelect) return;
     const selections = event.selections;
     const lastSelection =
@@ -6381,6 +6449,30 @@ function TICChart(props: {
               </button>
             </div>
           )}
+          {props.onToggleSyncZoom && (
+            <button
+              type="button"
+              className={clsx(
+                "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors shadow-xs whitespace-nowrap",
+                props.syncZoom
+                  ? "bg-brand-50 border border-brand-300 text-brand-700 font-semibold"
+                  : "border border-ink-200 bg-surface text-ink-600 hover:bg-ink-50",
+              )}
+              onClick={props.onToggleSyncZoom}
+              title="Synchronize X-axis zoom & pan between TIC and UV chromatograms"
+            >
+              <span>🔗</span>
+              <span>{props.syncZoom ? "Zoom Synced" : "Sync Zoom"}</span>
+            </button>
+          )}
+          <div className="hidden 2xl:flex items-center gap-1 rounded bg-ink-100/60 px-2 py-0.5 text-[11px] text-ink-500 select-none">
+            <span>⌨️</span>
+            <span>←/→ Scans</span>
+            <span>·</span>
+            <span>B Overlay</span>
+            <span>·</span>
+            <span>Esc Reset</span>
+          </div>
           {props.onOpenDesign && (
             <button
               type="button"
@@ -6453,7 +6545,9 @@ function TICChart(props: {
                 title: axisTitle(`${props.settings.xTitle} (${unit})`, props.settings.axisTitleSize),
                 zeroline: false,
                 showgrid: props.settings.showGrid,
-                range: axisRange(props.settings.axis.xMin, props.settings.axis.xMax),
+                range: props.syncedRtRange
+                  ? [props.syncedRtRange[0] * scale, props.syncedRtRange[1] * scale]
+                  : axisRange(props.settings.axis.xMin, props.settings.axis.xMax),
                 tickfont: { size: props.settings.tickSize },
                 ...axisFrame(props.settings),
               },
@@ -6874,6 +6968,10 @@ function UVChromatogramChart(props: {
   autoAlignUv?: boolean;
   setAutoAlignUv?: (v: boolean) => void;
   onAutoAlignUV?: () => void;
+  syncZoom?: boolean;
+  onToggleSyncZoom?: () => void;
+  syncedRtRange?: [number, number] | null;
+  onZoomChange?: (range: [number, number] | null) => void;
 }) {
   const [localRevision, setLocalRevision] = useState(0);
   const {
@@ -7210,6 +7308,15 @@ function UVChromatogramChart(props: {
     });
   };
   const handleRelayout = (event: Readonly<Record<string, unknown>>) => {
+    if (props.onZoomChange) {
+      const x0 = event["xaxis.range[0]"];
+      const x1 = event["xaxis.range[1]"];
+      if (x0 != null && x1 != null) {
+        props.onZoomChange([Number(x0) / scale, Number(x1) / scale]);
+      } else if (event["xaxis.autorange"] === true) {
+        props.onZoomChange(null);
+      }
+    }
     if (bunchLabels) return;
     labels.forEach((label, index) => {
       const patch: Partial<UVTextLabel> = {};
@@ -7400,6 +7507,22 @@ function UVChromatogramChart(props: {
                 Stacked
               </button>
             </div>
+          )}
+          {props.onToggleSyncZoom && (
+            <button
+              type="button"
+              className={clsx(
+                "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors shadow-xs whitespace-nowrap",
+                props.syncZoom
+                  ? "bg-brand-50 border border-brand-300 text-brand-700 font-semibold"
+                  : "border border-ink-200 bg-surface text-ink-600 hover:bg-ink-50",
+              )}
+              onClick={props.onToggleSyncZoom}
+              title="Synchronize X-axis zoom & pan between TIC and UV chromatograms"
+            >
+              <span>🔗</span>
+              <span>{props.syncZoom ? "Zoom Synced" : "Sync Zoom"}</span>
+            </button>
           )}
           {props.onOpenDesign && (
             <button
@@ -7732,7 +7855,9 @@ function UVChromatogramChart(props: {
                   title: axisTitle(`${settings.xTitle} (${unit})`, settings.axisTitleSize),
                   zeroline: false,
                   showgrid: settings.showGrid,
-                  range: axisRange(settings.axis.xMin, settings.axis.xMax),
+                  range: props.syncedRtRange
+                    ? [props.syncedRtRange[0] * scale, props.syncedRtRange[1] * scale]
+                    : axisRange(settings.axis.xMin, settings.axis.xMax),
                   tickfont: { size: settings.tickSize },
                   ...axisFrame(settings),
                 },
@@ -7844,6 +7969,66 @@ function hexToRgba(hex: string, alpha: number): string {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
   return hex;
+}
+
+function pruneCentroidsForDisplay(
+  mz: number[],
+  intensity: number[],
+  basePeak: number,
+  criticalMzs?: number[],
+  maxPoints = 3500,
+): { mz: number[]; intensity: number[] } {
+  const n = mz.length;
+  if (n <= maxPoints) {
+    return { mz, intensity };
+  }
+
+  // 1. Identify critical indices that must NEVER be dropped (labeled peaks, polymer hits, top N)
+  const mustKeep = new Uint8Array(n);
+  if (criticalMzs && criticalMzs.length > 0) {
+    for (const target of criticalMzs) {
+      let closestIdx = -1;
+      let minDiff = 0.05;
+      for (let i = 0; i < n; i++) {
+        const diff = Math.abs(mz[i] - target);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestIdx = i;
+        }
+      }
+      if (closestIdx !== -1) {
+        mustKeep[closestIdx] = 1;
+      }
+    }
+  }
+
+  // 2. Filter out baseline noise (< 0.05% of base peak)
+  const noiseThreshold = basePeak * 0.0005;
+  const filteredIndices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (mustKeep[i] === 1 || intensity[i] >= noiseThreshold) {
+      filteredIndices.push(i);
+    }
+  }
+
+  // 3. If still exceeding maxPoints, keep the highest peaks plus mustKeep
+  if (filteredIndices.length > maxPoints) {
+    filteredIndices.sort((a, b) => {
+      if (mustKeep[a] !== mustKeep[b]) return mustKeep[b] - mustKeep[a];
+      return intensity[b] - intensity[a];
+    });
+    const topIndices = filteredIndices.slice(0, maxPoints);
+    topIndices.sort((a, b) => mz[a] - mz[b]);
+    return {
+      mz: topIndices.map((i) => mz[i]),
+      intensity: topIndices.map((i) => intensity[i]),
+    };
+  }
+
+  return {
+    mz: filteredIndices.map((i) => mz[i]),
+    intensity: filteredIndices.map((i) => intensity[i]),
+  };
 }
 
 function SpectrumChart(props: {
@@ -7960,13 +8145,20 @@ function SpectrumChart(props: {
   const isButterfly = overlayMode === "butterfly" || overlayMode === "butterfly_normalized";
   const isNorm = overlayMode === "normalized" || overlayMode === "butterfly_normalized";
 
+  const criticalMzs = useMemo(() => visibleLabels.map((l) => l.mz), [visibleLabels]);
+
+  const displayActive = useMemo(() => {
+    if (!s) return { mz: [], intensity: [] };
+    return pruneCentroidsForDisplay(s.mz, s.intensity, activeBasePeak, criticalMzs);
+  }, [s, activeBasePeak, criticalMzs]);
+
   const activeY = useMemo(() => {
-    if (!s) return [];
+    if (displayActive.mz.length === 0) return [];
     if (isNorm) {
-      return s.intensity.map((v) => (v / activeBasePeak) * 100);
+      return displayActive.intensity.map((v) => (v / activeBasePeak) * 100);
     }
-    return s.intensity;
-  }, [activeBasePeak, isNorm, s]);
+    return displayActive.intensity;
+  }, [activeBasePeak, displayActive, isNorm]);
 
   const overlayData = useMemo(
     () =>
@@ -7980,20 +8172,28 @@ function SpectrumChart(props: {
           traceBasePeak = max > 0 ? max : 1;
         }
 
+        const traceCriticalMzs = trace.spectrum.labels.map((l) => l.mz);
+        const displayTrace = pruneCentroidsForDisplay(
+          trace.spectrum.mz,
+          trace.spectrum.intensity,
+          traceBasePeak,
+          traceCriticalMzs,
+        );
+
         let yValues: number[];
         let hovertemplate: string;
 
         if (overlayMode === "butterfly_normalized") {
-          yValues = trace.spectrum.intensity.map((v) => -((v / traceBasePeak) * 100));
+          yValues = displayTrace.intensity.map((v) => -((v / traceBasePeak) * 100));
           hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>rel: %{customdata[1]:.1f}%<br>int: %{customdata[0]:.3e}<extra></extra>`;
         } else if (overlayMode === "butterfly") {
-          yValues = trace.spectrum.intensity.map((v) => -v);
+          yValues = displayTrace.intensity.map((v) => -v);
           hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{customdata[0]:.3e}<extra></extra>`;
         } else if (overlayMode === "normalized") {
-          yValues = trace.spectrum.intensity.map((v) => (v / traceBasePeak) * 100);
+          yValues = displayTrace.intensity.map((v) => (v / traceBasePeak) * 100);
           hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata[0]:.3e}<extra></extra>`;
         } else {
-          yValues = trace.spectrum.intensity;
+          yValues = displayTrace.intensity;
           hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>`;
         }
 
@@ -8004,9 +8204,9 @@ function SpectrumChart(props: {
 
         return {
           type: "bar" as const,
-          x: trace.spectrum.mz,
+          x: displayTrace.mz,
           y: yValues,
-          customdata: trace.spectrum.intensity.map((v) => [v, (v / traceBasePeak) * 100]),
+          customdata: displayTrace.intensity.map((v) => [v, (v / traceBasePeak) * 100]),
           width: props.settings.barWidth,
           marker: {
             color: traceColor,
@@ -8331,9 +8531,9 @@ function SpectrumChart(props: {
             data={[
               {
                 type: "bar",
-                x: s.mz,
+                x: displayActive.mz,
                 y: activeY,
-                customdata: s.intensity.map((v) => [v, (v / activeBasePeak) * 100]),
+                customdata: displayActive.intensity.map((v) => [v, (v / activeBasePeak) * 100]),
                 width: props.settings.barWidth,
                 marker: { color: props.settings.color },
                 hovertemplate:

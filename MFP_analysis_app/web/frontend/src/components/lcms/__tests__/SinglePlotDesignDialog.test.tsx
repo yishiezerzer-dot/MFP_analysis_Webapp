@@ -109,4 +109,30 @@ describe("SinglePlotDesignDialog", () => {
     fireEvent.click(doneBtn);
     expect(handleClose).toHaveBeenCalled();
   });
+
+  it("switches tabs when clicking tab navigation buttons", () => {
+    const settings = loadGraphSettingsDefault();
+    render(
+      <SinglePlotDesignDialog
+        graphId="spectrum"
+        settings={settings}
+        onChange={vi.fn()}
+        onSetDefault={vi.fn()}
+        onReset={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const tracesTab = screen.getByRole("button", { name: /Traces & Overlays/i });
+    fireEvent.click(tracesTab);
+    expect(tracesTab.className).toContain("bg-brand-50");
+
+    const labelsTab = screen.getByRole("button", { name: /Peak Labels/i });
+    fireEvent.click(labelsTab);
+    expect(labelsTab.className).toContain("bg-brand-50");
+
+    const axesTab = screen.getByRole("button", { name: /Axes & Limits/i });
+    fireEvent.click(axesTab);
+    expect(axesTab.className).toContain("bg-brand-50");
+  });
 });
