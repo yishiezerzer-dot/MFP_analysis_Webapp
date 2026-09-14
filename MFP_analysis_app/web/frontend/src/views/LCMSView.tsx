@@ -56,7 +56,6 @@ import {
   EXPECTED_PRODUCT_MAX_DP,
   extractTopPeaks,
   featureMatrixValue,
-  findNearestPeak,
   groupFeatureRowsForMatrix,
   integrateEICPeak,
   integrateTraceRegion,
@@ -74,7 +73,6 @@ import {
   type LCMSFeatureRow,
   type LCMSEICMetadata,
   type LCMSEICPlot,
-  type NearestPeakMatch,
   type PolymerModeSettings,
   type PolymerMonomerCategory,
   type PolymerMonomerPreset,
@@ -8588,9 +8586,34 @@ function SpectrumChart(props: {
   const specPlotSize = useContainerSize(specContainerRef, props.settings.height);
   const pt = usePlotlyTheme();
 
-  const [hoveredPeak, setHoveredPeak] = useState<NearestPeakMatch | null>(null);
-  const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const lastPeakClickTimeRef = useRef<number>(0);
+  const [targetMzInput, setTargetMzInput] = useState("");
+  const [interactionMode, setInteractionMode] = useState<"zoom" | "move">("zoom");
+
+  const handlePickTargetMz = (enteredMz?: number) => {
+    const mzVal = enteredMz ?? parseFloat(targetMzInput.trim());
+    if (!Number.isFinite(mzVal) || !s) return;
+
+    let nearestMz = mzVal;
+    let nearestIntensity = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < s.mz.length; i++) {
+      const diff = Math.abs(s.mz[i] - mzVal);
+      if (diff < minDiff) {
+        minDiff = diff;
+        nearestMz = s.mz[i];
+        nearestIntensity = s.intensity[i];
+      }
+    }
+
+    const finalMz = minDiff <= 0.5 ? nearestMz : mzVal;
+    const finalIntensity = minDiff <= 0.5 ? nearestIntensity : 0;
+
+    if (props.onPeakClick) {
+      lastPeakClickTimeRef.current = Date.now();
+      props.onPeakClick(finalMz, finalIntensity);
+    }
+  };
 
   const [labelOffsets, setLabelOffsets] = useState<Record<number, { ax?: number; ay?: number; x?: number; y?: number }>>({});
 
@@ -8694,165 +8717,6 @@ function SpectrumChart(props: {
     if (!s) return { mz: [], intensity: [] };
     return pruneCentroidsForDisplay(s.mz, s.intensity, activeBasePeak, criticalMzs);
   }, [s, activeBasePeak, criticalMzs]);
-
-  useEffect(() => {
-    const el = specContainerRef.current;
-    if (!el || !s) return;
-
-    const onMouseDown = (e: MouseEvent) => {
-      if (e.button !== 0) return;
-      mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
-    };
-
-    const onMouseUp = (e: MouseEvent) => {
-      if (e.button !== 0 || !s) return;
-      const start = mouseDownPosRef.current;
-      mouseDownPosRef.current = null;
-
-      // Ignore drag gestures (movement > 8px)
-      if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) return;
-      // Ignore double clicks (Plotly zoom reset)
-      if (e.detail === 2) return;
-
-      const rect = el.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const clickY = e.clientY - rect.top;
-
-      const graphEl = (el.querySelector(".js-plotly-plot") || specPlotRef.current) as PlotlyHTMLElement | null;
-      const fullLayout = (graphEl as any)?._fullLayout || (specPlotRef.current as any)?._fullLayout;
-      const plotOffsetLeft = fullLayout?._size?.l ?? fullLayout?.xaxis?._offset ?? fullLayout?.margin?.l ?? 65;
-      const plotOffsetTop = fullLayout?._size?.t ?? fullLayout?.yaxis?._offset ?? fullLayout?.margin?.t ?? 20;
-      const plotWidth = fullLayout?._size?.w ?? fullLayout?.xaxis?._length ?? ((rect.width || 800) - plotOffsetLeft - 20);
-      const plotHeight = fullLayout?._size?.h ?? fullLayout?.yaxis?._length ?? ((rect.height || 300) - plotOffsetTop - 45);
-
-      const clickXInPlot = clickX - plotOffsetLeft;
-      const clickYInPlot = clickY - plotOffsetTop;
-
-      // Allow clicking vertically from labels above the plot down to the axis
-      if (
-        clickXInPlot < -40 ||
-        clickXInPlot > plotWidth + 40 ||
-        clickYInPlot < -65 ||
-        clickYInPlot > plotHeight + 40
-      ) {
-        return;
-      }
-
-      const xRange: [number, number] = fullLayout?.xaxis?.range
-        ? [Number(fullLayout.xaxis.range[0]), Number(fullLayout.xaxis.range[1])]
-        : [
-            props.settings.axis.xMin ?? (s.mz[0] ?? 0),
-            props.settings.axis.xMax ?? (s.mz[s.mz.length - 1] ?? 2000),
-          ];
-
-      // Search all peaks in the spectrum with generous 48px tolerance
-      let bestPeak = findNearestPeak({
-        clickXInPlot,
-        plotWidth,
-        xRange,
-        peaks: { mz: s.mz, intensity: s.intensity },
-        maxPixelTolerance: 48,
-      });
-      let bestTarget: { sessionId?: string; displayName?: string } | undefined;
-
-      if (props.overlayTraces.length > 0) {
-        for (const trace of props.overlayTraces) {
-          const traceMatch = findNearestPeak({
-            clickXInPlot,
-            plotWidth,
-            xRange,
-            peaks: { mz: trace.spectrum.mz, intensity: trace.spectrum.intensity },
-            maxPixelTolerance: 48,
-          });
-          if (traceMatch && (!bestPeak || traceMatch.pixelDistance < bestPeak.pixelDistance)) {
-            bestPeak = traceMatch;
-            bestTarget = {
-              sessionId: trace.session_id,
-              displayName: trace.display_name,
-            };
-          }
-        }
-      }
-
-      if (bestPeak && props.onPeakClick) {
-        lastPeakClickTimeRef.current = Date.now();
-        props.onPeakClick(bestPeak.mz, bestPeak.intensity, e, bestTarget);
-      }
-    };
-
-    const onMouseMove = (e: MouseEvent) => {
-      if (!s) return;
-      const rect = el.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const clickY = e.clientY - rect.top;
-
-      const graphEl = (el.querySelector(".js-plotly-plot") || specPlotRef.current) as PlotlyHTMLElement | null;
-      const fullLayout = (graphEl as any)?._fullLayout || (specPlotRef.current as any)?._fullLayout;
-      const plotOffsetLeft = fullLayout?._size?.l ?? fullLayout?.xaxis?._offset ?? fullLayout?.margin?.l ?? 65;
-      const plotOffsetTop = fullLayout?._size?.t ?? fullLayout?.yaxis?._offset ?? fullLayout?.margin?.t ?? 20;
-      const plotWidth = fullLayout?._size?.w ?? fullLayout?.xaxis?._length ?? ((rect.width || 800) - plotOffsetLeft - 20);
-      const plotHeight = fullLayout?._size?.h ?? fullLayout?.yaxis?._length ?? ((rect.height || 300) - plotOffsetTop - 45);
-
-      const clickXInPlot = clickX - plotOffsetLeft;
-      const clickYInPlot = clickY - plotOffsetTop;
-
-      if (
-        clickXInPlot < -40 ||
-        clickXInPlot > plotWidth + 40 ||
-        clickYInPlot < -65 ||
-        clickYInPlot > plotHeight + 40
-      ) {
-        if (hoveredPeak) setHoveredPeak(null);
-        return;
-      }
-
-      const xRange: [number, number] = fullLayout?.xaxis?.range
-        ? [Number(fullLayout.xaxis.range[0]), Number(fullLayout.xaxis.range[1])]
-        : [
-            props.settings.axis.xMin ?? (s.mz[0] ?? 0),
-            props.settings.axis.xMax ?? (s.mz[s.mz.length - 1] ?? 2000),
-          ];
-
-      const match = findNearestPeak({
-        clickXInPlot,
-        plotWidth,
-        xRange,
-        peaks: { mz: s.mz, intensity: s.intensity },
-        maxPixelTolerance: 48,
-      });
-
-      if (match) {
-        if (!hoveredPeak || Math.abs(hoveredPeak.mz - match.mz) > 0.001) {
-          setHoveredPeak(match);
-        }
-      } else if (hoveredPeak) {
-        setHoveredPeak(null);
-      }
-    };
-
-    const onMouseLeave = () => {
-      setHoveredPeak(null);
-    };
-
-    el.addEventListener("mousedown", onMouseDown, { capture: true });
-    el.addEventListener("mouseup", onMouseUp, { capture: true });
-    el.addEventListener("mousemove", onMouseMove, { capture: true });
-    el.addEventListener("mouseleave", onMouseLeave);
-
-    return () => {
-      el.removeEventListener("mousedown", onMouseDown, { capture: true });
-      el.removeEventListener("mouseup", onMouseUp, { capture: true });
-      el.removeEventListener("mousemove", onMouseMove, { capture: true });
-      el.removeEventListener("mouseleave", onMouseLeave);
-    };
-  }, [
-    hoveredPeak,
-    props.onPeakClick,
-    props.overlayTraces,
-    props.settings.axis.xMax,
-    props.settings.axis.xMin,
-    s,
-  ]);
 
   const activeY = useMemo(() => {
     if (displayActive.mz.length === 0) return [];
@@ -9218,14 +9082,92 @@ function SpectrumChart(props: {
           )}
 
           {s && props.onPeakClick && (
-            <span className="text-xs text-ink-400 hidden lg:inline whitespace-nowrap">
-              Click a peak for quick actions
-            </span>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handlePickTargetMz();
+              }}
+              className="flex items-center"
+            >
+              <div className="flex items-center rounded-md border border-ink-200 bg-surface pl-2 pr-1 py-0.5 shadow-2xs focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
+                <span className="text-[11px] font-semibold text-ink-500 mr-1 select-none">m/z:</span>
+                <input
+                  type="number"
+                  step="any"
+                  value={targetMzInput}
+                  onChange={(e) => setTargetMzInput(e.target.value)}
+                  placeholder="e.g. 524.3"
+                  className="w-20 bg-transparent text-xs font-mono text-ink-800 placeholder-ink-400 focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={!targetMzInput.trim()}
+                  className="rounded bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  title="Inspect peak or create EIC for this m/z"
+                >
+                  Inspect
+                </button>
+              </div>
+            </form>
+          )}
+
+          {s && props.onPeakClick && (
+            <select
+              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-50 shadow-2xs focus:border-brand-500 focus:outline-none max-w-[170px] truncate"
+              value=""
+              onChange={(e) => {
+                const val = parseFloat(e.target.value);
+                if (Number.isFinite(val)) {
+                  handlePickTargetMz(val);
+                }
+              }}
+              title="Pick a mass from detected peaks"
+            >
+              <option value="" disabled>
+                🎯 Select Peak ({topPeaks.length ? `${topPeaks.length} top` : `${s.labels.length || s.meta.n_peaks} peaks`})...
+              </option>
+              {(topPeaks.length > 0 ? topPeaks : visibleLabels.map((l) => ({ mz: l.mz, intensity: l.intensity, relIntensity: l.intensity / (activeBasePeak || 1), label: l.text }))).map((p) => (
+                <option key={p.mz} value={p.mz}>
+                  m/z {p.mz.toFixed(4)} ({Math.round(p.relIntensity * 100)}%){p.label ? ` - ${cleanLabelText(p.label)}` : ""}
+                </option>
+              ))}
+            </select>
           )}
         </div>
 
         {/* Right Cluster: Quick Mode Pills, Design, Reload & Export */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* Zoom vs Move Labels Mode Switch */}
+          <div className="flex items-center rounded-md border border-ink-200 bg-surface p-0.5 shadow-2xs text-xs">
+            <button
+              type="button"
+              onClick={() => setInteractionMode("zoom")}
+              className={clsx(
+                "flex items-center gap-1 rounded px-2 py-0.5 font-medium transition-colors",
+                interactionMode === "zoom"
+                  ? "bg-brand-50 font-semibold text-brand-700 shadow-2xs"
+                  : "text-ink-600 hover:text-ink-900",
+              )}
+              title="Standard box-zoom drag on spectrum canvas"
+            >
+              <span>🔍</span>
+              <span>Zoom</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setInteractionMode("move")}
+              className={clsx(
+                "flex items-center gap-1 rounded px-2 py-0.5 font-medium transition-colors",
+                interactionMode === "move"
+                  ? "bg-brand-50 font-semibold text-brand-700 shadow-2xs"
+                  : "text-ink-600 hover:text-ink-900",
+              )}
+              title="Move peak labels freely without drawing zoom boxes"
+            >
+              <span>✋</span>
+              <span>Move Labels</span>
+            </button>
+          </div>
           {props.overlayTraces.length > 0 && props.onUpdateOverlayMode && (
             <div className="flex items-center rounded-md border border-ink-200 bg-ink-50/70 p-0.5 shadow-xs text-xs">
               <button
@@ -9365,32 +9307,9 @@ function SpectrumChart(props: {
       ) : (
         <div
           ref={specContainerRef}
-          className={clsx(
-            "min-w-0 overflow-hidden relative select-none",
-            hoveredPeak ? "cursor-pointer" : "",
-          )}
+          className="min-w-0 overflow-hidden relative select-none"
           style={{ height: props.settings.height }}
         >
-          {hoveredPeak && (
-            <div
-              className="pointer-events-none absolute z-20 flex items-center gap-1.5 rounded-full border border-brand-300 bg-surface/95 px-2.5 py-1 text-xs font-semibold text-brand-900 shadow-md backdrop-blur-xs transition-opacity animate-in fade-in-0 duration-100"
-              style={{
-                left: `${Math.max(
-                  70,
-                  Math.min(
-                    (specPlotSize.width ?? 800) - 190,
-                    hoveredPeak.peakXInPlot + ((specPlotRef.current as any)?._fullLayout?.xaxis?._offset ?? 65) - 60,
-                  ),
-                )}px`,
-                top: "24px",
-              }}
-            >
-              <span className="font-mono">m/z {hoveredPeak.mz.toFixed(4)}</span>
-              <span className="text-[10px] font-normal text-ink-500">
-                (Click to inspect / EIC)
-              </span>
-            </div>
-          )}
           <Plot
             revision={specPlotSize.revision + localRevision}
             data={[
@@ -9489,9 +9408,9 @@ function SpectrumChart(props: {
                         ax: offset?.ax ?? defaultAx,
                         ay: offset?.ay ?? defaultAy,
                         yshift: 0,
-                        bgcolor: showBox || isDragged ? (showBox ? hexToRgba(color, 0.12) : "rgba(255, 255, 255, 0.9)") : undefined,
-                        bordercolor: showBox || isDragged ? color : undefined,
-                        borderpad: showBox || isDragged ? 2 : undefined,
+                        bgcolor: showBox ? hexToRgba(color, 0.12) : isDragged ? "rgba(255, 255, 255, 0.9)" : undefined,
+                        bordercolor: showBox ? color : undefined,
+                        borderpad: showBox ? 2 : undefined,
                         font: {
                           size: fontSize,
                           color: color,
@@ -9514,8 +9433,8 @@ function SpectrumChart(props: {
                         ay: offset.ay ?? ann.ay,
                         yshift: 0,
                         bgcolor: ann.bgcolor ?? "rgba(255, 255, 255, 0.9)",
-                        bordercolor: ann.bordercolor ?? (typeof ann.font?.color === "string" ? ann.font.color : undefined),
-                        borderpad: ann.borderpad ?? 2,
+                        bordercolor: ann.bordercolor,
+                        borderpad: ann.borderpad,
                       };
                     }),
                   ]
@@ -9526,14 +9445,16 @@ function SpectrumChart(props: {
               showlegend: overlayData.length > 0,
               barmode: "overlay",
               bargap: 0,
-              dragmode: "zoom",
+              dragmode: interactionMode === "move" ? "pan" : "zoom",
+              hovermode: "closest",
+              hoverdistance: 30,
             }}
             config={{
               responsive: true,
               displaylogo: false,
-              editable: props.showDragHint,
+              editable: interactionMode === "move" || props.showDragHint,
               edits: {
-                annotationPosition: props.showDragHint,
+                annotationPosition: interactionMode === "move" || props.showDragHint,
                 annotationText: false,
                 axisTitleText: false,
                 titleText: false,
