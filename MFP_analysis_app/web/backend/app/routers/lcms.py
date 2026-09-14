@@ -193,6 +193,19 @@ async def create_session(
         _MZML_UPLOAD_DIR,
         allowed_extensions={".mzml", ".mzml.gz"},
     )
+    if dest.name.lower().endswith(".gz"):
+        import gzip
+        import shutil
+        uncompressed_dest = dest.with_name(dest.name[:-3])
+        with gzip.open(dest, "rb") as f_in, open(uncompressed_dest, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        try:
+            dest.unlink()
+        except Exception:
+            pass
+        dest = uncompressed_dest
+        if name.lower().endswith(".gz"):
+            name = name[:-3]
     try:
         state = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name, rt_unit=rt_unit)
     except LCMSLoadError as exc:

@@ -43,6 +43,55 @@ async function postFileUpload(
   return apiFetch(endpoint, { method: "POST", body: fd });
 }
 
+export type UploadProgressCallback = (loaded: number, total: number, pct: number) => void;
+
+export function uploadFileWithProgress(
+  endpoint: string,
+  file: File,
+  extraFields: Record<string, string> = {},
+  onProgress?: UploadProgressCallback,
+): Promise<Response> {
+  if (!onProgress) {
+    return postFileUpload(endpoint, file, extraFields);
+  }
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", endpoint);
+    xhr.setRequestHeader("X-Workspace-Id", activeWorkspaceId);
+
+    if (xhr.upload) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const pct = (event.loaded / event.total) * 100;
+          onProgress(event.loaded, event.total, pct);
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      const response = new Response(xhr.responseText, {
+        status: xhr.status,
+        statusText: xhr.statusText,
+        headers: {
+          "Content-Type": xhr.getResponseHeader("Content-Type") || "application/json",
+        },
+      });
+      resolve(response);
+    };
+
+    xhr.onerror = () => reject(new TypeError("Network request failed"));
+    xhr.ontimeout = () => reject(new TypeError("Network request timed out"));
+
+    const fd = new FormData();
+    fd.append("file", file);
+    for (const [key, value] of Object.entries(extraFields)) {
+      fd.append(key, value);
+    }
+    xhr.send(fd);
+  });
+}
+
 export interface WorkspaceSummary {
   id: string;
   name: string;
@@ -908,8 +957,12 @@ export const api = {
   },
 
   lcms: {
-    upload: (file: File, rtUnit: "minutes" | "seconds" = "minutes") =>
-      postFileUpload("/api/lcms/sessions", file, { rt_unit: rtUnit }).then((r) =>
+    upload: (
+      file: File,
+      rtUnit: "minutes" | "seconds" = "minutes",
+      onProgress?: UploadProgressCallback,
+    ) =>
+      uploadFileWithProgress("/api/lcms/sessions", file, { rt_unit: rtUnit }, onProgress).then((r) =>
         handle<LCMSSessionSummary>(r),
       ),
     loadFromPath: (path: string, displayName?: string, rtUnit?: "minutes" | "seconds") =>

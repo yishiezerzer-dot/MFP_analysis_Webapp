@@ -5,6 +5,7 @@ import {
   clampPublicationDpi,
   clampPublicationFontSize,
   clampPublicationMm,
+  CURRENT_VIEW_PRESET_ID,
   DEFAULT_PUBLICATION_DPI,
   DEFAULT_PUBLICATION_LEGEND_FONT_SIZE,
   DEFAULT_PUBLICATION_SIZE,
@@ -14,6 +15,7 @@ import {
   PUBLICATION_WIDTH_PRESETS,
   PublicationExportFormat,
   PublicationExportSettings,
+  pxToLogicalMm,
 } from "../utils/publicationPlotExport";
 import { Tooltip } from "./Tooltip";
 
@@ -24,6 +26,7 @@ export interface PaperFigureExportToolbarProps {
   storageKey?: string;
   defaultSize?: PublicationExportSettings;
   mode?: "popover" | "inline";
+  currentSizePx?: { width?: number; height?: number };
 }
 
 function reconcileSettings(value: unknown, fallback: PublicationExportSettings): PublicationExportSettings {
@@ -34,10 +37,13 @@ function reconcileSettings(value: unknown, fallback: PublicationExportSettings):
     heightMm: clampPublicationMm(Number(raw.heightMm), fallback.heightMm),
     dpi: clampPublicationDpi(Number(raw.dpi ?? fallback.dpi)),
     legendFontSize: clampPublicationFontSize(Number(raw.legendFontSize), fallback.legendFontSize),
+    isCurrentView: Boolean(raw.isCurrentView),
+    sourceDimensionsPx: raw.sourceDimensionsPx,
   };
 }
 
 function sizeValue(settings: PublicationExportSettings): string {
+  if (settings.isCurrentView) return CURRENT_VIEW_PRESET_ID;
   const preset = PUBLICATION_WIDTH_PRESETS.find(
     (item) =>
       Math.abs(item.widthMm - settings.widthMm) < 0.1 &&
@@ -94,6 +100,30 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
     };
   }, [isOpen]);
 
+  const cardWidthPx = Math.max(
+    100,
+    Math.round(
+      props.currentSizePx?.width ??
+      containerRef.current?.closest(".card")?.clientWidth ??
+      containerRef.current?.parentElement?.clientWidth ??
+      1200,
+    ),
+  );
+  const cardHeightPx = Math.max(80, Math.round(props.currentSizePx?.height ?? 400));
+  const cardWidthMm = pxToLogicalMm(cardWidthPx);
+  const cardHeightMm = pxToLogicalMm(cardHeightPx);
+
+  const handleExport1to1 = (format: PublicationExportFormat) => {
+    props.onExport(format, {
+      ...settings,
+      isCurrentView: true,
+      sourceDimensionsPx: { width: cardWidthPx, height: cardHeightPx },
+      widthMm: cardWidthMm,
+      heightMm: cardHeightMm,
+    });
+    setIsOpen(false);
+  };
+
   const mode = props.mode ?? "popover";
 
   if (mode === "inline") {
@@ -108,16 +138,28 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
         <label className="flex items-center gap-1 text-ink-600">
           <span className="text-ink-500">Preset</span>
           <select
-            className="input w-[10.5rem] py-0.5 text-xs font-mono"
+            className="input w-[11.5rem] py-0.5 text-xs font-mono"
             value={sizeValue(settings)}
             disabled={props.disabled}
             onChange={(e) => {
               const val = e.target.value;
               if (val === "custom") return;
+              if (val === CURRENT_VIEW_PRESET_ID) {
+                setSettings((prev) => ({
+                  ...prev,
+                  isCurrentView: true,
+                  sourceDimensionsPx: { width: cardWidthPx, height: cardHeightPx },
+                  widthMm: cardWidthMm,
+                  heightMm: cardHeightMm,
+                }));
+                return;
+              }
               const found = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === val);
               if (found) {
                 setSettings((prev) => ({
                   ...prev,
+                  isCurrentView: false,
+                  sourceDimensionsPx: undefined,
                   widthMm: found.widthMm,
                   heightMm: found.heightMm,
                   legendFontSize: found.defaultLegendFontSize ?? prev.legendFontSize,
@@ -125,6 +167,9 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
               }
             }}
           >
+            <option value={CURRENT_VIEW_PRESET_ID}>
+              ⭐ Current View (1:1 Card)
+            </option>
             <optgroup label="ACS (JACS, Macromolecules)">
               {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "ACS").map((preset) => (
                 <option key={preset.id} value={preset.id}>
@@ -276,7 +321,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
       </Tooltip>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-1.5 z-50 w-80 rounded-xl border border-ink-200 bg-surface p-3.5 shadow-xl text-xs text-ink-800 animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute right-0 top-full mt-1.5 z-50 w-84 rounded-xl border border-ink-200 bg-surface p-3.5 shadow-xl text-xs text-ink-800 animate-in fade-in zoom-in-95 duration-100">
           <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-ink-200">
             <div className="flex items-center gap-1.5 font-semibold text-ink-900">
               <span>📷</span>
@@ -292,10 +337,44 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
             </button>
           </div>
 
+          {/* Quick 1:1 Snapshot Card */}
+          <div className="rounded-lg border border-brand-200 bg-brand-50/70 p-2.5 mb-3 shadow-2xs">
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-semibold text-brand-900 text-xs flex items-center gap-1.5">
+                <span>🖥️</span>
+                <span>Current View (1:1 Card)</span>
+              </span>
+              <span className="text-[10px] font-mono font-medium text-brand-700 bg-white/90 border border-brand-200 px-1.5 py-0.5 rounded">
+                {cardWidthPx} × {cardHeightPx} px
+              </span>
+            </div>
+            <p className="text-[11px] text-brand-800 leading-snug mb-2">
+              Exact 1-to-1 card replica: matches aspect ratio, active zoom, centroid sticks & peak labels.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="flex-1 rounded-md bg-brand-600 py-1.5 px-2 text-xs font-semibold text-white hover:bg-brand-700 transition-colors shadow-xs"
+                onClick={() => handleExport1to1("png")}
+                title={`Export 1:1 PNG at ${settings.dpi} DPI (${Math.round(cardWidthPx * (settings.dpi / 96))} × ${Math.round(cardHeightPx * (settings.dpi / 96))} px)`}
+              >
+                1:1 PNG ({settings.dpi} DPI)
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-md border border-brand-300 bg-white py-1.5 px-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 transition-colors shadow-xs"
+                onClick={() => handleExport1to1("svg")}
+                title="Export 1:1 Vector SVG (infinite resolution, vector peak sticks)"
+              >
+                1:1 Vector SVG
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-2.5">
             <div>
               <label className="block text-[11px] font-medium text-ink-600 mb-1">
-                Journal Preset
+                Journal Paper Presets (Print)
               </label>
               <select
                 className="input w-full py-1 text-xs font-mono"
@@ -303,10 +382,22 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                 onChange={(e) => {
                   const val = e.target.value;
                   if (val === "custom") return;
+                  if (val === CURRENT_VIEW_PRESET_ID) {
+                    setSettings((prev) => ({
+                      ...prev,
+                      isCurrentView: true,
+                      sourceDimensionsPx: { width: cardWidthPx, height: cardHeightPx },
+                      widthMm: cardWidthMm,
+                      heightMm: cardHeightMm,
+                    }));
+                    return;
+                  }
                   const found = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === val);
                   if (found) {
                     setSettings((prev) => ({
                       ...prev,
+                      isCurrentView: false,
+                      sourceDimensionsPx: undefined,
                       widthMm: found.widthMm,
                       heightMm: found.heightMm,
                       legendFontSize: found.defaultLegendFontSize ?? prev.legendFontSize,
@@ -314,6 +405,9 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                   }
                 }}
               >
+                <option value={CURRENT_VIEW_PRESET_ID}>
+                  ⭐ Current View (1:1 Card - {cardWidthPx} × {cardHeightPx} px)
+                </option>
                 <optgroup label="ACS (JACS, Macromolecules)">
                   {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "ACS").map((preset) => (
                     <option key={preset.id} value={preset.id}>

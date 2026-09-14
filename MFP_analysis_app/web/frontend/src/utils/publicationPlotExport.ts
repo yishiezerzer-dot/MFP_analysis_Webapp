@@ -16,6 +16,8 @@ export interface PublicationExportSettings {
   heightMm: number;
   dpi: number;
   legendFontSize: number;
+  isCurrentView?: boolean;
+  sourceDimensionsPx?: { width?: number; height?: number };
 }
 
 export interface PublicationExportPixels {
@@ -30,6 +32,8 @@ export interface PublicationExportRequest extends PublicationExportSettings {
   format: PublicationExportFormat;
   filename: string;
 }
+
+export const CURRENT_VIEW_PRESET_ID = "current-view";
 
 export const PUBLICATION_WIDTH_PRESETS: PublicationSizePreset[] = [
   // ACS (American Chemical Society - JACS, Macromolecules, Chem. Mater., etc.)
@@ -93,6 +97,10 @@ export function mmToLogicalPx(mm: number): number {
   return Math.max(1, Math.round((mm / MM_PER_INCH) * CSS_DPI));
 }
 
+export function pxToLogicalMm(px: number): number {
+  return Math.round(((px / CSS_DPI) * MM_PER_INCH) * 10) / 10;
+}
+
 export function finalRasterPx(mm: number, dpi: number): number {
   return Math.max(1, Math.round((mm / MM_PER_INCH) * clampPublicationDpi(dpi)));
 }
@@ -105,8 +113,24 @@ export function publicationExportPixels(
   settings: PublicationExportSettings,
   options?: { reserveLegend?: boolean },
 ): PublicationExportPixels {
-  const plotWidthPx = mmToLogicalPx(settings.widthMm);
-  const plotHeightPx = mmToLogicalPx(settings.heightMm);
+  let plotWidthPx: number;
+  let plotHeightPx: number;
+
+  if (
+    settings.isCurrentView &&
+    settings.sourceDimensionsPx &&
+    typeof settings.sourceDimensionsPx.width === "number" &&
+    settings.sourceDimensionsPx.width > 0 &&
+    typeof settings.sourceDimensionsPx.height === "number" &&
+    settings.sourceDimensionsPx.height > 0
+  ) {
+    plotWidthPx = Math.max(1, Math.round(settings.sourceDimensionsPx.width));
+    plotHeightPx = Math.max(1, Math.round(settings.sourceDimensionsPx.height));
+  } else {
+    plotWidthPx = mmToLogicalPx(settings.widthMm);
+    plotHeightPx = mmToLogicalPx(settings.heightMm);
+  }
+
   const legendReserveWidthPx = options?.reserveLegend ? mmToLogicalPx(LEGEND_RESERVE_MM) : 0;
   return {
     plotWidthPx,
@@ -118,6 +142,11 @@ export function publicationExportPixels(
 }
 
 export function publicationFilenameSuffix(settings: PublicationExportSettings, format: PublicationExportFormat): string {
+  if (settings.isCurrentView) {
+    return format === "png"
+      ? `1to1_display_${clampPublicationDpi(settings.dpi)}dpi`
+      : "1to1_display_vector";
+  }
   const size = `${Math.round(settings.widthMm)}x${Math.round(settings.heightMm)}mm`;
   return format === "png" ? `${size}_${clampPublicationDpi(settings.dpi)}dpi` : `${size}_vector`;
 }
@@ -129,6 +158,14 @@ export function sanitizeFilenamePart(value: string, fallback = "figure"): string
 
 export function describePublicationExport(settings: PublicationExportSettings): string {
   const dpi = clampPublicationDpi(settings.dpi);
+  if (settings.isCurrentView) {
+    const wPx = settings.sourceDimensionsPx?.width ?? mmToLogicalPx(settings.widthMm);
+    const hPx = settings.sourceDimensionsPx?.height ?? mmToLogicalPx(settings.heightMm);
+    const scale = pngScaleForDpi(dpi);
+    const rasterW = Math.round(wPx * scale);
+    const rasterH = Math.round(hPx * scale);
+    return `Current View 1:1 (${wPx} x ${hPx} px card). PNG @ ${dpi} DPI -> ${rasterW} x ${rasterH} px. Exact screen aspect ratio & active zoom.`;
+  }
   return `Plot area ${settings.widthMm} x ${settings.heightMm} mm, PNG ${dpi} DPI -> ${finalRasterPx(settings.widthMm, dpi)} x ${finalRasterPx(settings.heightMm, dpi)} px. Legends export vertically on the right with extra space.`;
 }
 
@@ -146,11 +183,19 @@ export async function exportPlotlyPublicationImage(
   const source = graphDiv as PlotlyHTMLElement & {
     data?: Data[];
     layout?: Partial<Layout>;
+    _fullLayout?: Record<string, unknown>;
   };
   const data = clonePlotData(source.data ?? [], request.format, options?.dataOverrides);
   const reserveLegend = shouldReserveLegend(source.layout, options?.layoutOverrides);
   const pixels = publicationExportPixels(request, { reserveLegend });
-  const layout = buildPublicationLayout(source.layout, pixels, request.legendFontSize, options?.layoutOverrides);
+  const layout = buildPublicationLayout(
+    source.layout,
+    source._fullLayout,
+    pixels,
+    request.legendFontSize,
+    options?.layoutOverrides,
+    Boolean(request.isCurrentView),
+  );
   const tempDiv = document.createElement("div");
   tempDiv.style.position = "fixed";
   tempDiv.style.left = "-10000px";
@@ -180,18 +225,51 @@ export async function exportPlotlyPublicationImage(
   }
 }
 
+export function sanitizeAnnotation(ann: unknown): Record<string, unknown> {
+  if (!isRecord(ann)) return {};
+  const clean: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(ann)) {
+    // Strip private Plotly runtime DOM / D3 references (e.g. _dragRef, _text, _arrowpath, _rect)
+    if (key.startsWith("_") || typeof value === "function") continue;
+    clean[key] = clonePlain(value);
+  }
+  return clean;
+}
+
 function buildPublicationLayout(
   sourceLayout: Partial<Layout> | undefined,
+  fullLayout: Record<string, unknown> | undefined,
   pixels: PublicationExportPixels,
   legendFontSize: number,
   overrides?: Partial<Layout>,
+  isCurrentView?: boolean,
 ): Partial<Layout> {
-  const source = clonePlain(sourceLayout ?? {});
-  const sourceMargin = source.margin ?? {};
-  const overrideMargin = overrides?.margin ?? {};
+  const source = cleanObjectTree(sourceLayout ?? {});
+  const sourceMargin = isRecord(source.margin) ? source.margin : {};
+  const overrideMargin = isRecord(overrides?.margin) ? overrides.margin : {};
+
+  const leftMargin = typeof overrideMargin.l === "number"
+    ? overrideMargin.l
+    : typeof sourceMargin.l === "number"
+    ? Math.max(68, sourceMargin.l)
+    : 68;
+
+  const topMargin = typeof overrideMargin.t === "number"
+    ? overrideMargin.t
+    : typeof sourceMargin.t === "number"
+    ? sourceMargin.t
+    : (source.title ? 28 : 16);
+
+  const bottomMargin = typeof overrideMargin.b === "number"
+    ? overrideMargin.b
+    : typeof sourceMargin.b === "number"
+    ? sourceMargin.b
+    : 45;
+
   const rightMargin = (typeof sourceMargin.r === "number" ? sourceMargin.r : 18) +
     (typeof overrideMargin.r === "number" ? overrideMargin.r - (typeof sourceMargin.r === "number" ? sourceMargin.r : 18) : 0) +
     pixels.legendReserveWidthPx;
+
   const layout: Partial<Layout> = {
     ...source,
     ...overrides,
@@ -199,22 +277,39 @@ function buildPublicationLayout(
     width: pixels.canvasWidthPx,
     height: pixels.canvasHeightPx,
     margin: {
-      l: 58,
-      t: source.title ? 28 : 14,
-      ...(source.margin ?? {}),
-      ...(overrides?.margin ?? {}),
+      l: leftMargin,
+      t: topMargin,
+      b: bottomMargin,
       r: rightMargin,
     },
-    font: {
-      family: "Arial, Helvetica, sans-serif",
-      size: 10,
-      color: "#111827",
-      ...(source.font ?? {}),
-      ...(overrides?.font ?? {}),
-    },
+    font: isCurrentView && isRecord(source.font)
+      ? { ...source.font, ...(overrides?.font ?? {}) }
+      : {
+          family: "Arial, Helvetica, sans-serif",
+          size: 10,
+          color: "#111827",
+          ...(isRecord(source.font) ? source.font : {}),
+          ...(overrides?.font ?? {}),
+        },
     paper_bgcolor: "#ffffff",
     plot_bgcolor: "#ffffff",
+    barmode: (overrides?.barmode ?? source.barmode ?? "overlay") as Layout["barmode"],
+    bargap: typeof overrides?.bargap === "number"
+      ? overrides.bargap
+      : typeof source.bargap === "number"
+      ? source.bargap
+      : 0,
   };
+
+  // Preserve active live zoom range if available from Plotly's _fullLayout or source
+  const fullXAxis = isRecord(fullLayout?.xaxis) ? (fullLayout.xaxis as Record<string, unknown>) : undefined;
+  const liveXRange = (Array.isArray(fullXAxis?.range) ? fullXAxis.range : undefined) ??
+    (isRecord(source.xaxis) && Array.isArray(source.xaxis.range) ? source.xaxis.range : undefined);
+
+  const fullYAxis = isRecord(fullLayout?.yaxis) ? (fullLayout.yaxis as Record<string, unknown>) : undefined;
+  const liveYRange = (Array.isArray(fullYAxis?.range) ? fullYAxis.range : undefined) ??
+    (isRecord(source.yaxis) && Array.isArray(source.yaxis.range) ? source.yaxis.range : undefined);
+
   if (layout.showlegend && pixels.legendReserveWidthPx > 0) {
     const legendFont = {
       ...(isRecord(source.legend) && isRecord(source.legend.font) ? source.legend.font : {}),
@@ -232,8 +327,15 @@ function buildPublicationLayout(
       yanchor: "top",
     } as Layout["legend"];
   }
-  layout.xaxis = exportAxis(source.xaxis, overrides?.xaxis) as Layout["xaxis"];
-  layout.yaxis = exportAxis(source.yaxis, overrides?.yaxis) as Layout["yaxis"];
+
+  layout.xaxis = exportAxis(source.xaxis, overrides?.xaxis, isCurrentView, liveXRange) as Layout["xaxis"];
+  layout.yaxis = exportAxis(source.yaxis, overrides?.yaxis, isCurrentView, liveYRange) as Layout["yaxis"];
+
+  // Sanitize all annotations so live DOM nodes do not break newPlot
+  if (Array.isArray(layout.annotations)) {
+    layout.annotations = layout.annotations.map(sanitizeAnnotation) as Layout["annotations"];
+  }
+
   return layout;
 }
 
@@ -262,33 +364,111 @@ function shouldReserveLegend(sourceLayout: Partial<Layout> | undefined, override
   return sourceLayout?.showlegend === true;
 }
 
-function exportAxis(source: unknown, override: unknown): unknown {
+function exportAxis(
+  source: unknown,
+  override: unknown,
+  isCurrentView?: boolean,
+  liveRange?: unknown[],
+): unknown {
   const sourceAxis = isRecord(source) ? source : {};
   const overrideAxis = isRecord(override) ? override : {};
+
+  // Strip private Plotly runtime keys
+  const cleanSource: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(sourceAxis)) {
+    if (!k.startsWith("_") && typeof v !== "function") {
+      cleanSource[k] = clonePlain(v);
+    }
+  }
+
+  // If a live range is available and no override is provided, preserve it and disable autorange
+  if (
+    Array.isArray(liveRange) &&
+    liveRange.length === 2 &&
+    Number.isFinite(Number(liveRange[0])) &&
+    Number.isFinite(Number(liveRange[1])) &&
+    !overrideAxis.range
+  ) {
+    cleanSource.range = [Number(liveRange[0]), Number(liveRange[1])];
+    cleanSource.autorange = false;
+  }
+
+  if (isCurrentView) {
+    return {
+      ...cleanSource,
+      ...overrideAxis,
+    };
+  }
+
   return {
-    ...sourceAxis,
+    ...cleanSource,
+    titlefont: {
+      size: 10,
+      ...(isRecord(cleanSource.titlefont) ? cleanSource.titlefont : {}),
+      ...(isRecord(overrideAxis.titlefont) ? overrideAxis.titlefont : {}),
+    },
+    tickfont: {
+      size: 8,
+      ...(isRecord(cleanSource.tickfont) ? cleanSource.tickfont : {}),
+      ...(isRecord(overrideAxis.tickfont) ? overrideAxis.tickfont : {}),
+    },
+    linecolor: cleanSource.linecolor ?? "#111827",
+    linewidth: cleanSource.linewidth ?? 1,
+    tickcolor: cleanSource.tickcolor ?? "#111827",
+    tickwidth: cleanSource.tickwidth ?? 1,
+    ticks: cleanSource.ticks ?? "outside",
+    ticklen: cleanSource.ticklen ?? 4,
+    showline: cleanSource.showline ?? true,
+    mirror: cleanSource.mirror ?? true,
     ...overrideAxis,
-    titlefont: { size: 10, ...(isRecord(sourceAxis.titlefont) ? sourceAxis.titlefont : {}), ...(isRecord(overrideAxis.titlefont) ? overrideAxis.titlefont : {}) },
-    tickfont: { size: 8, ...(isRecord(sourceAxis.tickfont) ? sourceAxis.tickfont : {}), ...(isRecord(overrideAxis.tickfont) ? overrideAxis.tickfont : {}) },
-    linecolor: "#111827",
-    linewidth: 1,
-    tickcolor: "#111827",
-    tickwidth: 1,
-    ticks: "outside",
-    ticklen: 4,
-    showline: true,
-    mirror: true,
   };
 }
 
 function clonePlotData(data: Data[], format: PublicationExportFormat, overrides?: Partial<Data>): Data[] {
   return data.map((trace) => {
-    const cloned = clonePlain(trace) as Data;
-    if (format === "svg" && isRecord(cloned) && cloned.type === "scattergl") {
+    // If trace has original _input, prefer it to bypass stale Plotly DOM bindings
+    const sourceTrace = isRecord(trace) && isRecord((trace as unknown as { _input?: unknown })._input)
+      ? (trace as unknown as { _input: unknown })._input
+      : trace;
+    const cloned = cleanObjectTree(sourceTrace) as Record<string, unknown>;
+
+    if (format === "svg" && cloned.type === "scattergl") {
       cloned.type = "scatter";
     }
-    return { ...cloned, ...overrides };
+
+    // For mass spectrometry centroid bar traces:
+    // Ensure an outline stroke is present so thin bars do not disappear in SVG or low-res raster
+    if (cloned.type === "bar") {
+      const marker = isRecord(cloned.marker) ? { ...cloned.marker } : {};
+      const markerColor = (marker.color as string) || "#2563eb";
+      const existingLine = isRecord(marker.line) ? marker.line : {};
+      const lineWidth = typeof existingLine.width === "number" && existingLine.width > 0 ? existingLine.width : 0.8;
+      marker.line = {
+        color: existingLine.color || markerColor,
+        width: lineWidth,
+        ...existingLine,
+      };
+      cloned.marker = marker;
+    }
+
+    return { ...cloned, ...overrides } as Data;
   }) as Data[];
+}
+
+function cleanObjectTree(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {};
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (k.startsWith("_") || typeof v === "function") continue;
+    if (Array.isArray(v)) {
+      result[k] = v.map((item) => (isRecord(item) ? cleanObjectTree(item) : clonePlain(item)));
+    } else if (isRecord(v)) {
+      result[k] = cleanObjectTree(v);
+    } else {
+      result[k] = clonePlain(v);
+    }
+  }
+  return result;
 }
 
 function clonePlain<T>(value: T): T {
@@ -300,7 +480,11 @@ function clonePlain<T>(value: T): T {
       // Fall through to JSON cloning for Plotly's plain data/layout objects.
     }
   }
-  return JSON.parse(JSON.stringify(value)) as T;
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch {
+    return value;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

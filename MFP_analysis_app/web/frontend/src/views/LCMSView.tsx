@@ -1021,6 +1021,13 @@ function formatScanId(spectrumId: string): string {
   return spectrumId;
 }
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
 function axisRange(min: number | null, max: number | null): [number, number] | undefined {
   return min != null && max != null ? [min, max] : undefined;
 }
@@ -1386,6 +1393,15 @@ export function LCMSView() {
   const [uvBusy, setUvBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{
+    filename: string;
+    fileIndex: number;
+    totalFiles: number;
+    percent: number;
+    loadedBytes: number;
+    totalBytes: number;
+    phase: "uploading" | "indexing";
+  } | null>(null);
 
   const copyPolymerSettingsFromSession = useCallback(
     (sourceSid: string, targetSid?: string) => {
@@ -2356,11 +2372,45 @@ export function LCMSView() {
       setSpectrum(null);
       setSelectedRt(null);
       setSelectedUvRt(null);
-      const uploaded: LCMSSessionSummary[] = [];
-      for (const file of files) {
-        const s = await api.lcms.upload(file);
-        uploaded.push(s);
-      }
+
+      const totalBytes = files.reduce((acc, f) => acc + (f.size || 0), 0);
+      const loadedByFile = new Map<number, number>();
+
+      const updateProgress = (fileIdx: number, loaded: number) => {
+        loadedByFile.set(fileIdx, loaded);
+        let sumLoaded = 0;
+        for (const bytes of loadedByFile.values()) {
+          sumLoaded += bytes;
+        }
+        const pct = totalBytes > 0 ? (sumLoaded / totalBytes) * 100 : 0;
+        const currentFile = files[fileIdx];
+        setUploadProgress({
+          filename: currentFile.name,
+          fileIndex: fileIdx + 1,
+          totalFiles: files.length,
+          percent: pct,
+          loadedBytes: sumLoaded,
+          totalBytes,
+          phase: pct >= 99.5 ? "indexing" : "uploading",
+        });
+      };
+
+      setUploadProgress({
+        filename: files[0].name,
+        fileIndex: 1,
+        totalFiles: files.length,
+        percent: 0,
+        loadedBytes: 0,
+        totalBytes,
+        phase: "uploading",
+      });
+
+      const uploadPromises = files.map((file, idx) =>
+        api.lcms.upload(file, rtUnit, (loaded) => updateProgress(idx, loaded)),
+      );
+
+      const uploaded = await Promise.all(uploadPromises);
+
       if (uploaded.length > 0) {
         setSessions((prev) => [...prev, ...uploaded]);
         setPolymerSettingsBySessionId((prev) => {
@@ -2385,12 +2435,13 @@ export function LCMSView() {
         setActiveSid(uploaded[uploaded.length - 1].session_id);
       }
       if (uploaded.length > 1) {
-        setInfo(`Loaded ${uploaded.length} mzML files.`);
+        setInfo(`Loaded ${uploaded.length} mzML files in parallel.`);
       }
     } catch (err) {
       setError(String(err));
     } finally {
       setBusy(false);
+      setUploadProgress(null);
     }
   };
 
@@ -3922,7 +3973,7 @@ export function LCMSView() {
           <input
             ref={fileRef}
             type="file"
-            accept=".mzML,.mzml"
+            accept=".mzML,.mzml,.mzML.gz,.mzml.gz"
             multiple
             className="hidden"
             onChange={(e) => {
@@ -4031,6 +4082,27 @@ export function LCMSView() {
         />
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-6">
+          {uploadProgress && (
+            <div className="rounded-lg border border-brand-300 bg-brand-50/90 p-4 shadow-sm animate-in fade-in duration-200">
+              <div className="flex items-center justify-between text-xs font-semibold text-brand-900 mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" />
+                  <span className="text-sm">
+                    {uploadProgress.phase === "indexing"
+                      ? `Indexing MS1 scans & building TIC index (${uploadProgress.totalFiles > 1 ? `${uploadProgress.fileIndex}/${uploadProgress.totalFiles}: ` : ""}${uploadProgress.filename})...`
+                      : `Uploading ${uploadProgress.totalFiles > 1 ? `(${uploadProgress.fileIndex}/${uploadProgress.totalFiles}) ` : ""}${uploadProgress.filename} · ${formatBytes(uploadProgress.loadedBytes)} / ${formatBytes(uploadProgress.totalBytes)}`}
+                  </span>
+                </div>
+                <span className="font-mono text-xs text-brand-700 font-bold">{Math.round(uploadProgress.percent)}%</span>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-brand-200/70">
+                <div
+                  className="h-full bg-brand-600 transition-all duration-150 rounded-full"
+                  style={{ width: `${Math.max(2, Math.min(100, uploadProgress.percent))}%` }}
+                />
+              </div>
+            </div>
+          )}
           <DatasetRibbon active={active} onTagUpdated={handleTagUpdated} />
 
           {!active && <EmptyState onPick={() => fileRef.current?.click()} />}
@@ -6292,15 +6364,25 @@ function TICChart(props: {
     (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
       if (!plotRef.current || !props.tic) return;
       const base = sanitizeFilenamePart(props.settings.title || "lcms_tic", "lcms_tic");
+      const is1to1 = exportSettings.isCurrentView;
       void exportPlotlyPublicationImage(plotRef.current, {
         format,
         filename: `${base}_tic_${publicationFilenameSuffix(exportSettings, format)}`,
         ...exportSettings,
       }, {
-        layoutOverrides: {
-          font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
-          margin: { l: 58, r: 18, t: props.settings.title ? 28 : 12, b: 46 },
-        },
+        layoutOverrides: is1to1
+          ? {
+              margin: {
+                l: Math.max(68, props.settings.title ? 28 : 12),
+                r: 18,
+                t: props.settings.title ? 28 : 12,
+                b: 46,
+              },
+            }
+          : {
+              font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
+              margin: { l: 68, r: 18, t: props.settings.title ? 28 : 12, b: 46 },
+            },
       });
     },
     [props.settings.title, props.tic],
@@ -6501,6 +6583,7 @@ function TICChart(props: {
           <PaperFigureExportToolbar
             disabled={!props.tic}
             storageKey="mfp-publication-plot-export-lcms-tic"
+            currentSizePx={{ width: plotSize.width, height: plotSize.height }}
             onExport={savePublication}
           />
         </div>
@@ -7296,15 +7379,25 @@ function UVChromatogramChart(props: {
   const saveUvPaper = async (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
     if (!uvPlotRef.current) return;
     const baseName = sanitizeFilenamePart(meta?.filename ?? "uv_chromatogram", "uv_chromatogram");
+    const is1to1 = exportSettings.isCurrentView;
     await exportPlotlyPublicationImage(uvPlotRef.current, {
       format,
       filename: `${baseName}_uv_chromatogram_${publicationFilenameSuffix(exportSettings, format)}`,
       ...exportSettings,
     }, {
-      layoutOverrides: {
-        font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
-        margin: { l: 58, r: 18, t: settings.title ? 28 : 12, b: 46 },
-      },
+      layoutOverrides: is1to1
+        ? {
+            margin: {
+              l: Math.max(68, settings.title ? 28 : 12),
+              r: 18,
+              t: settings.title ? 28 : 12,
+              b: 46,
+            },
+          }
+        : {
+            font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
+            margin: { l: 68, r: 18, t: settings.title ? 28 : 12, b: 46 },
+          },
     });
   };
   const handleRelayout = (event: Readonly<Record<string, unknown>>) => {
@@ -7553,6 +7646,7 @@ function UVChromatogramChart(props: {
           <PaperFigureExportToolbar
             disabled={busy || !available}
             storageKey="mfp-publication-plot-export-lcms-uv"
+            currentSizePx={{ width: uvPlotSize.width, height: uvPlotSize.height }}
             onExport={saveUvPaper}
           />
 
@@ -8314,15 +8408,26 @@ function SpectrumChart(props: {
         ? `region_${s.meta.rt_start.toFixed(3)}_${s.meta.rt_end?.toFixed(3) ?? ""}`
         : `rt_${s.meta.rt_min.toFixed(3)}`;
       const base = sanitizeFilenamePart(props.settings.title || `lcms_ms1_${rtPart}`, "lcms_ms1_spectrum");
+      const is1to1 = exportSettings.isCurrentView;
+
       void exportPlotlyPublicationImage(specPlotRef.current, {
         format,
         filename: `${base}_${publicationFilenameSuffix(exportSettings, format)}`,
         ...exportSettings,
       }, {
-        layoutOverrides: {
-          font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
-          margin: { l: 58, r: 18, t: props.settings.title ? 28 : 14, b: 46 },
-        },
+        layoutOverrides: is1to1
+          ? {
+              margin: {
+                l: Math.max(70, props.settings.title ? 28 : 20),
+                r: 20,
+                t: props.settings.title ? 28 : 20,
+                b: 45,
+              },
+            }
+          : {
+              font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
+              margin: { l: 70, r: 18, t: props.settings.title ? 28 : 14, b: 46 },
+            },
       });
     },
     [props.settings.title, s],
@@ -8512,6 +8617,7 @@ function SpectrumChart(props: {
           <PaperFigureExportToolbar
             disabled={!s}
             storageKey="mfp-publication-plot-export-lcms-spectrum"
+            currentSizePx={{ width: specPlotSize.width, height: specPlotSize.height }}
             onExport={savePublication}
           />
         </div>
@@ -8668,9 +8774,9 @@ function EmptyState(props: { onPick: () => void }) {
     <div className="card flex flex-col items-center justify-center gap-3 p-12 text-center">
       <div className="text-4xl">📈</div>
       <div>
-        <div className="text-lg font-semibold">Open an mzML file to begin</div>
+        <div className="text-lg font-semibold">Open an mzML or mzML.gz file to begin</div>
         <div className="text-sm text-ink-500">
-          The file is parsed with pyteomics on the backend and kept in memory.
+          The file is parsed with pyteomics on the backend and cached for fast reloading.
         </div>
       </div>
       <button className="btn-primary" onClick={props.onPick}>

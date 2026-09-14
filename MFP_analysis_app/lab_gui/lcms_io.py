@@ -1,13 +1,31 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from pyteomics import mzml
 
 from .lcms_model import SpectrumMeta, _extract_ms_level, _extract_polarity, _extract_rt_minutes, _spectrum_id
+
+
+def _get_index_cache_dir() -> Path:
+    """Resolve directory for cached LCMS TIC indexes."""
+    env_dir = os.environ.get("MFP_DATA_DIR")
+    if env_dir:
+        p = Path(env_dir) / "cache" / "lcms_index"
+    else:
+        candidate = Path(__file__).resolve().parents[2] / ".data" / "cache" / "lcms_index"
+        if candidate.parent.parent.is_dir():
+            p = candidate
+        else:
+            p = Path.home() / ".mfp_analysis" / "cache" / "lcms_index"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 class LCMSLoadError(Exception):
@@ -19,28 +37,89 @@ class UVLoadError(Exception):
 
 
 class MzMLTICIndex:
-    """Minimal MS1 index used by the GUI.
+    """Minimal MS1 index used by the GUI and Web app.
 
     Builds a list of MS1 spectra metadata (RT, TIC, polarity).
+    Uses fast header-only parsing (decode_binary=False) and persistent disk caching.
 
     UI-free: does not import tkinter and does not show dialogs.
     """
 
-    def __init__(self, mzml_path: Path, *, rt_unit: str = "minutes") -> None:
-        """Implement the `__init__` behavior for this module.
-
-        Text-only documentation note: modify internal logic here to change behavior.
-        """
+    def __init__(self, mzml_path: Path, *, rt_unit: str = "minutes", use_cache: bool = True) -> None:
         self.path = Path(mzml_path).expanduser().resolve()
         self.rt_unit = str(rt_unit)
+        self.use_cache = bool(use_cache)
         self.ms1: List[SpectrumMeta] = []
         self.stats: Dict[str, Any] = {}
 
-    def build(self) -> None:
-        """Build and return composed application state.
+    def _cache_path(self) -> Optional[Path]:
+        try:
+            if not self.path.exists():
+                return None
+            stat = self.path.stat()
+            key_raw = f"{self.path.resolve()}:{stat.st_size}:{stat.st_mtime}:{self.rt_unit}:v2"
+            cache_name = hashlib.sha256(key_raw.encode("utf-8")).hexdigest() + ".json"
+            return _get_index_cache_dir() / cache_name
+        except Exception:
+            return None
 
-        Text-only documentation note: modify internal logic here to change behavior.
-        """
+    def _load_from_cache(self) -> bool:
+        if not self.use_cache:
+            return False
+        cache_file = self._cache_path()
+        if not cache_file or not cache_file.is_file():
+            return False
+        try:
+            payload = json.loads(cache_file.read_text(encoding="utf-8"))
+            ms1_data = payload.get("ms1", [])
+            stats = payload.get("stats", {})
+            self.ms1 = [
+                SpectrumMeta(
+                    spectrum_id=str(item["spectrum_id"]),
+                    rt_min=float(item["rt_min"]),
+                    tic=float(item["tic"]),
+                    polarity=item.get("polarity"),
+                    ms_level=int(item.get("ms_level", 1)),
+                )
+                for item in ms1_data
+            ]
+            self.stats = stats
+            self.stats["cached"] = True
+            return True
+        except Exception:
+            return False
+
+    def _save_to_cache(self) -> None:
+        if not self.use_cache:
+            return
+        cache_file = self._cache_path()
+        if not cache_file:
+            return
+        try:
+            payload = {
+                "ms1": [
+                    {
+                        "spectrum_id": m.spectrum_id,
+                        "rt_min": m.rt_min,
+                        "tic": m.tic,
+                        "polarity": m.polarity,
+                        "ms_level": m.ms_level,
+                    }
+                    for m in self.ms1
+                ],
+                "stats": self.stats,
+            }
+            tmp_file = cache_file.with_suffix(".tmp")
+            tmp_file.write_text(json.dumps(payload), encoding="utf-8")
+            tmp_file.replace(cache_file)
+        except Exception:
+            pass
+
+    def build(self) -> None:
+        """Build MS1 index, using fast disk cache if available."""
+        if self._load_from_cache():
+            return
+
         ms1: List[SpectrumMeta] = []
         stats: Dict[str, Any] = {
             "total_spectra": 0,
@@ -50,19 +129,79 @@ class MzMLTICIndex:
             "skipped_no_intensity": 0,
             "skipped_error": 0,
             "fatal_error": None,
+            "cached": False,
         }
 
+        # Attempt 1: Fast header-only reading without full binary array decoding
+        fast_success = False
         try:
-            reader = mzml.MzML(str(self.path))
-        except Exception as exc:
-            stats["fatal_error"] = f"Failed to open mzML: {exc!r}"
-            self.ms1 = []
-            self.stats = stats
-            return
+            with mzml.MzML(str(self.path), decode_binary=False) as reader:
+                for spectrum in reader:
+                    stats["total_spectra"] += 1
+                    try:
+                        ms_level = _extract_ms_level(spectrum)
+                        if ms_level != 1:
+                            stats["skipped_non_ms1"] += 1
+                            continue
 
-        try:
-            with reader:
-                try:
+                        rt_min = _extract_rt_minutes(spectrum, rt_unit=self.rt_unit)
+                        if rt_min is None:
+                            stats["skipped_no_rt"] += 1
+                            continue
+
+                        pol = _extract_polarity(spectrum)
+                        tic_val = spectrum.get("total ion current")
+                        if tic_val is not None:
+                            try:
+                                tic = float(tic_val)
+                            except Exception:
+                                tic = 0.0
+                        else:
+                            inten = spectrum.get("intensity array")
+                            if inten is not None:
+                                try:
+                                    arr = inten.decode() if hasattr(inten, "decode") else np.asarray(inten, dtype=float)
+                                    tic = float(np.sum(arr))
+                                except Exception:
+                                    tic = 0.0
+                            else:
+                                stats["skipped_no_intensity"] += 1
+                                continue
+
+                        ms1.append(
+                            SpectrumMeta(
+                                spectrum_id=_spectrum_id(spectrum),
+                                rt_min=float(rt_min),
+                                tic=float(tic),
+                                polarity=pol,
+                                ms_level=1,
+                            )
+                        )
+                        stats["ms1_kept"] += 1
+                    except Exception as exc:
+                        stats["skipped_error"] += 1
+                        if stats.get("fatal_error") is None:
+                            stats["fatal_error"] = f"Error while parsing spectrum: {exc!r}"
+                        continue
+                fast_success = True
+        except Exception:
+            fast_success = False
+
+        # Attempt 2: Fallback to full binary decoding if fast header parsing failed
+        if not fast_success or (len(ms1) == 0 and stats["total_spectra"] > 0):
+            ms1 = []
+            stats = {
+                "total_spectra": 0,
+                "ms1_kept": 0,
+                "skipped_non_ms1": 0,
+                "skipped_no_rt": 0,
+                "skipped_no_intensity": 0,
+                "skipped_error": 0,
+                "fatal_error": None,
+                "cached": False,
+            }
+            try:
+                with mzml.MzML(str(self.path)) as reader:
                     for spectrum in reader:
                         stats["total_spectra"] += 1
                         try:
@@ -102,14 +241,14 @@ class MzMLTICIndex:
                             if stats.get("fatal_error") is None:
                                 stats["fatal_error"] = f"Error while parsing spectrum: {exc!r}"
                             continue
-                except Exception as exc:
-                    stats["fatal_error"] = f"mzML iteration aborted: {exc!r}"
-        except Exception as exc:
-            stats["fatal_error"] = f"mzML read failed: {exc!r}"
+            except Exception as exc:
+                stats["fatal_error"] = f"mzML read failed: {exc!r}"
 
         ms1.sort(key=lambda m: float(m.rt_min))
         self.ms1 = ms1
         self.stats = stats
+        if ms1:
+            self._save_to_cache()
 
 
 def preview_dataframe_rows(df: pd.DataFrame, *, n: int = 10) -> List[Tuple[Any, ...]]:
