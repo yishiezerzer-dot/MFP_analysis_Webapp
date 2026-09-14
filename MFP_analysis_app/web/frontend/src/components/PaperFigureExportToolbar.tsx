@@ -78,6 +78,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
   );
 
   const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"current" | "journal">("current");
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -321,15 +322,15 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
       </Tooltip>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-1.5 z-50 w-84 rounded-xl border border-ink-200 bg-surface p-3.5 shadow-xl text-xs text-ink-800 animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute right-0 top-full mt-1.5 z-50 w-[390px] max-w-[calc(100vw-1.5rem)] rounded-xl border border-ink-200 bg-surface p-3.5 shadow-xl text-xs text-ink-800 animate-in fade-in zoom-in-95 duration-100">
           <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-ink-200">
-            <div className="flex items-center gap-1.5 font-semibold text-ink-900">
+            <div className="flex items-center gap-1.5 font-semibold text-ink-900 text-[13px]">
               <span>📷</span>
-              <span>Publication & Figure Export</span>
+              <span>Figure & Publication Export</span>
             </div>
             <button
               type="button"
-              className="text-ink-400 hover:text-ink-700 text-sm p-0.5 rounded transition-colors"
+              className="text-ink-400 hover:text-ink-700 text-sm p-1 rounded transition-colors"
               onClick={() => setIsOpen(false)}
               title="Close export panel"
             >
@@ -337,207 +338,269 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
             </button>
           </div>
 
-          {/* Quick 1:1 Snapshot Card */}
-          <div className="rounded-lg border border-brand-200 bg-brand-50/70 p-2.5 mb-3 shadow-2xs">
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-semibold text-brand-900 text-xs flex items-center gap-1.5">
-                <span>🖥️</span>
-                <span>Current View (1:1 Card)</span>
-              </span>
-              <span className="text-[10px] font-mono font-medium text-brand-700 bg-white/90 border border-brand-200 px-1.5 py-0.5 rounded">
-                {cardWidthPx} × {cardHeightPx} px
-              </span>
-            </div>
-            <p className="text-[11px] text-brand-800 leading-snug mb-2">
-              Exact 1-to-1 card replica: matches aspect ratio, active zoom, centroid sticks & peak labels.
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="flex-1 rounded-md bg-brand-600 py-1.5 px-2 text-xs font-semibold text-white hover:bg-brand-700 transition-colors shadow-xs"
-                onClick={() => handleExport1to1("png")}
-                title={`Export 1:1 PNG at ${settings.dpi} DPI (${Math.round(cardWidthPx * (settings.dpi / 96))} × ${Math.round(cardHeightPx * (settings.dpi / 96))} px)`}
-              >
-                1:1 PNG ({settings.dpi} DPI)
-              </button>
-              <button
-                type="button"
-                className="flex-1 rounded-md border border-brand-300 bg-white py-1.5 px-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 transition-colors shadow-xs"
-                onClick={() => handleExport1to1("svg")}
-                title="Export 1:1 Vector SVG (infinite resolution, vector peak sticks)"
-              >
-                1:1 Vector SVG
-              </button>
-            </div>
+          {/* Segmented Tab Switcher */}
+          <div className="flex items-center rounded-lg bg-ink-100/80 p-1 mb-3 text-xs">
+            <button
+              type="button"
+              className={clsx(
+                "flex-1 py-1.5 px-2 rounded-md font-medium transition-all flex items-center justify-center gap-1.5 text-xs whitespace-nowrap",
+                activeTab === "current"
+                  ? "bg-surface text-ink-900 shadow-xs font-semibold"
+                  : "text-ink-600 hover:text-ink-900",
+              )}
+              onClick={() => {
+                setActiveTab("current");
+                setSettings((prev) => ({
+                  ...prev,
+                  isCurrentView: true,
+                  sourceDimensionsPx: { width: cardWidthPx, height: cardHeightPx },
+                  widthMm: cardWidthMm,
+                  heightMm: cardHeightMm,
+                }));
+              }}
+            >
+              <span>🖥️</span>
+              <span>Current View (1:1)</span>
+            </button>
+            <button
+              type="button"
+              className={clsx(
+                "flex-1 py-1.5 px-2 rounded-md font-medium transition-all flex items-center justify-center gap-1.5 text-xs whitespace-nowrap",
+                activeTab === "journal"
+                  ? "bg-surface text-ink-900 shadow-xs font-semibold"
+                  : "text-ink-600 hover:text-ink-900",
+              )}
+              onClick={() => {
+                setActiveTab("journal");
+                setSettings((prev) => ({
+                  ...prev,
+                  isCurrentView: false,
+                  sourceDimensionsPx: undefined,
+                }));
+              }}
+            >
+              <span>📄</span>
+              <span>Journal Presets</span>
+            </button>
           </div>
 
-          <div className="space-y-2.5">
-            <div>
-              <label className="block text-[11px] font-medium text-ink-600 mb-1">
-                Journal Paper Presets (Print)
-              </label>
-              <select
-                className="input w-full py-1 text-xs font-mono"
-                value={sizeValue(settings)}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === "custom") return;
-                  if (val === CURRENT_VIEW_PRESET_ID) {
-                    setSettings((prev) => ({
-                      ...prev,
-                      isCurrentView: true,
-                      sourceDimensionsPx: { width: cardWidthPx, height: cardHeightPx },
-                      widthMm: cardWidthMm,
-                      heightMm: cardHeightMm,
-                    }));
-                    return;
-                  }
-                  const found = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === val);
-                  if (found) {
-                    setSettings((prev) => ({
-                      ...prev,
-                      isCurrentView: false,
-                      sourceDimensionsPx: undefined,
-                      widthMm: found.widthMm,
-                      heightMm: found.heightMm,
-                      legendFontSize: found.defaultLegendFontSize ?? prev.legendFontSize,
-                    }));
-                  }
-                }}
-              >
-                <option value={CURRENT_VIEW_PRESET_ID}>
-                  ⭐ Current View (1:1 Card - {cardWidthPx} × {cardHeightPx} px)
-                </option>
-                <optgroup label="ACS (JACS, Macromolecules)">
-                  {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "ACS").map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Nature Portfolio">
-                  {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "Nature").map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="RSC (Chem. Sci.)">
-                  {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "RSC").map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Standard Sizes">
-                  {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "Standard").map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </optgroup>
-                <option value="custom">Custom Dimensions</option>
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[11px] font-medium text-ink-600 mb-1">Width (mm)</label>
-                <input
-                  type="number"
-                  className="input w-full py-1 text-xs"
-                  min={30}
-                  max={260}
-                  step={1}
-                  value={settings.widthMm}
-                  onChange={(e) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      widthMm: clampPublicationMm(Number(e.target.value), prev.widthMm),
-                    }))
-                  }
-                />
+          {/* Tab 1: Current View (1:1) */}
+          {activeTab === "current" && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-brand-200/90 bg-brand-50/60 p-3 text-xs">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="font-semibold text-brand-900 text-xs flex items-center gap-1.5 whitespace-nowrap">
+                    <span>Active Display</span>
+                  </span>
+                  <span className="font-mono text-[11px] font-semibold text-brand-700 bg-white border border-brand-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
+                    {cardWidthPx} × {cardHeightPx} px
+                  </span>
+                </div>
+                <p className="text-[11px] text-brand-700 leading-relaxed">
+                  Exact 1-to-1 card replica: matches card aspect ratio, active zoom, centroid sticks, and peak labels.
+                </p>
               </div>
-              <div>
-                <label className="block text-[11px] font-medium text-ink-600 mb-1">Height (mm)</label>
-                <input
-                  type="number"
-                  className="input w-full py-1 text-xs"
-                  min={30}
-                  max={260}
-                  step={1}
-                  value={settings.heightMm}
-                  onChange={(e) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      heightMm: clampPublicationMm(Number(e.target.value), prev.heightMm),
-                    }))
-                  }
-                />
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block text-[11px] font-medium text-ink-600 mb-1">Resolution (DPI)</label>
+                <label className="block text-[11px] font-medium text-ink-600 mb-1">
+                  Raster Resolution (PNG only)
+                </label>
                 <select
                   className="input w-full py-1 text-xs"
                   value={settings.dpi}
-                  onChange={(e) => setSettings((prev) => ({ ...prev, dpi: clampPublicationDpi(Number(e.target.value)) }))}
+                  onChange={(e) =>
+                    setSettings((prev) => ({ ...prev, dpi: clampPublicationDpi(Number(e.target.value)) }))
+                  }
                 >
-                  {PUBLICATION_DPI_PRESETS.map((dpi) => (
-                    <option key={dpi} value={dpi}>
-                      {dpi} DPI
-                    </option>
-                  ))}
+                  <option value={150}>150 DPI — Fast Draft ({Math.round(cardWidthPx * (150 / 96))} × {Math.round(cardHeightPx * (150 / 96))} px)</option>
+                  <option value={300}>300 DPI — Presentation / Web ({Math.round(cardWidthPx * (300 / 96))} × {Math.round(cardHeightPx * (300 / 96))} px)</option>
+                  <option value={600}>600 DPI — Publication Hi-Res ({Math.round(cardWidthPx * (600 / 96))} × {Math.round(cardHeightPx * (600 / 96))} px)</option>
+                  <option value={1200}>1200 DPI — Ultra Print ({Math.round(cardWidthPx * (1200 / 96))} × {Math.round(cardHeightPx * (1200 / 96))} px)</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-[11px] font-medium text-ink-600 mb-1">Legend font (pt)</label>
-                <input
-                  type="number"
-                  className="input w-full py-1 text-xs"
-                  min={4}
-                  max={36}
-                  step={1}
-                  value={settings.legendFontSize}
-                  onChange={(e) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      legendFontSize: clampPublicationFontSize(Number(e.target.value), prev.legendFontSize),
-                    }))
-                  }
-                />
+
+              <div className="pt-2 border-t border-ink-200 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="flex-1 rounded-md bg-brand-600 py-2 px-3 text-xs font-semibold text-white hover:bg-brand-700 transition-colors shadow-xs flex items-center justify-center gap-1.5 whitespace-nowrap"
+                  onClick={() => handleExport1to1("png")}
+                  title={`Export 1:1 PNG at ${settings.dpi} DPI (${Math.round(cardWidthPx * (settings.dpi / 96))} × ${Math.round(cardHeightPx * (settings.dpi / 96))} px)`}
+                >
+                  <span>📷</span>
+                  <span>Export 1:1 PNG</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 rounded-md border border-ink-300 bg-surface py-2 px-3 text-xs font-semibold text-ink-800 hover:bg-ink-50 transition-colors shadow-xs flex items-center justify-center gap-1.5 whitespace-nowrap"
+                  onClick={() => handleExport1to1("svg")}
+                  title="Export 1:1 Vector SVG (infinite resolution, vector peak sticks)"
+                >
+                  <span>📐</span>
+                  <span>Export 1:1 SVG</span>
+                </button>
               </div>
             </div>
+          )}
 
-            <div className="text-[11px] text-ink-500 pt-0.5">
-              {describePublicationExport(settings)}
-            </div>
+          {/* Tab 2: Journal Presets */}
+          {activeTab === "journal" && (
+            <div className="space-y-2.5">
+              <div>
+                <label className="block text-[11px] font-medium text-ink-600 mb-1">
+                  Journal Preset
+                </label>
+                <select
+                  className="input w-full py-1 text-xs font-mono"
+                  value={sizeValue(settings)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "custom") return;
+                    const found = PUBLICATION_WIDTH_PRESETS.find((p) => p.id === val);
+                    if (found) {
+                      setSettings((prev) => ({
+                        ...prev,
+                        isCurrentView: false,
+                        sourceDimensionsPx: undefined,
+                        widthMm: found.widthMm,
+                        heightMm: found.heightMm,
+                        legendFontSize: found.defaultLegendFontSize ?? prev.legendFontSize,
+                      }));
+                    }
+                  }}
+                >
+                  <optgroup label="ACS (JACS, Macromolecules)">
+                    {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "ACS").map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Nature Portfolio">
+                    {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "Nature").map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="RSC (Chem. Sci.)">
+                    {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "RSC").map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Standard Sizes">
+                    {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "Standard").map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <option value="custom">Custom Dimensions</option>
+                </select>
+              </div>
 
-            <div className="pt-2 border-t border-ink-200 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                className="flex-1 rounded-md border border-brand-300 bg-brand-50 py-1.5 px-2 text-xs font-semibold text-brand-700 hover:bg-brand-100 transition-colors shadow-xs"
-                onClick={() => {
-                  props.onExport("svg", settings);
-                  setIsOpen(false);
-                }}
-              >
-                Vector SVG
-              </button>
-              <button
-                type="button"
-                className="flex-1 rounded-md bg-brand-600 py-1.5 px-2 text-xs font-semibold text-white hover:bg-brand-700 transition-colors shadow-xs"
-                onClick={() => {
-                  props.onExport("png", settings);
-                  setIsOpen(false);
-                }}
-              >
-                Publication PNG
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Width (mm)</label>
+                  <input
+                    type="number"
+                    className="input w-full py-1 text-xs"
+                    min={30}
+                    max={260}
+                    step={1}
+                    value={settings.widthMm}
+                    onChange={(e) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        isCurrentView: false,
+                        widthMm: clampPublicationMm(Number(e.target.value), prev.widthMm),
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Height (mm)</label>
+                  <input
+                    type="number"
+                    className="input w-full py-1 text-xs"
+                    min={30}
+                    max={260}
+                    step={1}
+                    value={settings.heightMm}
+                    onChange={(e) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        isCurrentView: false,
+                        heightMm: clampPublicationMm(Number(e.target.value), prev.heightMm),
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Resolution (DPI)</label>
+                  <select
+                    className="input w-full py-1 text-xs"
+                    value={settings.dpi}
+                    onChange={(e) => setSettings((prev) => ({ ...prev, dpi: clampPublicationDpi(Number(e.target.value)) }))}
+                  >
+                    {PUBLICATION_DPI_PRESETS.map((dpi) => (
+                      <option key={dpi} value={dpi}>
+                        {dpi} DPI
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Legend font (pt)</label>
+                  <input
+                    type="number"
+                    className="input w-full py-1 text-xs"
+                    min={4}
+                    max={36}
+                    step={1}
+                    value={settings.legendFontSize}
+                    onChange={(e) =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        legendFontSize: clampPublicationFontSize(Number(e.target.value), prev.legendFontSize),
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="text-[11px] text-ink-500 pt-0.5 leading-snug">
+                {describePublicationExport(settings)}
+              </div>
+
+              <div className="pt-2 border-t border-ink-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="flex-1 rounded-md border border-ink-300 bg-surface py-2 px-3 text-xs font-semibold text-ink-800 hover:bg-ink-50 transition-colors shadow-xs whitespace-nowrap"
+                  onClick={() => {
+                    props.onExport("svg", { ...settings, isCurrentView: false });
+                    setIsOpen(false);
+                  }}
+                >
+                  Vector SVG
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 rounded-md bg-brand-600 py-2 px-3 text-xs font-semibold text-white hover:bg-brand-700 transition-colors shadow-xs whitespace-nowrap"
+                  onClick={() => {
+                    props.onExport("png", { ...settings, isCurrentView: false });
+                    setIsOpen(false);
+                  }}
+                >
+                  Publication PNG
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>
