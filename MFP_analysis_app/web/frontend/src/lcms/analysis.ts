@@ -1085,7 +1085,7 @@ export function findNearestPeak(params: {
   peaks: { mz: number[]; intensity: number[] };
   maxPixelTolerance?: number;
 }): NearestPeakMatch | null {
-  const { clickXInPlot, plotWidth, xRange, peaks, maxPixelTolerance = 18 } = params;
+  const { clickXInPlot, plotWidth, xRange, peaks, maxPixelTolerance = 48 } = params;
   if (!peaks.mz || peaks.mz.length === 0 || plotWidth <= 0) return null;
   const [xMin, xMax] = xRange;
   const rangeSpan = xMax - xMin;

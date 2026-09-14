@@ -8689,138 +8689,164 @@ function SpectrumChart(props: {
     return pruneCentroidsForDisplay(s.mz, s.intensity, activeBasePeak, criticalMzs);
   }, [s, activeBasePeak, criticalMzs]);
 
-  const handleContainerMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
-  };
+  useEffect(() => {
+    const el = specContainerRef.current;
+    if (!el || !s) return;
 
-  const handleContainerMouseUp = (e: React.MouseEvent) => {
-    if (e.button !== 0 || !mouseDownPosRef.current || !s) return;
-    const start = mouseDownPosRef.current;
-    mouseDownPosRef.current = null;
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
+    };
 
-    // Ignore if drag-zoomed or panned (movement > 6px)
-    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) return;
-    // Ignore double clicks (Plotly autorange reset)
-    if (e.detail === 2) return;
+    const onMouseUp = (e: MouseEvent) => {
+      if (e.button !== 0 || !s) return;
+      const start = mouseDownPosRef.current;
+      mouseDownPosRef.current = null;
 
-    if (!specContainerRef.current) return;
-    const rect = specContainerRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
+      // Ignore drag gestures (movement > 8px)
+      if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 8) return;
+      // Ignore double clicks (Plotly zoom reset)
+      if (e.detail === 2) return;
 
-    const fullLayout = (specPlotRef.current as any)?._fullLayout;
-    const plotOffsetLeft = fullLayout?.xaxis?._offset ?? 65;
-    const plotOffsetTop = fullLayout?.yaxis?._offset ?? (props.settings.title ? 28 : 20);
-    const plotWidth = fullLayout?.xaxis?._length ?? ((specPlotSize.width ?? 800) - plotOffsetLeft - 20);
-    const plotHeight = fullLayout?.yaxis?._length ?? ((specPlotSize.height ?? props.settings.height ?? 300) - plotOffsetTop - 45);
+      const rect = el.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
 
-    const clickXInPlot = clickX - plotOffsetLeft;
-    const clickYInPlot = clickY - plotOffsetTop;
+      const graphEl = (el.querySelector(".js-plotly-plot") || specPlotRef.current) as PlotlyHTMLElement | null;
+      const fullLayout = (graphEl as any)?._fullLayout || (specPlotRef.current as any)?._fullLayout;
+      const plotOffsetLeft = fullLayout?._size?.l ?? fullLayout?.xaxis?._offset ?? fullLayout?.margin?.l ?? 65;
+      const plotOffsetTop = fullLayout?._size?.t ?? fullLayout?.yaxis?._offset ?? fullLayout?.margin?.t ?? 20;
+      const plotWidth = fullLayout?._size?.w ?? fullLayout?.xaxis?._length ?? ((rect.width || 800) - plotOffsetLeft - 20);
+      const plotHeight = fullLayout?._size?.h ?? fullLayout?.yaxis?._length ?? ((rect.height || 300) - plotOffsetTop - 45);
 
-    // Allow clicking anywhere within the plot area vertically (including empty whitespace above peaks)
-    if (
-      clickXInPlot < -12 ||
-      clickXInPlot > plotWidth + 12 ||
-      clickYInPlot < -12 ||
-      clickYInPlot > plotHeight + 12
-    ) {
-      return;
-    }
+      const clickXInPlot = clickX - plotOffsetLeft;
+      const clickYInPlot = clickY - plotOffsetTop;
 
-    const xRange: [number, number] = fullLayout?.xaxis?.range
-      ? [Number(fullLayout.xaxis.range[0]), Number(fullLayout.xaxis.range[1])]
-      : [
-          props.settings.axis.xMin ?? (displayActive.mz[0] ?? 0),
-          props.settings.axis.xMax ?? (displayActive.mz[displayActive.mz.length - 1] ?? 2000),
-        ];
+      // Allow clicking vertically from labels above the plot down to the axis
+      if (
+        clickXInPlot < -40 ||
+        clickXInPlot > plotWidth + 40 ||
+        clickYInPlot < -65 ||
+        clickYInPlot > plotHeight + 40
+      ) {
+        return;
+      }
 
-    let bestPeak = findNearestPeak({
-      clickXInPlot,
-      plotWidth,
-      xRange,
-      peaks: displayActive,
-      maxPixelTolerance: 18,
-    });
-    let bestTarget: { sessionId?: string; displayName?: string } | undefined;
+      const xRange: [number, number] = fullLayout?.xaxis?.range
+        ? [Number(fullLayout.xaxis.range[0]), Number(fullLayout.xaxis.range[1])]
+        : [
+            props.settings.axis.xMin ?? (s.mz[0] ?? 0),
+            props.settings.axis.xMax ?? (s.mz[s.mz.length - 1] ?? 2000),
+          ];
 
-    if (props.overlayTraces.length > 0) {
-      for (const trace of props.overlayTraces) {
-        const traceMatch = findNearestPeak({
-          clickXInPlot,
-          plotWidth,
-          xRange,
-          peaks: { mz: trace.spectrum.mz, intensity: trace.spectrum.intensity },
-          maxPixelTolerance: 18,
-        });
-        if (traceMatch && (!bestPeak || traceMatch.pixelDistance < bestPeak.pixelDistance)) {
-          bestPeak = traceMatch;
-          bestTarget = {
-            sessionId: trace.session_id,
-            displayName: trace.display_name,
-          };
+      // Search all peaks in the spectrum with generous 48px tolerance
+      let bestPeak = findNearestPeak({
+        clickXInPlot,
+        plotWidth,
+        xRange,
+        peaks: { mz: s.mz, intensity: s.intensity },
+        maxPixelTolerance: 48,
+      });
+      let bestTarget: { sessionId?: string; displayName?: string } | undefined;
+
+      if (props.overlayTraces.length > 0) {
+        for (const trace of props.overlayTraces) {
+          const traceMatch = findNearestPeak({
+            clickXInPlot,
+            plotWidth,
+            xRange,
+            peaks: { mz: trace.spectrum.mz, intensity: trace.spectrum.intensity },
+            maxPixelTolerance: 48,
+          });
+          if (traceMatch && (!bestPeak || traceMatch.pixelDistance < bestPeak.pixelDistance)) {
+            bestPeak = traceMatch;
+            bestTarget = {
+              sessionId: trace.session_id,
+              displayName: trace.display_name,
+            };
+          }
         }
       }
-    }
 
-    if (bestPeak && props.onPeakClick) {
-      lastPeakClickTimeRef.current = Date.now();
-      props.onPeakClick(bestPeak.mz, bestPeak.intensity, e.nativeEvent, bestTarget);
-    }
-  };
-
-  const handleContainerMouseMove = (e: React.MouseEvent) => {
-    if (!specContainerRef.current || !s) return;
-    const rect = specContainerRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
-
-    const fullLayout = (specPlotRef.current as any)?._fullLayout;
-    const plotOffsetLeft = fullLayout?.xaxis?._offset ?? 65;
-    const plotOffsetTop = fullLayout?.yaxis?._offset ?? (props.settings.title ? 28 : 20);
-    const plotWidth = fullLayout?.xaxis?._length ?? ((specPlotSize.width ?? 800) - plotOffsetLeft - 20);
-    const plotHeight = fullLayout?.yaxis?._length ?? ((specPlotSize.height ?? props.settings.height ?? 300) - plotOffsetTop - 45);
-
-    const clickXInPlot = clickX - plotOffsetLeft;
-    const clickYInPlot = clickY - plotOffsetTop;
-
-    if (
-      clickXInPlot < 0 ||
-      clickXInPlot > plotWidth ||
-      clickYInPlot < 0 ||
-      clickYInPlot > plotHeight
-    ) {
-      if (hoveredPeak) setHoveredPeak(null);
-      return;
-    }
-
-    const xRange: [number, number] = fullLayout?.xaxis?.range
-      ? [Number(fullLayout.xaxis.range[0]), Number(fullLayout.xaxis.range[1])]
-      : [
-          props.settings.axis.xMin ?? (displayActive.mz[0] ?? 0),
-          props.settings.axis.xMax ?? (displayActive.mz[displayActive.mz.length - 1] ?? 2000),
-        ];
-
-    const match = findNearestPeak({
-      clickXInPlot,
-      plotWidth,
-      xRange,
-      peaks: displayActive,
-      maxPixelTolerance: 18,
-    });
-
-    if (match) {
-      if (!hoveredPeak || Math.abs(hoveredPeak.mz - match.mz) > 0.001) {
-        setHoveredPeak(match);
+      if (bestPeak && props.onPeakClick) {
+        lastPeakClickTimeRef.current = Date.now();
+        props.onPeakClick(bestPeak.mz, bestPeak.intensity, e, bestTarget);
       }
-    } else if (hoveredPeak) {
-      setHoveredPeak(null);
-    }
-  };
+    };
 
-  const handleContainerMouseLeave = () => {
-    if (hoveredPeak) setHoveredPeak(null);
-  };
+    const onMouseMove = (e: MouseEvent) => {
+      if (!s) return;
+      const rect = el.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      const graphEl = (el.querySelector(".js-plotly-plot") || specPlotRef.current) as PlotlyHTMLElement | null;
+      const fullLayout = (graphEl as any)?._fullLayout || (specPlotRef.current as any)?._fullLayout;
+      const plotOffsetLeft = fullLayout?._size?.l ?? fullLayout?.xaxis?._offset ?? fullLayout?.margin?.l ?? 65;
+      const plotOffsetTop = fullLayout?._size?.t ?? fullLayout?.yaxis?._offset ?? fullLayout?.margin?.t ?? 20;
+      const plotWidth = fullLayout?._size?.w ?? fullLayout?.xaxis?._length ?? ((rect.width || 800) - plotOffsetLeft - 20);
+      const plotHeight = fullLayout?._size?.h ?? fullLayout?.yaxis?._length ?? ((rect.height || 300) - plotOffsetTop - 45);
+
+      const clickXInPlot = clickX - plotOffsetLeft;
+      const clickYInPlot = clickY - plotOffsetTop;
+
+      if (
+        clickXInPlot < -40 ||
+        clickXInPlot > plotWidth + 40 ||
+        clickYInPlot < -65 ||
+        clickYInPlot > plotHeight + 40
+      ) {
+        if (hoveredPeak) setHoveredPeak(null);
+        return;
+      }
+
+      const xRange: [number, number] = fullLayout?.xaxis?.range
+        ? [Number(fullLayout.xaxis.range[0]), Number(fullLayout.xaxis.range[1])]
+        : [
+            props.settings.axis.xMin ?? (s.mz[0] ?? 0),
+            props.settings.axis.xMax ?? (s.mz[s.mz.length - 1] ?? 2000),
+          ];
+
+      const match = findNearestPeak({
+        clickXInPlot,
+        plotWidth,
+        xRange,
+        peaks: { mz: s.mz, intensity: s.intensity },
+        maxPixelTolerance: 48,
+      });
+
+      if (match) {
+        if (!hoveredPeak || Math.abs(hoveredPeak.mz - match.mz) > 0.001) {
+          setHoveredPeak(match);
+        }
+      } else if (hoveredPeak) {
+        setHoveredPeak(null);
+      }
+    };
+
+    const onMouseLeave = () => {
+      setHoveredPeak(null);
+    };
+
+    el.addEventListener("mousedown", onMouseDown, { capture: true });
+    el.addEventListener("mouseup", onMouseUp, { capture: true });
+    el.addEventListener("mousemove", onMouseMove, { capture: true });
+    el.addEventListener("mouseleave", onMouseLeave);
+
+    return () => {
+      el.removeEventListener("mousedown", onMouseDown, { capture: true });
+      el.removeEventListener("mouseup", onMouseUp, { capture: true });
+      el.removeEventListener("mousemove", onMouseMove, { capture: true });
+      el.removeEventListener("mouseleave", onMouseLeave);
+    };
+  }, [
+    hoveredPeak,
+    props.onPeakClick,
+    props.overlayTraces,
+    props.settings.axis.xMax,
+    props.settings.axis.xMin,
+    s,
+  ]);
 
   const activeY = useMemo(() => {
     if (displayActive.mz.length === 0) return [];
@@ -9264,10 +9290,6 @@ function SpectrumChart(props: {
             hoveredPeak ? "cursor-pointer" : "",
           )}
           style={{ height: props.settings.height }}
-          onMouseDown={handleContainerMouseDown}
-          onMouseUp={handleContainerMouseUp}
-          onMouseMove={handleContainerMouseMove}
-          onMouseLeave={handleContainerMouseLeave}
         >
           {hoveredPeak && (
             <div

@@ -381,28 +381,26 @@ describe("findNearestPeak", () => {
   });
 
   it("snaps to nearest peak within pixel tolerance", () => {
-    // Click at 512px (12px away from 500px)
+    // Click at 530px (30px away from 500px, within 48px default tolerance)
     const match = findNearestPeak({
-      clickXInPlot: 512,
+      clickXInPlot: 530,
       plotWidth: 1000,
       xRange: [0, 1000],
       peaks,
-      maxPixelTolerance: 18,
     });
 
     expect(match).not.toBeNull();
     expect(match?.mz).toBe(500.0);
-    expect(match?.pixelDistance).toBe(12);
+    expect(match?.pixelDistance).toBe(30);
   });
 
   it("returns null when click is outside pixel tolerance", () => {
-    // Click at 525px (25px away, tolerance is 18px)
+    // Click at 565px (65px away, default tolerance is 48px)
     const match = findNearestPeak({
-      clickXInPlot: 525,
+      clickXInPlot: 565,
       plotWidth: 1000,
       xRange: [0, 1000],
       peaks,
-      maxPixelTolerance: 18,
     });
 
     expect(match).toBeNull();
