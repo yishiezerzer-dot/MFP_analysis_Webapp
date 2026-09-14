@@ -988,3 +988,129 @@ export function groupFeatureRowsForMatrix(
     columnLabels,
   };
 }
+
+export interface TopPeakItem {
+  mz: number;
+  intensity: number;
+  relIntensity: number;
+  label?: string;
+  source?: string;
+}
+
+export function extractTopPeaks(
+  spectrum: SpectrumData | null,
+  basePeak?: number,
+  maxCount: number = 10,
+): TopPeakItem[] {
+  if (!spectrum || !spectrum.mz || spectrum.mz.length === 0) return [];
+  const mz = spectrum.mz;
+  const intensity = spectrum.intensity;
+  const labels = spectrum.labels ?? [];
+
+  let bp = basePeak ?? 0;
+  if (bp <= 0) {
+    for (let i = 0; i < intensity.length; i++) {
+      if (intensity[i] > bp) bp = intensity[i];
+    }
+    if (bp <= 0) bp = 1;
+  }
+
+  const labelMap = new Map<number, { text?: string; source?: string }>();
+  for (const lbl of labels) {
+    labelMap.set(lbl.mz, { text: lbl.text, source: lbl.source });
+  }
+
+  const indices = Array.from({ length: mz.length }, (_, i) => i);
+  indices.sort((a, b) => intensity[b] - intensity[a]);
+
+  const selectedIndices = new Set<number>();
+  for (const idx of indices) {
+    if (selectedIndices.size >= maxCount) break;
+    selectedIndices.add(idx);
+  }
+
+  for (const lbl of labels) {
+    if (selectedIndices.size >= maxCount + 2) break;
+    let bestIdx = -1;
+    let minDiff = 0.05;
+    for (let i = 0; i < mz.length; i++) {
+      const diff = Math.abs(mz[i] - lbl.mz);
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx !== -1 && intensity[bestIdx] / bp >= 0.03) {
+      selectedIndices.add(bestIdx);
+    }
+  }
+
+  const items: TopPeakItem[] = [];
+  for (const idx of selectedIndices) {
+    const curMz = mz[idx];
+    const curInt = intensity[idx];
+    let matchedLabel: { text?: string; source?: string } | undefined;
+    let minDiff = 0.05;
+    for (const [lblMz, data] of labelMap.entries()) {
+      const diff = Math.abs(lblMz - curMz);
+      if (diff < minDiff) {
+        minDiff = diff;
+        matchedLabel = data;
+      }
+    }
+
+    items.push({
+      mz: curMz,
+      intensity: curInt,
+      relIntensity: curInt / bp,
+      label: matchedLabel?.text,
+      source: matchedLabel?.source,
+    });
+  }
+
+  return items.sort((a, b) => a.mz - b.mz);
+}
+
+export interface NearestPeakMatch {
+  mz: number;
+  intensity: number;
+  pixelDistance: number;
+  peakXInPlot: number;
+}
+
+export function findNearestPeak(params: {
+  clickXInPlot: number;
+  plotWidth: number;
+  xRange: [number, number];
+  peaks: { mz: number[]; intensity: number[] };
+  maxPixelTolerance?: number;
+}): NearestPeakMatch | null {
+  const { clickXInPlot, plotWidth, xRange, peaks, maxPixelTolerance = 18 } = params;
+  if (!peaks.mz || peaks.mz.length === 0 || plotWidth <= 0) return null;
+  const [xMin, xMax] = xRange;
+  const rangeSpan = xMax - xMin;
+  if (rangeSpan <= 0) return null;
+
+  let bestMatch: NearestPeakMatch | null = null;
+  let minPixelDist = Infinity;
+
+  for (let i = 0; i < peaks.mz.length; i++) {
+    const peakMz = peaks.mz[i];
+    if (peakMz < xMin - rangeSpan * 0.05 || peakMz > xMax + rangeSpan * 0.05) continue;
+
+    const peakPx = ((peakMz - xMin) / rangeSpan) * plotWidth;
+    const pixelDist = Math.abs(clickXInPlot - peakPx);
+
+    if (pixelDist <= maxPixelTolerance && pixelDist < minPixelDist) {
+      minPixelDist = pixelDist;
+      bestMatch = {
+        mz: peakMz,
+        intensity: peaks.intensity[i] ?? 0,
+        pixelDistance: pixelDist,
+        peakXInPlot: peakPx,
+      };
+    }
+  }
+
+  return bestMatch;
+}

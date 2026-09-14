@@ -5,7 +5,9 @@ import {
   buildKendrickPoints,
   buildSpectrumIndex,
   escapeCsvCell,
+  extractTopPeaks,
   findMostIntenseSpectrumPeak,
+  findNearestPeak,
   generateCompositions,
   groupFeatureRowsForMatrix,
   integrateEICPeak,
@@ -322,6 +324,105 @@ describe("integrateTraceRegion", () => {
     expect(negRes?.rtApex).toBe(2.5);
     expect(posRes?.height).toBe(70);
     expect(negRes?.height).toBe(90);
+  });
+});
+
+describe("extractTopPeaks", () => {
+  it("returns empty array for null or empty spectrum", () => {
+    expect(extractTopPeaks(null)).toEqual([]);
+    expect(extractTopPeaks({ mz: [], intensity: [], labels: [], meta: {} as any })).toEqual([]);
+  });
+
+  it("extracts top peaks sorted by ascending m/z with relative intensities", () => {
+    const spec: any = {
+      mz: [100.0, 200.0, 300.0, 400.0, 500.0],
+      intensity: [10, 50, 100, 25, 80],
+      labels: [
+        { mz: 300.0, intensity: 100, text: "[M+H]+" },
+        { mz: 500.0, intensity: 80, text: "[M+Na]+" },
+      ],
+      meta: {},
+    };
+
+    const top = extractTopPeaks(spec, 100, 3);
+    // Top 3 by intensity are: 300 (100), 500 (80), 200 (50)
+    // Sorted ascending by m/z: 200, 300, 500
+    expect(top).toHaveLength(3);
+    expect(top[0].mz).toBe(200.0);
+    expect(top[0].relIntensity).toBe(0.5);
+    expect(top[1].mz).toBe(300.0);
+    expect(top[1].relIntensity).toBe(1.0);
+    expect(top[1].label).toBe("[M+H]+");
+    expect(top[2].mz).toBe(500.0);
+    expect(top[2].relIntensity).toBe(0.8);
+    expect(top[2].label).toBe("[M+Na]+");
+  });
+});
+
+describe("findNearestPeak", () => {
+  const peaks = {
+    mz: [100.0, 250.0, 500.0, 750.0, 1000.0],
+    intensity: [1000, 5000, 20000, 8000, 12000],
+  };
+
+  it("finds exact peak when clicking on its coordinate", () => {
+    // Range 0 to 1000 across 1000px -> 1 px = 1 m/z
+    const match = findNearestPeak({
+      clickXInPlot: 500,
+      plotWidth: 1000,
+      xRange: [0, 1000],
+      peaks,
+      maxPixelTolerance: 18,
+    });
+
+    expect(match).not.toBeNull();
+    expect(match?.mz).toBe(500.0);
+    expect(match?.pixelDistance).toBe(0);
+  });
+
+  it("snaps to nearest peak within pixel tolerance", () => {
+    // Click at 512px (12px away from 500px)
+    const match = findNearestPeak({
+      clickXInPlot: 512,
+      plotWidth: 1000,
+      xRange: [0, 1000],
+      peaks,
+      maxPixelTolerance: 18,
+    });
+
+    expect(match).not.toBeNull();
+    expect(match?.mz).toBe(500.0);
+    expect(match?.pixelDistance).toBe(12);
+  });
+
+  it("returns null when click is outside pixel tolerance", () => {
+    // Click at 525px (25px away, tolerance is 18px)
+    const match = findNearestPeak({
+      clickXInPlot: 525,
+      plotWidth: 1000,
+      xRange: [0, 1000],
+      peaks,
+      maxPixelTolerance: 18,
+    });
+
+    expect(match).toBeNull();
+  });
+
+  it("accurately handles zoomed-in sub-ranges", () => {
+    // Zoomed in from 480 to 520 across 800px (40 m/z span, 20 px per m/z)
+    // Peak at 500 is at (500 - 480) / 40 * 800 = 400px
+    // Click at 410px -> 10px away
+    const match = findNearestPeak({
+      clickXInPlot: 410,
+      plotWidth: 800,
+      xRange: [480, 520],
+      peaks,
+      maxPixelTolerance: 18,
+    });
+
+    expect(match).not.toBeNull();
+    expect(match?.mz).toBe(500.0);
+    expect(match?.pixelDistance).toBe(10);
   });
 });
 

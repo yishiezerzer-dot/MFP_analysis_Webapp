@@ -54,7 +54,9 @@ import {
   eicSourceFile,
   eicSourceSessionId,
   EXPECTED_PRODUCT_MAX_DP,
+  extractTopPeaks,
   featureMatrixValue,
+  findNearestPeak,
   groupFeatureRowsForMatrix,
   integrateEICPeak,
   integrateTraceRegion,
@@ -72,6 +74,7 @@ import {
   type LCMSFeatureRow,
   type LCMSEICMetadata,
   type LCMSEICPlot,
+  type NearestPeakMatch,
   type PolymerModeSettings,
   type PolymerMonomerCategory,
   type PolymerMonomerPreset,
@@ -8585,6 +8588,10 @@ function SpectrumChart(props: {
   const specPlotSize = useContainerSize(specContainerRef, props.settings.height);
   const pt = usePlotlyTheme();
 
+  const [hoveredPeak, setHoveredPeak] = useState<NearestPeakMatch | null>(null);
+  const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const lastPeakClickTimeRef = useRef<number>(0);
+
   const overlayMode: SpectrumOverlayMode = props.settings.overlaySettings?.spectrumMode ?? "overlay";
   const traceOpacity = props.settings.overlaySettings?.traceOpacity ?? 0.38;
 
@@ -8628,6 +8635,8 @@ function SpectrumChart(props: {
     : [];
 
   const handleSpectrumClick = (event: Readonly<PlotMouseEvent>) => {
+    if (Date.now() - lastPeakClickTimeRef.current < 250) return;
+    lastPeakClickTimeRef.current = Date.now();
     const point = event.points?.[0];
     const mz = Number(point?.x);
     const rawY = Number(point?.y);
@@ -8666,6 +8675,10 @@ function SpectrumChart(props: {
     return max > 0 ? max : 1;
   }, [s]);
 
+  const topPeaks = useMemo(() => {
+    return extractTopPeaks(s, activeBasePeak, 10);
+  }, [s, activeBasePeak]);
+
   const isButterfly = overlayMode === "butterfly" || overlayMode === "butterfly_normalized";
   const isNorm = overlayMode === "normalized" || overlayMode === "butterfly_normalized";
 
@@ -8675,6 +8688,139 @@ function SpectrumChart(props: {
     if (!s) return { mz: [], intensity: [] };
     return pruneCentroidsForDisplay(s.mz, s.intensity, activeBasePeak, criticalMzs);
   }, [s, activeBasePeak, criticalMzs]);
+
+  const handleContainerMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handleContainerMouseUp = (e: React.MouseEvent) => {
+    if (e.button !== 0 || !mouseDownPosRef.current || !s) return;
+    const start = mouseDownPosRef.current;
+    mouseDownPosRef.current = null;
+
+    // Ignore if drag-zoomed or panned (movement > 6px)
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 6) return;
+    // Ignore double clicks (Plotly autorange reset)
+    if (e.detail === 2) return;
+
+    if (!specContainerRef.current) return;
+    const rect = specContainerRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    const fullLayout = (specPlotRef.current as any)?._fullLayout;
+    const plotOffsetLeft = fullLayout?.xaxis?._offset ?? 65;
+    const plotOffsetTop = fullLayout?.yaxis?._offset ?? (props.settings.title ? 28 : 20);
+    const plotWidth = fullLayout?.xaxis?._length ?? ((specPlotSize.width ?? 800) - plotOffsetLeft - 20);
+    const plotHeight = fullLayout?.yaxis?._length ?? ((specPlotSize.height ?? props.settings.height ?? 300) - plotOffsetTop - 45);
+
+    const clickXInPlot = clickX - plotOffsetLeft;
+    const clickYInPlot = clickY - plotOffsetTop;
+
+    // Allow clicking anywhere within the plot area vertically (including empty whitespace above peaks)
+    if (
+      clickXInPlot < -12 ||
+      clickXInPlot > plotWidth + 12 ||
+      clickYInPlot < -12 ||
+      clickYInPlot > plotHeight + 12
+    ) {
+      return;
+    }
+
+    const xRange: [number, number] = fullLayout?.xaxis?.range
+      ? [Number(fullLayout.xaxis.range[0]), Number(fullLayout.xaxis.range[1])]
+      : [
+          props.settings.axis.xMin ?? (displayActive.mz[0] ?? 0),
+          props.settings.axis.xMax ?? (displayActive.mz[displayActive.mz.length - 1] ?? 2000),
+        ];
+
+    let bestPeak = findNearestPeak({
+      clickXInPlot,
+      plotWidth,
+      xRange,
+      peaks: displayActive,
+      maxPixelTolerance: 18,
+    });
+    let bestTarget: { sessionId?: string; displayName?: string } | undefined;
+
+    if (props.overlayTraces.length > 0) {
+      for (const trace of props.overlayTraces) {
+        const traceMatch = findNearestPeak({
+          clickXInPlot,
+          plotWidth,
+          xRange,
+          peaks: { mz: trace.spectrum.mz, intensity: trace.spectrum.intensity },
+          maxPixelTolerance: 18,
+        });
+        if (traceMatch && (!bestPeak || traceMatch.pixelDistance < bestPeak.pixelDistance)) {
+          bestPeak = traceMatch;
+          bestTarget = {
+            sessionId: trace.session_id,
+            displayName: trace.display_name,
+          };
+        }
+      }
+    }
+
+    if (bestPeak && props.onPeakClick) {
+      lastPeakClickTimeRef.current = Date.now();
+      props.onPeakClick(bestPeak.mz, bestPeak.intensity, e.nativeEvent, bestTarget);
+    }
+  };
+
+  const handleContainerMouseMove = (e: React.MouseEvent) => {
+    if (!specContainerRef.current || !s) return;
+    const rect = specContainerRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    const fullLayout = (specPlotRef.current as any)?._fullLayout;
+    const plotOffsetLeft = fullLayout?.xaxis?._offset ?? 65;
+    const plotOffsetTop = fullLayout?.yaxis?._offset ?? (props.settings.title ? 28 : 20);
+    const plotWidth = fullLayout?.xaxis?._length ?? ((specPlotSize.width ?? 800) - plotOffsetLeft - 20);
+    const plotHeight = fullLayout?.yaxis?._length ?? ((specPlotSize.height ?? props.settings.height ?? 300) - plotOffsetTop - 45);
+
+    const clickXInPlot = clickX - plotOffsetLeft;
+    const clickYInPlot = clickY - plotOffsetTop;
+
+    if (
+      clickXInPlot < 0 ||
+      clickXInPlot > plotWidth ||
+      clickYInPlot < 0 ||
+      clickYInPlot > plotHeight
+    ) {
+      if (hoveredPeak) setHoveredPeak(null);
+      return;
+    }
+
+    const xRange: [number, number] = fullLayout?.xaxis?.range
+      ? [Number(fullLayout.xaxis.range[0]), Number(fullLayout.xaxis.range[1])]
+      : [
+          props.settings.axis.xMin ?? (displayActive.mz[0] ?? 0),
+          props.settings.axis.xMax ?? (displayActive.mz[displayActive.mz.length - 1] ?? 2000),
+        ];
+
+    const match = findNearestPeak({
+      clickXInPlot,
+      plotWidth,
+      xRange,
+      peaks: displayActive,
+      maxPixelTolerance: 18,
+    });
+
+    if (match) {
+      if (!hoveredPeak || Math.abs(hoveredPeak.mz - match.mz) > 0.001) {
+        setHoveredPeak(match);
+      }
+    } else if (hoveredPeak) {
+      setHoveredPeak(null);
+    }
+  };
+
+  const handleContainerMouseLeave = () => {
+    if (hoveredPeak) setHoveredPeak(null);
+  };
 
   const activeY = useMemo(() => {
     if (displayActive.mz.length === 0) return [];
@@ -9063,6 +9209,49 @@ function SpectrumChart(props: {
           />
         </div>
       </div>
+      {/* Tier 2.5: Top Peaks Quick-Pill Bar */}
+      {s && topPeaks.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100/70 bg-ink-50/50 px-2 py-1.5 text-xs">
+          <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500 whitespace-nowrap">
+            <span>⚡</span>
+            <span>Top Peaks:</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {topPeaks.map((peak) => {
+              const pct = Math.round(peak.relIntensity * 100);
+              return (
+                <button
+                  key={peak.mz}
+                  type="button"
+                  onClick={(e) => {
+                    lastPeakClickTimeRef.current = Date.now();
+                    props.onPeakClick?.(peak.mz, peak.intensity, e.nativeEvent);
+                  }}
+                  className={clsx(
+                    "group inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs font-medium transition-all shadow-2xs cursor-pointer",
+                    props.polarityBadge === "ESI-"
+                      ? "border-rose-200 bg-surface text-ink-800 hover:border-rose-400 hover:bg-rose-50/80 hover:text-rose-900"
+                      : "border-ink-200 bg-surface text-ink-800 hover:border-brand-300 hover:bg-brand-50/80 hover:text-brand-900",
+                  )}
+                  title={`m/z ${peak.mz.toFixed(4)}\nIntensity: ${peak.intensity.toExponential(3)} (${pct}%)\nClick to open Peak Actions (EIC, Deconvolute, Polymer Match)`}
+                >
+                  <span className="font-semibold text-ink-900 group-hover:text-brand-700">
+                    {peak.mz.toFixed(4)}
+                  </span>
+                  <span className="text-[10px] text-ink-500 font-sans">
+                    {pct >= 100 ? "100%" : `${pct}%`}
+                  </span>
+                  {peak.label && (
+                    <span className="rounded bg-brand-100 px-1 text-[10px] font-sans font-semibold text-brand-700">
+                      {peak.label}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {!s ? (
         <div className="flex h-72 items-center justify-center text-sm text-ink-500">
           {props.emptyMessage ?? "Click a point on the TIC to view the MS1 spectrum at that retention time."}
@@ -9070,9 +9259,36 @@ function SpectrumChart(props: {
       ) : (
         <div
           ref={specContainerRef}
-          className="min-w-0 overflow-hidden"
+          className={clsx(
+            "min-w-0 overflow-hidden relative select-none",
+            hoveredPeak ? "cursor-pointer" : "",
+          )}
           style={{ height: props.settings.height }}
+          onMouseDown={handleContainerMouseDown}
+          onMouseUp={handleContainerMouseUp}
+          onMouseMove={handleContainerMouseMove}
+          onMouseLeave={handleContainerMouseLeave}
         >
+          {hoveredPeak && (
+            <div
+              className="pointer-events-none absolute z-20 flex items-center gap-1.5 rounded-full border border-brand-300 bg-surface/95 px-2.5 py-1 text-xs font-semibold text-brand-900 shadow-md backdrop-blur-xs transition-opacity animate-in fade-in-0 duration-100"
+              style={{
+                left: `${Math.max(
+                  70,
+                  Math.min(
+                    (specPlotSize.width ?? 800) - 190,
+                    hoveredPeak.peakXInPlot + ((specPlotRef.current as any)?._fullLayout?.xaxis?._offset ?? 65) - 60,
+                  ),
+                )}px`,
+                top: "24px",
+              }}
+            >
+              <span className="font-mono">m/z {hoveredPeak.mz.toFixed(4)}</span>
+              <span className="text-[10px] font-normal text-ink-500">
+                (Click to inspect / EIC)
+              </span>
+            </div>
+          )}
           <Plot
             revision={specPlotSize.revision + localRevision}
             data={[

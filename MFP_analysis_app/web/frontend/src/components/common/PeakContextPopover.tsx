@@ -68,7 +68,7 @@ export function PeakContextPopover({
       ref={popoverRef}
       style={{
         left: `${Math.max(16, Math.min(window.innerWidth - 300, peak.x))}px`,
-        top: `${Math.max(16, peak.y - 120)}px`,
+        top: `${Math.max(16, Math.min(window.innerHeight - 240, peak.y - 120))}px`,
       }}
       className={clsx(
         "fixed z-50 w-72 rounded-xl border border-ink-200 bg-surface/95 p-3.5 shadow-2xl backdrop-blur-md transition-all animate-in fade-in-0 zoom-in-95",
