@@ -8592,6 +8592,12 @@ function SpectrumChart(props: {
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const lastPeakClickTimeRef = useRef<number>(0);
 
+  const [labelOffsets, setLabelOffsets] = useState<Record<number, { ax?: number; ay?: number; x?: number; y?: number }>>({});
+
+  useEffect(() => {
+    setLabelOffsets({});
+  }, [props.selectedRt, s?.meta.spectrum_id]);
+
   const overlayMode: SpectrumOverlayMode = props.settings.overlaySettings?.spectrumMode ?? "overlay";
   const traceOpacity = props.settings.overlaySettings?.traceOpacity ?? 0.38;
 
@@ -9035,6 +9041,66 @@ function SpectrumChart(props: {
     [props.settings.title, props.title, s],
   );
 
+  const handleRelayout = useCallback(
+    (event: Readonly<Record<string, unknown>>) => {
+      if (!event) return;
+
+      const updates: Record<number, { ax?: number; ay?: number; x?: number; y?: number }> = {};
+
+      if (Array.isArray(event.annotations)) {
+        event.annotations.forEach((ann, idx) => {
+          if (ann && typeof ann === "object") {
+            const a = ann as { ax?: unknown; ay?: unknown; x?: unknown; y?: unknown };
+            const ax = a.ax;
+            const ay = a.ay;
+            const x = a.x;
+            const y = a.y;
+            const patch: { ax?: number; ay?: number; x?: number; y?: number } = {};
+            if (typeof ax === "number" && Number.isFinite(ax)) patch.ax = ax;
+            if (typeof ay === "number" && Number.isFinite(ay)) patch.ay = ay;
+            if (typeof x === "number" && Number.isFinite(x)) patch.x = x;
+            if (typeof y === "number" && Number.isFinite(y)) patch.y = y;
+            if (Object.keys(patch).length > 0) updates[idx] = patch;
+          }
+        });
+      }
+
+      for (const [key, val] of Object.entries(event)) {
+        const match = /^annotations\[(\d+)\](?:\.(ax|ay|x|y))?$/.exec(key);
+        if (match) {
+          const idx = parseInt(match[1], 10);
+          const prop = match[2];
+          if (!updates[idx]) {
+            updates[idx] = { ...(labelOffsets[idx] ?? {}) };
+          }
+          if ((prop === "ax" || prop === "ay" || prop === "x" || prop === "y") && typeof val === "number" && Number.isFinite(val)) {
+            updates[idx][prop] = val;
+          } else if (!prop && val && typeof val === "object") {
+            const v = val as { ax?: unknown; ay?: unknown; x?: unknown; y?: unknown };
+            if (typeof v.ax === "number" && Number.isFinite(v.ax)) updates[idx].ax = v.ax;
+            if (typeof v.ay === "number" && Number.isFinite(v.ay)) updates[idx].ay = v.ay;
+            if (typeof v.x === "number" && Number.isFinite(v.x)) updates[idx].x = v.x;
+            if (typeof v.y === "number" && Number.isFinite(v.y)) updates[idx].y = v.y;
+          }
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        setLabelOffsets((prev) => {
+          const next = { ...prev };
+          for (const [idxStr, pos] of Object.entries(updates)) {
+            const idx = Number(idxStr);
+            next[idx] = { ...(next[idx] ?? {}), ...pos };
+          }
+          return next;
+        });
+      }
+    },
+    [labelOffsets],
+  );
+
+  const movedLabelCount = Object.keys(labelOffsets).length;
+
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       {/* Tier 1: Title & Status Bar */}
@@ -9092,6 +9158,20 @@ function SpectrumChart(props: {
               RT {formatRt(props.selectedRt, props.rtUnit)}
             </span>
           ) : null}
+          {movedLabelCount > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setLabelOffsets({});
+                setLocalRevision((r) => r + 1);
+              }}
+              className="inline-flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-0.5 text-xs font-medium text-ink-700 hover:bg-ink-100 hover:text-ink-900 transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
+              title="Reset all repositioned peak labels back to default"
+            >
+              <span>↺</span>
+              <span>Reset Positions ({movedLabelCount})</span>
+            </button>
+          )}
           {props.showDragHint && s?.labels.length ? (
             <span className="text-xs text-ink-400 hidden xl:inline whitespace-nowrap">
               Drag labels to reposition
@@ -9376,7 +9456,7 @@ function SpectrumChart(props: {
               },
               annotations: props.annotate
                 ? [
-                    ...visibleLabels.map((lbl) => {
+                    ...visibleLabels.map((lbl, lblIdx) => {
                       const isPoly = lbl.source === "polymer";
                       const polyCfg = props.settings.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS;
                       const isVertical = isPoly && polyCfg.orientation === "vertical";
@@ -9386,30 +9466,58 @@ function SpectrumChart(props: {
                       const fontSize = isPoly ? (polyCfg.fontSize || 10) : props.settings.labels.fontSize;
 
                       const labelY = isNorm ? (lbl.intensity / activeBasePeak) * 100 : lbl.intensity;
+                      const defaultAx = 0;
+                      const defaultAy = isPoly ? (isVertical ? -46 : -34) : (isVertical ? -36 : -18);
+                      const offset = labelOffsets[lblIdx];
+                      const isDragged = offset != null && (
+                        (offset.ax != null && Math.abs(offset.ax - defaultAx) > 2) ||
+                        (offset.ay != null && Math.abs(offset.ay - defaultAy) > 2) ||
+                        offset.x != null ||
+                        offset.y != null
+                      );
 
                       return {
-                        x: lbl.mz,
-                        y: labelY,
+                        x: offset?.x ?? lbl.mz,
+                        y: offset?.y ?? labelY,
                         text: lbl.text ? cleanLabelText(lbl.text) : lbl.mz.toFixed(4),
                         textangle: isVertical ? ("-90" as const) : ("0" as const),
-                        showarrow: showArrow,
-                        arrowhead: 2,
+                        showarrow: true,
+                        arrowhead: isDragged ? 2 : (showArrow ? 2 : 0),
                         arrowsize: 0.8,
-                        arrowwidth: 1,
-                        arrowcolor: color,
-                        ax: 0,
-                        ay: isPoly ? (isVertical ? -46 : -34) : 0,
-                        yshift: isPoly ? (showArrow ? 0 : isVertical ? 22 : 12) : 10,
-                        bgcolor: showBox ? hexToRgba(color, 0.12) : undefined,
-                        bordercolor: showBox ? color : undefined,
-                        borderpad: showBox ? 3 : undefined,
+                        arrowwidth: isDragged ? 1 : (showArrow ? 1 : 0),
+                        arrowcolor: isDragged ? color : (showArrow ? color : "rgba(0,0,0,0)"),
+                        ax: offset?.ax ?? defaultAx,
+                        ay: offset?.ay ?? defaultAy,
+                        yshift: 0,
+                        bgcolor: showBox || isDragged ? (showBox ? hexToRgba(color, 0.12) : "rgba(255, 255, 255, 0.9)") : undefined,
+                        bordercolor: showBox || isDragged ? color : undefined,
+                        borderpad: showBox || isDragged ? 2 : undefined,
                         font: {
                           size: fontSize,
                           color: color,
                         },
                       };
                     }),
-                    ...overlayAnnotations,
+                    ...overlayAnnotations.map((ann, oIdx) => {
+                      const annIdx = visibleLabels.length + oIdx;
+                      const offset = labelOffsets[annIdx];
+                      if (!offset) return ann;
+                      return {
+                        ...ann,
+                        x: offset.x ?? ann.x,
+                        y: offset.y ?? ann.y,
+                        showarrow: true,
+                        arrowhead: 2,
+                        arrowsize: 0.8,
+                        arrowwidth: 1,
+                        ax: offset.ax ?? ann.ax,
+                        ay: offset.ay ?? ann.ay,
+                        yshift: 0,
+                        bgcolor: ann.bgcolor ?? "rgba(255, 255, 255, 0.9)",
+                        bordercolor: ann.bordercolor ?? (typeof ann.font?.color === "string" ? ann.font.color : undefined),
+                        borderpad: ann.borderpad ?? 2,
+                      };
+                    }),
                   ]
                 : [],
               colorway: pt.colorway,
@@ -9418,7 +9526,7 @@ function SpectrumChart(props: {
               showlegend: overlayData.length > 0,
               barmode: "overlay",
               bargap: 0,
-              dragmode: props.showDragHint ? "pan" : "zoom",
+              dragmode: "zoom",
             }}
             config={{
               responsive: true,
@@ -9434,6 +9542,7 @@ function SpectrumChart(props: {
             style={{ width: "100%", height: "100%", minWidth: 0 }}
             useResizeHandler
             onClick={handleSpectrumClick}
+            onRelayout={handleRelayout}
             onInitialized={(_figure, graphDiv) => {
               specPlotRef.current = graphDiv as PlotlyHTMLElement;
               queuePlotlyElementResize(specPlotRef.current);
