@@ -274,9 +274,18 @@ describe("escapeCsvCell and rowsToCsv", () => {
 
 describe("toApiPolymerSettings", () => {
   it("includes positive-only adducts when polarity is positive", () => {
-    const out = toApiPolymerSettings(polymerSettingsFixture(), "positive");
-    expect(out.adduct_na).toBe(false);
-    expect(out.adduct_cl).toBe(false);
+    const fixture = polymerSettingsFixture();
+    fixture.positive.adduct_na = true;
+    fixture.negative.adduct_cl = true;
+    const outPos = toApiPolymerSettings(fixture, "positive");
+    expect(outPos.adduct_na).toBe(true);
+    expect(outPos.adduct_cl).toBe(false);
+    expect(outPos.adduct_mass).toBeGreaterThan(0);
+
+    const outNeg = toApiPolymerSettings(fixture, "negative");
+    expect(outNeg.adduct_na).toBe(false);
+    expect(outNeg.adduct_cl).toBe(true);
+    expect(outNeg.adduct_mass).toBeLessThan(0);
   });
 });
 
@@ -296,8 +305,23 @@ describe("integrateTraceRegion", () => {
 
   it("returns null when no points match range", () => {
     const rts = [1.0, 2.0, 3.0];
-    const intensities = [10.0, 20.0, 10.0];
+    const intensities = [10.0, 20.0, 100.0];
     expect(integrateTraceRegion(rts, intensities, 5.0, 6.0)).toBeNull();
+  });
+
+  it("handles dual polarity chromatograms with independent peak apexes and baselines", () => {
+    const posRts = [1.0, 2.0, 3.0, 4.0];
+    const posIntensities = [10, 80, 20, 10];
+    const negRts = [1.0, 2.0, 2.5, 3.0, 4.0];
+    const negIntensities = [5, 15, 95, 30, 5];
+
+    const posRes = integrateTraceRegion(posRts, posIntensities, 1.0, 3.0);
+    const negRes = integrateTraceRegion(negRts, negIntensities, 1.0, 3.0);
+
+    expect(posRes?.rtApex).toBe(2.0);
+    expect(negRes?.rtApex).toBe(2.5);
+    expect(posRes?.height).toBe(70);
+    expect(negRes?.height).toBe(90);
   });
 });
 

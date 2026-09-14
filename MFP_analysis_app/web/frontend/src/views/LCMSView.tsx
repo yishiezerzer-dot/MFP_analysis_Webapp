@@ -242,7 +242,7 @@ function queuePlotlyElementResize(graphDiv: PlotlyHTMLElement | null) {
   });
 }
 
-type Polarity = "all" | "positive" | "negative";
+type Polarity = "all" | "positive" | "negative" | "dual";
 type RtUnit = "minutes" | "seconds";
 type TabId = "navigate" | "view" | "annotate" | "polymer";
 type GraphId = "tic" | "uv" | "spectrum" | "eic";
@@ -382,7 +382,7 @@ const KENDRICK_SETTINGS_STORAGE_KEY = "mfp.lcms.kendrickSettings";
 const LCMS_STORAGE_PREFIX = "mfp.lcms";
 
 function isPolarity(value: unknown): value is Polarity {
-  return value === "all" || value === "positive" || value === "negative";
+  return value === "all" || value === "positive" || value === "negative" || value === "dual";
 }
 
 function isRtUnit(value: unknown): value is RtUnit {
@@ -1165,7 +1165,16 @@ export function LCMSView() {
     () => persistedProjectState.activeProjectId,
   );
   const [tic, setTic] = useState<TICData | null>(null);
+  const [ticPos, setTicPos] = useState<TICData | null>(null);
+  const [ticNeg, setTicNeg] = useState<TICData | null>(null);
   const [spectrum, setSpectrum] = useState<SpectrumData | null>(null);
+  const [spectrumPos, setSpectrumPos] = useState<SpectrumData | null>(null);
+  const [spectrumNeg, setSpectrumNeg] = useState<SpectrumData | null>(null);
+  const [regionIntegrationPos, setRegionIntegrationPos] = useState<IntegratedTraceRegion | null>(null);
+  const [regionIntegrationNeg, setRegionIntegrationNeg] = useState<IntegratedTraceRegion | null>(null);
+  const [polymerStudioPolarity, setPolymerStudioPolarity] = useState<"positive" | "negative">("positive");
+  const [deconvolutionPolarity, setDeconvolutionPolarity] = useState<"positive" | "negative">("positive");
+  const [deconvolutionSpectrum, setDeconvolutionSpectrum] = useState<SpectrumData | null>(null);
   const [uv, setUv] = useState<UVChromatogramResponse | null>(null);
   const {
     state: eicPlots,
@@ -1194,6 +1203,11 @@ export function LCMSView() {
     `${LCMS_STORAGE_PREFIX}.polarity`,
     "all",
     (value) => (isPolarity(value) ? value : "all"),
+  );
+  const [dualLayout, setDualLayout] = useStoredState<"stacked" | "grid">(
+    `${LCMS_STORAGE_PREFIX}.dualLayout`,
+    "stacked",
+    (value) => (value === "stacked" || value === "grid" ? value : "stacked"),
   );
   const [rtUnit, setRtUnit] = useStoredState<RtUnit>(
     `${LCMS_STORAGE_PREFIX}.rtUnit`,
@@ -1634,20 +1648,31 @@ export function LCMSView() {
     }
   }, [activeSid, setUvOffset, setUvOffsetText, uvOffsetBySessionId]);
 
-  const pol = polarity === "all" ? undefined : polarity;
+  const pol = polarity === "positive" || polarity === "negative" ? polarity : undefined;
 
   const getApiPolymerSettingsForSession = useCallback(
-    (sid: string | null): PolymerSettings | undefined => {
-      if (!sid || polarity === "all") return undefined;
+    (sid: string | null, polOverride?: "positive" | "negative"): PolymerSettings | undefined => {
+      const targetPol = polOverride ?? (polarity === "positive" || polarity === "negative" ? polarity : undefined);
+      if (!sid || !targetPol) return undefined;
       const pSettings = getPolymerSettingsForSession(sid);
       if (!pSettings.shared.enabled) return undefined;
-      return toApiPolymerSettings(pSettings, polarity);
+      return toApiPolymerSettings(pSettings, targetPol);
     },
     [getPolymerSettingsForSession, polarity],
   );
 
   const activePolymerSettings = useMemo(
     () => getApiPolymerSettingsForSession(activeSid),
+    [activeSid, getApiPolymerSettingsForSession],
+  );
+
+  const activePolymerSettingsPos = useMemo(
+    () => getApiPolymerSettingsForSession(activeSid, "positive"),
+    [activeSid, getApiPolymerSettingsForSession],
+  );
+
+  const activePolymerSettingsNeg = useMemo(
+    () => getApiPolymerSettingsForSession(activeSid, "negative"),
     [activeSid, getApiPolymerSettingsForSession],
   );
 
@@ -1827,13 +1852,38 @@ export function LCMSView() {
   useEffect(() => {
     if (!activeSid) {
       setTic(null);
+      setTicPos(null);
+      setTicNeg(null);
       return;
     }
-    api.lcms
-      .tic(activeSid, pol)
-      .then(setTic)
-      .catch((err) => setError(String(err)));
-  }, [activeSid, pol]);
+    if (polarity === "dual") {
+      let cancelled = false;
+      api.lcms
+        .tic(activeSid, "positive")
+        .then((data) => {
+          if (!cancelled) setTicPos(data);
+        })
+        .catch((err) => {
+          if (!cancelled) setTicPos(null);
+        });
+      api.lcms
+        .tic(activeSid, "negative")
+        .then((data) => {
+          if (!cancelled) setTicNeg(data);
+        })
+        .catch((err) => {
+          if (!cancelled) setTicNeg(null);
+        });
+      return () => {
+        cancelled = true;
+      };
+    } else {
+      api.lcms
+        .tic(activeSid, pol)
+        .then(setTic)
+        .catch((err) => setError(String(err)));
+    }
+  }, [activeSid, pol, polarity]);
 
   useEffect(() => {
     if (!activeSid) {
@@ -2018,31 +2068,65 @@ export function LCMSView() {
       setBusy(true);
       setSelectedRt(rtMin);
       setSelectedUvRt(options?.uvRtMin ?? null);
-      api.lcms
-        .spectrum(activeSid, {
-          rt_min: rtMin,
-          polarity: pol,
-          top_n: Math.max(1, spectrumTopN),
-          min_rel: Math.max(0, spectrumMinRel),
-          polymer: activePolymerSettings,
-        })
-        .then((sp) => {
-          setSpectrum(sp);
-          if (transferMsToUv || options?.forceUvTransfer) {
-            storeUvLabelsFromSpectrum(sp, options?.uvRtMin ?? rtMin - uvOffset, {
-              snap: snapUvLabels,
-            });
-          }
-        })
-        .catch((err) => setError(String(err)))
-        .finally(() => setBusy(false));
+
+      if (polarity === "dual") {
+        Promise.all([
+          api.lcms.spectrum(activeSid, {
+            rt_min: rtMin,
+            polarity: "positive",
+            top_n: Math.max(1, spectrumTopN),
+            min_rel: Math.max(0, spectrumMinRel),
+            polymer: getApiPolymerSettingsForSession(activeSid, "positive"),
+          }),
+          api.lcms.spectrum(activeSid, {
+            rt_min: rtMin,
+            polarity: "negative",
+            top_n: Math.max(1, spectrumTopN),
+            min_rel: Math.max(0, spectrumMinRel),
+            polymer: getApiPolymerSettingsForSession(activeSid, "negative"),
+          }),
+        ])
+          .then(([spPos, spNeg]) => {
+            setSpectrumPos(spPos);
+            setSpectrumNeg(spNeg);
+            setSpectrum(spPos);
+            if (transferMsToUv || options?.forceUvTransfer) {
+              storeUvLabelsFromSpectrum(spPos, options?.uvRtMin ?? rtMin - uvOffset, {
+                snap: snapUvLabels,
+              });
+            }
+          })
+          .catch((err) => setError(String(err)))
+          .finally(() => setBusy(false));
+      } else {
+        api.lcms
+          .spectrum(activeSid, {
+            rt_min: rtMin,
+            polarity: pol,
+            top_n: Math.max(1, spectrumTopN),
+            min_rel: Math.max(0, spectrumMinRel),
+            polymer: activePolymerSettings,
+          })
+          .then((sp) => {
+            setSpectrum(sp);
+            if (transferMsToUv || options?.forceUvTransfer) {
+              storeUvLabelsFromSpectrum(sp, options?.uvRtMin ?? rtMin - uvOffset, {
+                snap: snapUvLabels,
+              });
+            }
+          })
+          .catch((err) => setError(String(err)))
+          .finally(() => setBusy(false));
+      }
     },
     [
       activeSid,
       pol,
+      polarity,
       spectrumTopN,
       spectrumMinRel,
       activePolymerSettings,
+      getApiPolymerSettingsForSession,
       transferMsToUv,
       uvOffset,
       snapUvLabels,
@@ -3202,49 +3286,113 @@ export function LCMSView() {
     async (region: { rtMin: number; rtMax: number } | null) => {
       if (!activeSid || !region) {
         setRegionIntegration(null);
+        setRegionIntegrationPos(null);
+        setRegionIntegrationNeg(null);
         return;
       }
       const lo = Math.min(region.rtMin, region.rtMax);
       const hi = Math.max(region.rtMin, region.rtMax);
       if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) {
         setRegionIntegration(null);
+        setRegionIntegrationPos(null);
+        setRegionIntegrationNeg(null);
         return;
       }
       setSelectedRt((lo + hi) / 2);
 
-      // Instantaneous baseline-corrected trapezoidal integration of chromatogram
-      if (tic && tic.rt_min && tic.rt_min.length > 0) {
-        const integrated = integrateTraceRegion(tic.rt_min, tic.tic, lo, hi);
-        setRegionIntegration(integrated);
-      } else {
-        setRegionIntegration(null);
-      }
+      if (polarity === "dual") {
+        if (ticPos && ticPos.rt_min && ticPos.rt_min.length > 0) {
+          setRegionIntegrationPos(integrateTraceRegion(ticPos.rt_min, ticPos.tic, lo, hi));
+        } else {
+          setRegionIntegrationPos(null);
+        }
+        if (ticNeg && ticNeg.rt_min && ticNeg.rt_min.length > 0) {
+          setRegionIntegrationNeg(integrateTraceRegion(ticNeg.rt_min, ticNeg.tic, lo, hi));
+        } else {
+          setRegionIntegrationNeg(null);
+        }
 
-      setBusy(true);
-      setError(null);
-      try {
-        const data = await api.lcms.regionSpectrum(activeSid, {
-          rt_min: lo,
-          rt_max: hi,
-          polarity: pol,
-          bin_width: 0.01,
-          min_rel: 0.0,
-          polymer: activePolymerSettings,
-        });
-        setSpectrum(spectrumFromRegionData(data, lo, hi));
-        setShowSpectrum(true);
-        setInfo(
-          data.n_scans > 0
-            ? `Sliced & summed MS1 from ${data.n_scans} scans (${lo.toFixed(3)}-${hi.toFixed(3)} min).`
-            : `No MS1 scans found in ${lo.toFixed(3)}-${hi.toFixed(3)} min.`,
-        );
-      } catch (err) {
-        setError(String(err));
-      } finally {
-        setBusy(false);
+        setBusy(true);
+        setError(null);
+        try {
+          const [dataPos, dataNeg] = await Promise.all([
+            api.lcms.regionSpectrum(activeSid, {
+              rt_min: lo,
+              rt_max: hi,
+              polarity: "positive",
+              bin_width: 0.01,
+              min_rel: 0.0,
+              polymer: getApiPolymerSettingsForSession(activeSid, "positive"),
+            }),
+            api.lcms.regionSpectrum(activeSid, {
+              rt_min: lo,
+              rt_max: hi,
+              polarity: "negative",
+              bin_width: 0.01,
+              min_rel: 0.0,
+              polymer: getApiPolymerSettingsForSession(activeSid, "negative"),
+            }),
+          ]);
+          const spPos = spectrumFromRegionData(dataPos, lo, hi);
+          const spNeg = spectrumFromRegionData(dataNeg, lo, hi);
+          setSpectrumPos(spPos);
+          setSpectrumNeg(spNeg);
+          setSpectrum(spPos);
+          setShowSpectrum(true);
+          setInfo(
+            `Sliced & summed Dual MS1: ${dataPos.n_scans} ESI+ scans, ${dataNeg.n_scans} ESI- scans (${lo.toFixed(3)}-${hi.toFixed(3)} min).`,
+          );
+        } catch (err) {
+          setError(String(err));
+        } finally {
+          setBusy(false);
+        }
+      } else {
+        // Instantaneous baseline-corrected trapezoidal integration of chromatogram
+        if (tic && tic.rt_min && tic.rt_min.length > 0) {
+          const integrated = integrateTraceRegion(tic.rt_min, tic.tic, lo, hi);
+          setRegionIntegration(integrated);
+        } else {
+          setRegionIntegration(null);
+        }
+
+        setBusy(true);
+        setError(null);
+        try {
+          const data = await api.lcms.regionSpectrum(activeSid, {
+            rt_min: lo,
+            rt_max: hi,
+            polarity: pol,
+            bin_width: 0.01,
+            min_rel: 0.0,
+            polymer: activePolymerSettings,
+          });
+          setSpectrum(spectrumFromRegionData(data, lo, hi));
+          setShowSpectrum(true);
+          setInfo(
+            data.n_scans > 0
+              ? `Sliced & summed MS1 from ${data.n_scans} scans (${lo.toFixed(3)}-${hi.toFixed(3)} min).`
+              : `No MS1 scans found in ${lo.toFixed(3)}-${hi.toFixed(3)} min.`,
+          );
+        } catch (err) {
+          setError(String(err));
+        } finally {
+          setBusy(false);
+        }
       }
     },
-    [activeSid, pol, activePolymerSettings, spectrumFromRegionData, tic, setSelectedRt],
+    [
+      activeSid,
+      pol,
+      polarity,
+      activePolymerSettings,
+      getApiPolymerSettingsForSession,
+      spectrumFromRegionData,
+      tic,
+      ticPos,
+      ticNeg,
+      setSelectedRt,
+    ],
   );
 
   const onRegionSelected = useCallback(
@@ -3284,6 +3432,17 @@ export function LCMSView() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePolymerSettings]);
+
+  // Reload spectra when switching polarity mode if RT or region is selected
+  useEffect(() => {
+    if (!activeSid) return;
+    if (selectedRegion != null) {
+      void loadRegionData(selectedRegion);
+    } else if (selectedRt != null) {
+      loadSpectrum(selectedRt);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [polarity]);
 
   const saveWorkspace = () => {
     const uvTextLabelsBySessionId = Object.fromEntries(
@@ -3919,7 +4078,12 @@ export function LCMSView() {
 
   const handleReloadTIC = useCallback(() => {
     if (activeSid) {
-      api.lcms.tic(activeSid, pol).then(setTic).catch((err) => setError(String(err)));
+      if (polarity === "dual") {
+        api.lcms.tic(activeSid, "positive").then(setTicPos).catch((err) => setError(String(err)));
+        api.lcms.tic(activeSid, "negative").then(setTicNeg).catch((err) => setError(String(err)));
+      } else {
+        api.lcms.tic(activeSid, pol).then(setTic).catch((err) => setError(String(err)));
+      }
       if (overlayTicEnabled && overlaySessionIds.length > 1) {
         api.lcms
           .ticOverlay({ session_ids: overlaySessionIds, polarity: pol })
@@ -3929,7 +4093,7 @@ export function LCMSView() {
     }
     setReloadPulse((p) => p + 1);
     window.dispatchEvent(new Event("resize"));
-  }, [activeSid, overlaySessionIds, overlayTicEnabled, pol]);
+  }, [activeSid, overlaySessionIds, overlayTicEnabled, pol, polarity]);
 
   const handleReloadUV = useCallback(() => {
     if (activeSid) {
@@ -4103,49 +4267,141 @@ export function LCMSView() {
               </div>
             </div>
           )}
-          <DatasetRibbon active={active} onTagUpdated={handleTagUpdated} />
+          <DatasetRibbon
+            active={active}
+            onTagUpdated={handleTagUpdated}
+            polarity={polarity}
+            setPolarity={setPolarity}
+            dualLayout={dualLayout}
+            setDualLayout={setDualLayout}
+          />
 
           {!active && <EmptyState onPick={() => fileRef.current?.click()} />}
 
           {active && (
             <>
               {showTIC && (
-                <TICChart
-                  activeSid={activeSid}
-                  activeDisplayName={active?.display_name}
-                  tic={tic}
-                  overlayTraces={ticOverlay}
-                  onClick={onTICClick}
-                  onRegionSelected={onRegionSelected}
-                  onUndoRegion={undoRegion}
-                  onRedoRegion={redoRegion}
-                  canUndoRegion={canUndoRegion}
-                  canRedoRegion={canRedoRegion}
-                  selectedRt={selectedRt}
-                  selectedRegion={selectedRegion}
-                  regionIntegration={regionIntegration}
-                  selectedScanId={
-                    spectrum?.meta.spectrum_id && !spectrum.meta.spectrum_id.startsWith("summed:")
-                      ? spectrum.meta.spectrum_id
-                      : null
-                  }
-                  rtUnit={rtUnit}
-                  regionSelect={regionSelect}
-                  onToggleRegionSelect={handleSetRegionSelect}
-                  settings={graphSettings.tic}
-                  onOpenDesign={() => setDesignPlotId("tic")}
-                  onReload={handleReloadTIC}
-                  onUpdateOverlayMode={(mode) => updateGraphOverlayMode("tic", mode)}
-                  syncZoom={syncChromatogramZoom}
-                  onToggleSyncZoom={() => {
-                    setSyncChromatogramZoom((v) => !v);
-                    if (syncChromatogramZoom) setSyncedRtRange(null);
-                  }}
-                  syncedRtRange={syncChromatogramZoom ? syncedRtRange : null}
-                  onZoomChange={(range) => {
-                    if (syncChromatogramZoom) setSyncedRtRange(range);
-                  }}
-                />
+                polarity === "dual" ? (
+                  <div className={dualLayout === "grid" ? "grid grid-cols-1 xl:grid-cols-2 gap-4" : "flex flex-col gap-4"}>
+                    <TICChart
+                      activeSid={activeSid}
+                      activeDisplayName={active?.display_name}
+                      title="Total Ion Chromatogram (ESI+)"
+                      polarityBadge="ESI+"
+                      colorOverride="#2563eb"
+                      emptyMessage="No positive mode (ESI+) chromatogram available in this file."
+                      tic={ticPos}
+                      overlayTraces={ticOverlay}
+                      onClick={onTICClick}
+                      onRegionSelected={onRegionSelected}
+                      onUndoRegion={undoRegion}
+                      onRedoRegion={redoRegion}
+                      canUndoRegion={canUndoRegion}
+                      canRedoRegion={canRedoRegion}
+                      selectedRt={selectedRt}
+                      selectedRegion={selectedRegion}
+                      regionIntegration={regionIntegrationPos}
+                      selectedScanId={
+                        spectrumPos?.meta.spectrum_id && !spectrumPos.meta.spectrum_id.startsWith("summed:")
+                          ? spectrumPos.meta.spectrum_id
+                          : null
+                      }
+                      rtUnit={rtUnit}
+                      regionSelect={regionSelect}
+                      onToggleRegionSelect={handleSetRegionSelect}
+                      settings={graphSettings.tic}
+                      onOpenDesign={() => setDesignPlotId("tic")}
+                      onReload={handleReloadTIC}
+                      onUpdateOverlayMode={(mode) => updateGraphOverlayMode("tic", mode)}
+                      syncZoom={syncChromatogramZoom}
+                      onToggleSyncZoom={() => {
+                        setSyncChromatogramZoom((v) => !v);
+                        if (syncChromatogramZoom) setSyncedRtRange(null);
+                      }}
+                      syncedRtRange={syncChromatogramZoom ? syncedRtRange : null}
+                      onZoomChange={(range) => {
+                        if (syncChromatogramZoom) setSyncedRtRange(range);
+                      }}
+                    />
+                    <TICChart
+                      activeSid={activeSid}
+                      activeDisplayName={active?.display_name}
+                      title="Total Ion Chromatogram (ESI-)"
+                      polarityBadge="ESI-"
+                      colorOverride="#e11d48"
+                      emptyMessage="No negative mode (ESI-) chromatogram available in this file."
+                      tic={ticNeg}
+                      overlayTraces={ticOverlay}
+                      onClick={onTICClick}
+                      onRegionSelected={onRegionSelected}
+                      onUndoRegion={undoRegion}
+                      onRedoRegion={redoRegion}
+                      canUndoRegion={canUndoRegion}
+                      canRedoRegion={canRedoRegion}
+                      selectedRt={selectedRt}
+                      selectedRegion={selectedRegion}
+                      regionIntegration={regionIntegrationNeg}
+                      selectedScanId={
+                        spectrumNeg?.meta.spectrum_id && !spectrumNeg.meta.spectrum_id.startsWith("summed:")
+                          ? spectrumNeg.meta.spectrum_id
+                          : null
+                      }
+                      rtUnit={rtUnit}
+                      regionSelect={regionSelect}
+                      onToggleRegionSelect={handleSetRegionSelect}
+                      settings={graphSettings.tic}
+                      onOpenDesign={() => setDesignPlotId("tic")}
+                      onReload={handleReloadTIC}
+                      onUpdateOverlayMode={(mode) => updateGraphOverlayMode("tic", mode)}
+                      syncZoom={syncChromatogramZoom}
+                      onToggleSyncZoom={() => {
+                        setSyncChromatogramZoom((v) => !v);
+                        if (syncChromatogramZoom) setSyncedRtRange(null);
+                      }}
+                      syncedRtRange={syncChromatogramZoom ? syncedRtRange : null}
+                      onZoomChange={(range) => {
+                        if (syncChromatogramZoom) setSyncedRtRange(range);
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <TICChart
+                    activeSid={activeSid}
+                    activeDisplayName={active?.display_name}
+                    tic={tic}
+                    overlayTraces={ticOverlay}
+                    onClick={onTICClick}
+                    onRegionSelected={onRegionSelected}
+                    onUndoRegion={undoRegion}
+                    onRedoRegion={redoRegion}
+                    canUndoRegion={canUndoRegion}
+                    canRedoRegion={canRedoRegion}
+                    selectedRt={selectedRt}
+                    selectedRegion={selectedRegion}
+                    regionIntegration={regionIntegration}
+                    selectedScanId={
+                      spectrum?.meta.spectrum_id && !spectrum.meta.spectrum_id.startsWith("summed:")
+                        ? spectrum.meta.spectrum_id
+                        : null
+                    }
+                    rtUnit={rtUnit}
+                    regionSelect={regionSelect}
+                    onToggleRegionSelect={handleSetRegionSelect}
+                    settings={graphSettings.tic}
+                    onOpenDesign={() => setDesignPlotId("tic")}
+                    onReload={handleReloadTIC}
+                    onUpdateOverlayMode={(mode) => updateGraphOverlayMode("tic", mode)}
+                    syncZoom={syncChromatogramZoom}
+                    onToggleSyncZoom={() => {
+                      setSyncChromatogramZoom((v) => !v);
+                      if (syncChromatogramZoom) setSyncedRtRange(null);
+                    }}
+                    syncedRtRange={syncChromatogramZoom ? syncedRtRange : null}
+                    onZoomChange={(range) => {
+                      if (syncChromatogramZoom) setSyncedRtRange(range);
+                    }}
+                  />
+                )
               )}
               {visibleEicPlots.length > 0 && overlayEicEnabled ? (
                 <EICChart
@@ -4284,24 +4540,87 @@ export function LCMSView() {
                 />
               )}
               {showSpectrum && (
-                <SpectrumChart
-                  spectrum={spectrum}
-                  overlayTraces={spectrumOverlay}
-                  annotate={annotateSpectrum}
-                  showOverlayLabels={showOverlayLabels}
-                  showDragHint={enableDragLabels}
-                  selectedRt={selectedRt}
-                  rtUnit={rtUnit}
-                  settings={graphSettings.spectrum}
-                  polymerEnabled={Boolean(activePolymerSettings)}
-                  polymerStudioOpen={polymerStudioOpen}
-                  onTogglePolymerStudio={() => setPolymerStudioOpen((v) => !v)}
-                  onPeakClick={onSpectrumPeakClick}
-                  onDeconvolution={() => setDeconvolutionOpen(true)}
-                  onOpenDesign={() => setDesignPlotId("spectrum")}
-                  onReload={handleReloadSpectrum}
-                  onUpdateOverlayMode={(mode) => updateGraphOverlayMode("spectrum", mode)}
-                />
+                polarity === "dual" ? (
+                  <div className={dualLayout === "grid" ? "grid grid-cols-1 xl:grid-cols-2 gap-4" : "flex flex-col gap-4"}>
+                    <SpectrumChart
+                      title="MS1 Spectrum (ESI+)"
+                      polarityBadge="ESI+"
+                      colorOverride="#2563eb"
+                      emptyMessage="Click a point on the TIC to view positive mode (ESI+) spectrum."
+                      spectrum={spectrumPos}
+                      overlayTraces={spectrumOverlay}
+                      annotate={annotateSpectrum}
+                      showOverlayLabels={showOverlayLabels}
+                      showDragHint={enableDragLabels}
+                      selectedRt={selectedRt}
+                      rtUnit={rtUnit}
+                      settings={graphSettings.spectrum}
+                      polymerEnabled={Boolean(activePolymerSettingsPos)}
+                      polymerStudioOpen={polymerStudioOpen && polymerStudioPolarity === "positive"}
+                      onTogglePolymerStudio={() => {
+                        setPolymerStudioPolarity("positive");
+                        setPolymerStudioOpen((v) => !v);
+                      }}
+                      onPeakClick={onSpectrumPeakClick}
+                      onDeconvolution={() => {
+                        setDeconvolutionPolarity("positive");
+                        setDeconvolutionSpectrum(spectrumPos);
+                        setDeconvolutionOpen(true);
+                      }}
+                      onOpenDesign={() => setDesignPlotId("spectrum")}
+                      onReload={handleReloadSpectrum}
+                      onUpdateOverlayMode={(mode) => updateGraphOverlayMode("spectrum", mode)}
+                    />
+                    <SpectrumChart
+                      title="MS1 Spectrum (ESI-)"
+                      polarityBadge="ESI-"
+                      colorOverride="#e11d48"
+                      emptyMessage="Click a point on the TIC to view negative mode (ESI-) spectrum."
+                      spectrum={spectrumNeg}
+                      overlayTraces={spectrumOverlay}
+                      annotate={annotateSpectrum}
+                      showOverlayLabels={showOverlayLabels}
+                      showDragHint={enableDragLabels}
+                      selectedRt={selectedRt}
+                      rtUnit={rtUnit}
+                      settings={graphSettings.spectrum}
+                      polymerEnabled={Boolean(activePolymerSettingsNeg)}
+                      polymerStudioOpen={polymerStudioOpen && polymerStudioPolarity === "negative"}
+                      onTogglePolymerStudio={() => {
+                        setPolymerStudioPolarity("negative");
+                        setPolymerStudioOpen((v) => !v);
+                      }}
+                      onPeakClick={onSpectrumPeakClick}
+                      onDeconvolution={() => {
+                        setDeconvolutionPolarity("negative");
+                        setDeconvolutionSpectrum(spectrumNeg);
+                        setDeconvolutionOpen(true);
+                      }}
+                      onOpenDesign={() => setDesignPlotId("spectrum")}
+                      onReload={handleReloadSpectrum}
+                      onUpdateOverlayMode={(mode) => updateGraphOverlayMode("spectrum", mode)}
+                    />
+                  </div>
+                ) : (
+                  <SpectrumChart
+                    spectrum={spectrum}
+                    overlayTraces={spectrumOverlay}
+                    annotate={annotateSpectrum}
+                    showOverlayLabels={showOverlayLabels}
+                    showDragHint={enableDragLabels}
+                    selectedRt={selectedRt}
+                    rtUnit={rtUnit}
+                    settings={graphSettings.spectrum}
+                    polymerEnabled={Boolean(activePolymerSettings)}
+                    polymerStudioOpen={polymerStudioOpen}
+                    onTogglePolymerStudio={() => setPolymerStudioOpen((v) => !v)}
+                    onPeakClick={onSpectrumPeakClick}
+                    onDeconvolution={() => setDeconvolutionOpen(true)}
+                    onOpenDesign={() => setDesignPlotId("spectrum")}
+                    onReload={handleReloadSpectrum}
+                    onUpdateOverlayMode={(mode) => updateGraphOverlayMode("spectrum", mode)}
+                  />
+                )
               )}
             </>
           )}
@@ -4368,6 +4687,8 @@ export function LCMSView() {
           // View
           polarity={polarity}
           setPolarity={setPolarity}
+          dualLayout={dualLayout}
+          setDualLayout={setDualLayout}
           setRtUnit={setRtUnit}
           uvOffsetText={uvOffsetText}
           setUvOffsetText={setUvOffsetText}
@@ -4562,15 +4883,19 @@ export function LCMSView() {
         <PolymerStudioModal
           open={polymerStudioOpen}
           onClose={() => setPolymerStudioOpen(false)}
-          polarity={polarity}
+          polarity={polarity === "dual" ? polymerStudioPolarity : polarity}
           settings={polymerSettings}
           onChange={setPolymerSettings}
           onExpectedProducts={() => void openExpectedProductsWithCompute()}
           onKendrick={() => void openKendrickWithCompute()}
-          canOpenExpectedProducts={Boolean(spectrum && polarity !== "all" && polymerMonomerText(polymerSettings))}
-          canOpenKendrick={Boolean(spectrum)}
+          canOpenExpectedProducts={Boolean(
+            (polarity === "dual" ? (polymerStudioPolarity === "positive" ? spectrumPos : spectrumNeg) : spectrum) &&
+            polarity !== "all" &&
+            polymerMonomerText(polymerSettings),
+          )}
+          canOpenKendrick={Boolean(polarity === "dual" ? (spectrumPos || spectrumNeg) : spectrum)}
           onSaveDefaults={savePolymerDefaults}
-          spectrumAvailable={Boolean(spectrum)}
+          spectrumAvailable={Boolean(polarity === "dual" ? (spectrumPos || spectrumNeg) : spectrum)}
           sessions={sessions}
           activeSessionId={activeSid}
           onSelectSession={setActiveSid}
@@ -4580,7 +4905,7 @@ export function LCMSView() {
       )}
       {polymerDialogOpen && (
         <PolymerDialog
-          polarity={polarity}
+          polarity={polarity === "dual" ? polymerStudioPolarity : polarity}
           settings={polymerSettings}
           onChange={setPolymerSettings}
           onClose={() => setPolymerDialogOpen(false)}
@@ -4593,10 +4918,10 @@ export function LCMSView() {
       )}
       {expectedProductsOpen && polarity !== "all" && (
         <ExpectedProductsDialog
-          polarity={polarity}
+          polarity={polarity === "dual" ? polymerStudioPolarity : polarity}
           settings={polymerSettings}
-          spectrum={spectrum}
-          tic={tic}
+          spectrum={polarity === "dual" ? (polymerStudioPolarity === "positive" ? spectrumPos : spectrumNeg) : spectrum}
+          tic={polarity === "dual" ? (polymerStudioPolarity === "positive" ? ticPos : ticNeg) : tic}
           activeSid={activeSid}
           onCreateEic={(mz, tolerance, metadata) => void createEICForMz(mz, "expected", tolerance, metadata)}
           onClose={() => setExpectedProductsOpen(false)}
@@ -4604,7 +4929,7 @@ export function LCMSView() {
       )}
       {kendrickOpen && (
         <KendrickDialog
-          spectrum={spectrum}
+          spectrum={polarity === "dual" ? (spectrumPos ?? spectrumNeg) : spectrum}
           settings={polymerSettings}
           onCreateEic={(mz, tolerance) => void createEICForMz(mz, "spectrum", tolerance)}
           onClose={() => setKendrickOpen(false)}
@@ -4613,8 +4938,8 @@ export function LCMSView() {
       {deconvolutionOpen && (
         <DeconvolutionDialog
           activeSid={activeSid}
-          spectrum={spectrum}
-          polarity={polarity === "negative" ? "negative" : "positive"}
+          spectrum={polarity === "dual" ? (deconvolutionSpectrum ?? spectrumPos ?? spectrumNeg) : spectrum}
+          polarity={polarity === "dual" ? deconvolutionPolarity : (polarity === "negative" ? "negative" : "positive")}
           onCreateEic={(mz, tolerance, metadata) => void createEICForMz(mz, "spectrum", tolerance, metadata)}
           onClose={() => setDeconvolutionOpen(false)}
         />
@@ -5313,37 +5638,100 @@ function IconChevronRight({ className }: { className?: string }) {
 function DatasetRibbon(props: {
   active: LCMSSessionSummary | null;
   onTagUpdated?: (newTag: string) => void;
+  polarity: Polarity;
+  setPolarity: (p: Polarity) => void;
+  dualLayout: "stacked" | "grid";
+  setDualLayout: (l: "stacked" | "grid") => void;
 }) {
   const a = props.active;
   return (
-    <div className="card flex flex-wrap items-center gap-6 px-4 py-3">
-      <Field label="Dataset" value={a?.display_name ?? "—"} strong />
-      {a && (
-        <div>
-          <div className="label">Experiment Tag</div>
-          <div className="mt-1">
-            <ExperimentTagEditor
-              sessionId={a.session_id}
-              currentTag={a.experiment_tag}
-              module="lcms"
-              onTagUpdated={props.onTagUpdated}
-            />
+    <div className="card flex flex-wrap items-center justify-between gap-4 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-6">
+        <Field label="Dataset" value={a?.display_name ?? "—"} strong />
+        {a && (
+          <div>
+            <div className="label">Experiment Tag</div>
+            <div className="mt-1">
+              <ExperimentTagEditor
+                sessionId={a.session_id}
+                currentTag={a.experiment_tag}
+                module="lcms"
+                onTagUpdated={props.onTagUpdated}
+              />
+            </div>
           </div>
+        )}
+        <Field label="MS1 scans" value={a?.ms1_count ?? "—"} />
+        <Field
+          label="RT range (min)"
+          value={formatRange(a?.rt_min ?? null, a?.rt_max ?? null)}
+        />
+        <Field
+          label="Polarities in file"
+          value={a?.polarities?.length ? a.polarities.join(", ") : "—"}
+        />
+        <Field
+          label="UV"
+          value={a?.uv?.available ? a.uv.filename ?? "attached" : "—"}
+        />
+      </div>
+
+      {/* Quick Polarity & Dual Layout Controls */}
+      <div className="flex items-center gap-2.5 pt-1 lg:pt-0">
+        <div className="flex items-center rounded-lg bg-ink-100/80 p-0.5 text-xs">
+          {(["all", "positive", "negative", "dual"] as Polarity[]).map((v) => (
+            <button
+              key={v}
+              type="button"
+              className={clsx(
+                "py-1 px-2 rounded-md font-medium transition-all text-xs whitespace-nowrap",
+                props.polarity === v
+                  ? "bg-surface text-ink-900 shadow-xs font-semibold"
+                  : "text-ink-600 hover:text-ink-900",
+              )}
+              onClick={() => props.setPolarity(v)}
+            >
+              {v === "all"
+                ? "All"
+                : v === "positive"
+                ? "ESI+"
+                : v === "negative"
+                ? "ESI-"
+                : "⚡ Dual (+/-)"}
+            </button>
+          ))}
         </div>
-      )}
-      <Field label="MS1 scans" value={a?.ms1_count ?? "—"} />
-      <Field
-        label="RT range (min)"
-        value={formatRange(a?.rt_min ?? null, a?.rt_max ?? null)}
-      />
-      <Field
-        label="Polarities in file"
-        value={a?.polarities?.length ? a.polarities.join(", ") : "—"}
-      />
-      <Field
-        label="UV"
-        value={a?.uv?.available ? a.uv.filename ?? "attached" : "—"}
-      />
+        {props.polarity === "dual" && (
+          <div className="flex items-center rounded-lg bg-ink-100/80 p-0.5 text-xs">
+            <button
+              type="button"
+              className={clsx(
+                "py-1 px-2 rounded-md font-medium transition-all text-xs whitespace-nowrap",
+                props.dualLayout === "stacked"
+                  ? "bg-surface text-ink-900 shadow-xs font-semibold"
+                  : "text-ink-600 hover:text-ink-900",
+              )}
+              onClick={() => props.setDualLayout("stacked")}
+              title="Stacked cards layout (full width)"
+            >
+              ≡ Stacked
+            </button>
+            <button
+              type="button"
+              className={clsx(
+                "py-1 px-2 rounded-md font-medium transition-all text-xs whitespace-nowrap",
+                props.dualLayout === "grid"
+                  ? "bg-surface text-ink-900 shadow-xs font-semibold"
+                  : "text-ink-600 hover:text-ink-900",
+              )}
+              onClick={() => props.setDualLayout("grid")}
+              title="Side-by-side 2-column grid layout"
+            >
+              ◫ 2-Col
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -5408,6 +5796,8 @@ interface ToolsPanelProps {
   // view
   polarity: Polarity;
   setPolarity: (p: Polarity) => void;
+  dualLayout: "stacked" | "grid";
+  setDualLayout: (l: "stacked" | "grid") => void;
   setRtUnit: (u: RtUnit) => void;
   uvOffsetText: string;
   setUvOffsetText: (v: string) => void;
@@ -5929,8 +6319,8 @@ function DisplayTab(p: ToolsPanelProps) {
       </GroupBox>
 
       <GroupBox title="Polarity">
-        <div className="flex items-center gap-4">
-          {(["all", "positive", "negative"] as Polarity[]).map((v) => (
+        <div className="flex flex-wrap items-center gap-4">
+          {(["all", "positive", "negative", "dual"] as Polarity[]).map((v) => (
             <label key={v} className="flex items-center gap-1.5 text-sm capitalize">
               <input
                 type="radio"
@@ -5938,10 +6328,30 @@ function DisplayTab(p: ToolsPanelProps) {
                 checked={p.polarity === v}
                 onChange={() => p.setPolarity(v)}
               />
-              {v === "all" ? "All" : v.charAt(0).toUpperCase() + v.slice(1)}
+              {v === "all"
+                ? "All"
+                : v === "positive"
+                ? "Positive (ESI+)"
+                : v === "negative"
+                ? "Negative (ESI-)"
+                : "Dual (+ / -)"}
             </label>
           ))}
         </div>
+        {p.polarity === "dual" && (
+          <div className="mt-3 pt-2.5 border-t border-ink-100/80">
+            <Row label="Dual Layout">
+              <select
+                className="input py-1 text-xs"
+                value={p.dualLayout}
+                onChange={(e) => p.setDualLayout(e.target.value as "stacked" | "grid")}
+              >
+                <option value="stacked">Stacked (Full Width)</option>
+                <option value="grid">Side-by-Side (2 Columns)</option>
+              </select>
+            </Row>
+          </div>
+        )}
       </GroupBox>
 
       <GroupBox title="Panels">
@@ -6178,6 +6588,10 @@ function TICChart(props: {
   onToggleSyncZoom?: () => void;
   syncedRtRange?: [number, number] | null;
   onZoomChange?: (range: [number, number] | null) => void;
+  title?: string;
+  polarityBadge?: "ESI+" | "ESI-" | string;
+  colorOverride?: string;
+  emptyMessage?: string;
 }) {
   const [localRevision, setLocalRevision] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -6363,7 +6777,7 @@ function TICChart(props: {
   const savePublication = useCallback(
     (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
       if (!plotRef.current || !props.tic) return;
-      const base = sanitizeFilenamePart(props.settings.title || "lcms_tic", "lcms_tic");
+      const base = sanitizeFilenamePart(props.title || props.settings.title || "lcms_tic", "lcms_tic");
       const is1to1 = exportSettings.isCurrentView;
       void exportPlotlyPublicationImage(plotRef.current, {
         format,
@@ -6394,8 +6808,20 @@ function TICChart(props: {
         <div className="flex flex-wrap items-center gap-2 min-w-0">
           <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
             <span>🌊</span>
-            <span>Total Ion Chromatogram</span>
+            <span>{props.title ?? "Total Ion Chromatogram"}</span>
           </h3>
+          {props.polarityBadge && (
+            <span
+              className={clsx(
+                "rounded-md px-2 py-0.5 font-mono text-xs font-semibold whitespace-nowrap",
+                props.polarityBadge === "ESI+"
+                  ? "bg-blue-50 text-blue-700 border border-blue-200"
+                  : "bg-rose-50 text-rose-700 border border-rose-200",
+              )}
+            >
+              {props.polarityBadge}
+            </span>
+          )}
           {props.tic && (
             <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-600 whitespace-nowrap">
               {props.tic.rt_min.length.toLocaleString()} points
@@ -6588,9 +7014,9 @@ function TICChart(props: {
           />
         </div>
       </div>
-      {!props.tic ? (
+      {!props.tic || props.tic.rt_min.length === 0 ? (
         <div className="flex h-72 items-center justify-center text-sm text-ink-500">
-          Loading TIC…
+          {props.emptyMessage ?? (!props.tic ? "Loading TIC…" : "No chromatogram data available.")}
         </div>
       ) : (
         <div
@@ -6607,7 +7033,7 @@ function TICChart(props: {
                 x: xs,
                 y: activeY,
                 customdata: props.tic.tic,
-                line: { color: props.settings.color, width: props.settings.lineWidth },
+                line: { color: props.colorOverride ?? props.settings.color, width: props.settings.lineWidth },
                 hovertemplate:
                   overlayMode === "raw"
                     ? `RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`
@@ -8147,6 +8573,10 @@ function SpectrumChart(props: {
   onOpenDesign?: () => void;
   onReload?: () => void;
   onUpdateOverlayMode?: (mode: SpectrumOverlayMode) => void;
+  title?: string;
+  polarityBadge?: "ESI+" | "ESI-" | string;
+  colorOverride?: string;
+  emptyMessage?: string;
 }) {
   const [localRevision, setLocalRevision] = useState(0);
   const s = props.spectrum;
@@ -8407,7 +8837,7 @@ function SpectrumChart(props: {
       const rtPart = s.meta.rt_start != null
         ? `region_${s.meta.rt_start.toFixed(3)}_${s.meta.rt_end?.toFixed(3) ?? ""}`
         : `rt_${s.meta.rt_min.toFixed(3)}`;
-      const base = sanitizeFilenamePart(props.settings.title || `lcms_ms1_${rtPart}`, "lcms_ms1_spectrum");
+      const base = sanitizeFilenamePart(props.title || props.settings.title || `lcms_ms1_${rtPart}`, "lcms_ms1_spectrum");
       const is1to1 = exportSettings.isCurrentView;
 
       void exportPlotlyPublicationImage(specPlotRef.current, {
@@ -8430,7 +8860,7 @@ function SpectrumChart(props: {
             },
       });
     },
-    [props.settings.title, s],
+    [props.settings.title, props.title, s],
   );
 
   return (
@@ -8440,13 +8870,24 @@ function SpectrumChart(props: {
         <div className="flex flex-wrap items-center gap-2 min-w-0">
           <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
             <span>📊</span>
-            <span>MS1 Spectrum</span>
+            <span>{props.title ?? "MS1 Spectrum"}</span>
           </h3>
-          {s && (
+          {props.polarityBadge ? (
+            <span
+              className={clsx(
+                "rounded-md px-2 py-0.5 font-mono text-xs font-semibold whitespace-nowrap",
+                props.polarityBadge === "ESI+"
+                  ? "bg-blue-50 text-blue-700 border border-blue-200"
+                  : "bg-rose-50 text-rose-700 border border-rose-200",
+              )}
+            >
+              {props.polarityBadge}
+            </span>
+          ) : s ? (
             <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-700 whitespace-nowrap">
               {s.meta.polarity === "positive" ? "ESI+" : s.meta.polarity === "negative" ? "ESI-" : s.meta.polarity ?? "ESI"}
             </span>
-          )}
+          ) : null}
           {s && (
             <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
               {s.meta.n_peaks.toLocaleString()} peaks
@@ -8624,7 +9065,7 @@ function SpectrumChart(props: {
       </div>
       {!s ? (
         <div className="flex h-72 items-center justify-center text-sm text-ink-500">
-          Click a point on the TIC to view the MS1 spectrum at that retention time.
+          {props.emptyMessage ?? "Click a point on the TIC to view the MS1 spectrum at that retention time."}
         </div>
       ) : (
         <div
@@ -8641,7 +9082,7 @@ function SpectrumChart(props: {
                 y: activeY,
                 customdata: displayActive.intensity.map((v) => [v, (v / activeBasePeak) * 100]),
                 width: props.settings.barWidth,
-                marker: { color: props.settings.color },
+                marker: { color: props.colorOverride ?? props.settings.color },
                 hovertemplate:
                   isNorm
                     ? "m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata[0]:.3e}<extra></extra>"
