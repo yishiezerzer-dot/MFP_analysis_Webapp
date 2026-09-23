@@ -66,6 +66,24 @@ class LCMSSessionState:
     workspace_id: str = "general"
     uv: Optional[UVSessionState] = None
     _scan_cache: Dict[str, Tuple[Dict[str, Any], np.ndarray, np.ndarray]] = field(default_factory=dict)
+    # One open reader per session (use only while holding _reader_lock). Opening re-indexes the
+    # whole file, which cost ~1 s per spectrum click on a 140 MB file when done per request.
+    _reader: Optional[Any] = None
+
+    def reader(self) -> Any:
+        """Open (once) and return the mzML reader. Caller must hold _reader_lock."""
+        if self._reader is None:
+            # Uses the file's own <indexList> when present; falls back to scanning it.
+            self._reader = mzml.PreIndexedMzML(str(self.path))
+        return self._reader
+
+    def close_reader(self) -> None:
+        with self._reader_lock:
+            if self._reader is not None:
+                try:
+                    self._reader.close()
+                finally:
+                    self._reader = None
 
     def ms1_meta(self) -> List[Dict[str, Any]]:
         return [
@@ -145,7 +163,10 @@ class LCMSRegistry:
             workspace_id=workspace_id,
         )
         with self._lock:
+            previous = self._sessions.get(session_id)
             self._sessions[session_id] = state
+        if previous is not None:
+            previous.close_reader()
         return state
 
     def get(self, session_id: str) -> Optional[LCMSSessionState]:
@@ -206,7 +227,10 @@ class LCMSRegistry:
             cache_path = MzMLTICIndex(Path(rec["file_path"]), rt_unit=rt_unit)._cache_path()
         delete_session_record(session_id)
         with self._lock:
-            in_memory = self._sessions.pop(session_id, None) is not None
+            state = self._sessions.pop(session_id, None)
+        in_memory = state is not None
+        if state is not None:
+            state.close_reader()  # an open handle would block deleting the file on Windows
         if rec:
             removed = remove_unreferenced_files(rec)
             if cache_path is not None and Path(rec["file_path"]).resolve() in removed:
@@ -282,13 +306,7 @@ def fetch_spectrum_at_rt(
         if cached is not None:
             return cached
 
-        rdr = mzml.MzML(str(state.path))
-        try:
-            mz_vals, int_vals = _spectrum_arrays_from_reader(rdr, str(chosen.spectrum_id))
-        finally:
-            close = getattr(rdr, "close", None)
-            if callable(close):
-                close()
+        mz_vals, int_vals = _spectrum_arrays_from_reader(state.reader(), str(chosen.spectrum_id))
 
         meta = {
             "spectrum_id": chosen.spectrum_id,
@@ -322,15 +340,10 @@ def iter_ms1_spectra(
     if not metas:
         return
     with state._reader_lock:
-        rdr = mzml.MzML(str(state.path))
-        try:
-            for meta in metas:
-                mz_vals, int_vals = _spectrum_arrays_from_reader(rdr, str(meta.spectrum_id))
-                yield meta, mz_vals, int_vals
-        finally:
-            close = getattr(rdr, "close", None)
-            if callable(close):
-                close()
+        rdr = state.reader()
+        for meta in metas:
+            mz_vals, int_vals = _spectrum_arrays_from_reader(rdr, str(meta.spectrum_id))
+            yield meta, mz_vals, int_vals
 
 
 def extracted_ion_chromatogram(
