@@ -42,9 +42,27 @@ Source: independent review of 2026-09-23. Finding IDs (C1, H1…, M1…, L1…) 
 
 ---
 
-## Phase 1 — Scientific correctness (highest priority, ~4–5 days)
+## ~~Phase 1 — Scientific correctness (highest priority, ~4–5 days)~~ ✅ DONE 2026-09-23
 
-### 1.1 Polymer matching: charge-state formula (H2)
+> **Done** on branch `fix/review-phase-0-1`: one commit per task, test first, every results-changing fix listed in `CHANGELOG.md`. Final state: 191 backend tests (also pass in a clean Python 3.12 venv built from `requirements.lock`) and 164 frontend tests pass; type-check clean. The MIC fix was checked visually in the running app (IC₅₀ 2.01 ± 0.011 µg/mL for a true 2.0; bars and curve on one log₂ axis).
+>
+> **Deviations from the plan:**
+> - **1.3:** the Expected Products table still runs in TypeScript. The engines are aligned instead (combined variants, electron mass for anions) and locked together by the shared fixtures `polymer_charges.json` and `polymer_variants.json`. Moving the table to a backend endpoint remains optional.
+> - **1.6 item 5 (MIC threshold rule) skipped:** `compute_mic`, `compute_mic_wide` and `compute_mic_wide_od` aren't called anywhere, and the web wizard never computes an MIC value. Decide whether the wizard should report an MIC; if not, delete those functions.
+> - **1.8:** the atmospheric mask now covers only CO₂. Water-vapour lines overlap the sample bands and can't be masked; vapour subtraction would be a new feature.
+> - **2.1** was fixed as part of 1.9 (same code path).
+>
+> **Found and fixed along the way** (listed in CHANGELOG under Fixed):
+> - The AI/MCP automation action `lcms.compute_expected_products` was a third polymer engine with the same charge and zero-setting bugs. All three engines now share `charge_states()` and `setting_float()`.
+> - Single-scan LCMS deconvolution (no RT range) always returned HTTP 500.
+> - FTIR files in plain comma/semicolon CSV format (no `XYDATA` marker) couldn't be loaded.
+>
+> **Still open:**
+> - Semicolon-separated FTIR files with decimal commas.
+> - Lorentzian fits come out about 3% narrow when the fit window is only ±5 FWHM, because the linear end-point baseline clips the tails. A better baseline for fits could be added to Phase 2.
+
+
+### ~~1.1 Polymer matching: charge-state formula (H2)~~
 - **Files:** `lab_gui/lcms_polymer_match.py` (lines ~711, 761, 783 and the matching code in `explain_best_match_for_peak_sorted` ~1012–1060), `web/frontend/src/lcms/analysis.ts` (~843, 856, 859)
 - **Change:** for proton-like adducts (|mass| ≈ 1.00728) use `m/z = (M + z·adduct)/z`. For metal/anion adducts, keep a single adduct at z=1; for z>1, use `(M + adduct + (z−1)·H⁺)/z` (e.g. [M+H+Na]²⁺), or restrict them to z=1 — pick one and document it in help. Labels become `[M+2H]²⁺`, `[M−2H]²⁻`.
 - Update the neutral-mass pruning window (`lcms_polymer_match.py` ~555–562) to match.
@@ -52,28 +70,28 @@ Source: independent review of 2026-09-23. Finding IDs (C1, H1…, M1…, L1…) 
   - Python and TS: dp10 lactic-acid oligomer, [M+2H]²⁺ at 370.1182 labelled; z=3 case; negative mode [M−2H]²⁻.
   - Add a shared fixture in `web/shared_fixtures/lcms/polymer_charges.json` consumed by both `test_cross_language_fixtures.py` and `cross_language_fixtures.test.ts`.
 
-### 1.2 Polymer settings: zero values replaced by defaults (H3)
+### ~~1.2 Polymer settings: zero values replaced by defaults (H3)~~
 - **File:** `web/backend/app/services/lcms_service.py` (~734–768)
 - **Change:** replace every `float(settings.get(k, d) or d)` with a helper `_num(settings, k, d)` that falls back only on `None` / missing / non-numeric.
 - **Tests:** `bond_delta=0` labels the styrene 10-mer at the right m/z; `adduct_mass=0`; `min_rel_int=0`.
 
-### 1.3 Unify the two polymer engines (L2, follow-up to 1.1)
+### ~~1.3 Unify the two polymer engines (L2, follow-up to 1.1)~~
 - **Change:** make the Python engine the single source of truth; the Expected Products table calls a backend endpoint instead of `buildExpectedProductHits`, or both are driven by the shared fixtures until merged. Align the variant set (Python has +O−CO₂ combos; TS doesn't).
 - Add the electron mass to anion adducts (Cl⁻, HCOO⁻, CH₃COO⁻) in both constant tables.
 - **Tests:** shared fixture gives identical hit lists in both.
 
-### 1.4 RT units read from the file (H4)
+### ~~1.4 RT units read from the file (H4)~~
 - **Files:** `lab_gui/lcms_model.py` (`_extract_rt_minutes`), `lab_gui/lcms_io.py`, `web/backend/app/routers/lcms.py`, `web/frontend/src/views/LCMSView.tsx` (~2494), `web/frontend/src/api.ts` (~962)
 - **Change:** use `getattr(value, "unit_info", None)` from pyteomics `unitfloat` (`"minute"`/`"second"`). Fall back to the user-supplied unit only when the file has none, and record `rt_unit_source: "file" | "user"` in session stats.
 - Stop sending the Display-tab RT unit at upload; the Display selector becomes display-only. Bump the index-cache key version (`v2` → `v3`) so old caches rebuild.
 - **Tests:** psims-generated fixtures declaring minutes and seconds both produce 0–20 min regardless of the display setting.
 
-### 1.5 No silent polarity fallback (H5)
+### ~~1.5 No silent polarity fallback (H5)~~
 - **File:** `web/backend/app/services/lcms_service.py` (`_ms1_candidates`, ~255–264)
 - **Change:** when a polarity is requested and has no scans, raise `LCMSLoadError("No negative-polarity MS1 scans in this file")` → 400. The frontend shows it in the relevant panel (dual mode shows "no scans of this polarity").
 - **Tests:** positive-only file + negative request → 400 for spectrum, EIC, region and deconvolution.
 
-### 1.6 MIC / 4PL (H1, M7, L4)
+### ~~1.6 MIC / 4PL (H1, M7, L4)~~
 - **Files:** `lab_gui/plate_reader_model.py` (~490–590, 625–690), `web/frontend/src/views/PlateReaderView.tsx` (~189–205, 1380–1545)
 - **Changes:**
   1. Fit 4PL **only** when the user has entered numeric concentrations. Auto 2ⁿ labels are display-only and never used as x. Otherwise return `four_pl: null` with `four_pl_skipped_reason`.
@@ -85,7 +103,7 @@ Source: independent review of 2026-09-23. Finding IDs (C1, H1…, M1…, L1…) 
   7. `coerce_numeric_matrix`: raise if any requested row or column is missing instead of dropping it silently.
 - **Tests:** known sigmoid (IC₅₀ 2.0, Hill 2) → 2.0 ± 2%; no concentrations → no fit; skipped-well pattern → correct MIC; missing column → 400.
 
-### 1.7 FTIR transmittance handling (H6)
+### ~~1.7 FTIR transmittance handling (H6)~~
 - **Files:** `lab_gui/ftir_analysis.py` (`preprocess_spectrum`), `web/backend/app/services/ftir_service.py`, `web/frontend/src/views/FTIRView.tsx` (~59–77)
 - **Changes:**
   1. When `mode == "transmittance"`, convert to absorbance first (`A = −log10(T/100)` for %T, or `−log10(T)` for fractional; detect by range) and run baseline, normalisation, ATR, integration and fitting in absorbance. Display in %T only if the user asks, converting back.
@@ -93,19 +111,19 @@ Source: independent review of 2026-09-23. Finding IDs (C1, H1…, M1…, L1…) 
   3. Change `DEFAULT_PRE.mode` to follow the detected mode (fallback `absorbance`); fix the "KBr disc" preset accordingly.
 - **Tests:** a synthetic %T spectrum with a sloped baseline gives the same peak areas (±2%) as its absorbance twin under rubberband, AsLS, airPLS and polyfit.
 
-### 1.8 FTIR smaller corrections (M3, L1, L3)
+### ~~1.8 FTIR smaller corrections (M3, L1, L3)~~
 - Remove `msc` from `Normalize` (router + UI), or implement it against a multi-spectrum mean reference. Recommendation: remove now.
 - Pseudo-Voigt: parameterise so the Gaussian and Lorentzian share one FWHM (σ = FWHM/2.3548, γ = FWHM/2) and report the FWHM directly.
 - Atmospheric mask: replace the broad 1340–1900 and 3400–4000 cm⁻¹ blocks with narrow water-vapour/CO₂ windows, or turn it into "suppress sharp vapour lines" rather than deleting regions; remove it from the presets.
 - Label ATR correction in the UI as "approximate (ν/ν_ref)".
 - **Tests:** Voigt FWHM round-trip; mask no longer removes 1735 cm⁻¹.
 
-### 1.9 UV import time units (M4)
+### ~~1.9 UV import time units (M4)~~
 - **Files:** `lab_gui/lcms_io.py` (`infer_uv_columns`), `web/backend/app/routers/lcms.py` (UV upload), LCMS UV attach UI
 - **Change:** never infer seconds from the value range alone; add an explicit "time unit: minutes/seconds" choice to UV attach (default minutes) and show the detected columns and unit with a warning in the UI. Detect headerless files and read them with `header=None` so the first data row isn't lost.
 - **Tests:** headerless 70-minute file stays 0–70 min; the first row is kept.
 
-### 1.10 EIC integration robustness (from the review's heuristics note)
+### ~~1.10 EIC integration robustness (from the review's heuristics note)~~
 - **File:** `web/frontend/src/lcms/analysis.ts` (`integrateEICPeak`)
 - **Change:** light smoothing before choosing the apex near `referenceRt`; ignore local maxima below 5% of the window maximum. Report area units ("counts·min").
 - **Tests:** noisy Gaussian + a nearby spike picks the Gaussian.
@@ -116,7 +134,7 @@ Source: independent review of 2026-09-23. Finding IDs (C1, H1…, M1…, L1…) 
 
 ## Phase 2 — Reliability and silent failures (~2–3 days)
 
-### 2.1 UV attachment lost on restart (M1)
+### ~~2.1 UV attachment lost on restart (M1)~~ ✅ done with 1.9
 - **File:** `lcms_service.py` (~177, 214)
 - **Change:** pass `filename=extra.get("uv_filename") or uv_p.name`.
 - **Test:** attach UV → new registry instance → list → UV available.
@@ -251,7 +269,7 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 | Order | Phase | Effort |
 |---|---|---|
 | 1 | ~~0 Safety net + SI disabled~~ ✅ | 0.5 d |
-| 2 | 1 Scientific correctness | 4–5 d |
+| 2 | ~~1 Scientific correctness~~ ✅ | 4–5 d |
 | 3 | 2 Reliability | 2–3 d |
 | 4 | 3 Hardening without auth | 1–1.5 d |
 | 5 | 4 Performance | 2–3 d |
