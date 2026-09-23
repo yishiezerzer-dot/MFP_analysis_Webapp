@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from lab_gui.ftir_io import FTIRLoadError
 
 from ..db import get_upload_dir, save_session_record
+from ..provenance import record
 from ..upload_utils import stream_upload_to_file
 from ..services.ftir_service import (
     FTIRSession,
@@ -296,14 +297,16 @@ def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
             label_overrides=state.peak_label_overrides,
         )
 
-    return {"peaks": peaks, "assignments": assignments}
+    out = {"peaks": peaks, "assignments": assignments}
+    record(sid, "peaks", body.model_dump(), out)
+    return out
 
 
 @router.post("/sessions/{sid}/integrate")
 def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
     state = _require_session(sid)
     try:
-        return integrate_region(
+        out = integrate_region(
             state,
             region=(body.region[0], body.region[1]),
             baseline_mode=body.baseline_mode,
@@ -311,6 +314,8 @@ def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    record(sid, "integration", body.model_dump(), out)
+    return out
 
 
 @router.post("/sessions/{sid}/subtract")
@@ -350,7 +355,7 @@ def match_references(sid: str, body: MatchRequest) -> Dict[str, Any]:
 def fit_region(sid: str, body: FitRequest) -> Dict[str, Any]:
     state = _require_session(sid)
     try:
-        return fit_peak_region(
+        out = fit_peak_region(
             state,
             region=(body.region[0], body.region[1]),
             n_components=body.n_components,
@@ -359,6 +364,10 @@ def fit_region(sid: str, body: FitRequest) -> Dict[str, Any]:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    summary = {k: v for k, v in out.items() if k not in ("fit", "second_derivative", "components")}
+    summary["components"] = [{k: v for k, v in c.items() if k not in ("wn", "y")} for c in out["components"]]
+    record(sid, "fit", body.model_dump(), summary)
+    return out
 
 
 @router.get("/library")

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from ..db import (
     get_experiment_bundle,
+    list_results,
     get_session_record,
     list_experiment_tags,
     list_session_records,
@@ -77,6 +78,16 @@ def batch_assign_tag(body: BatchTagRequest) -> Dict[str, Any]:
         "tagged_count": tagged_count,
         "total_requested": len(body.session_ids),
     }
+
+
+@router.get("/results")
+def get_results(session_id: Optional[str] = Query(None), tag: Optional[str] = Query(None)) -> List[Dict[str, Any]]:
+    """Recorded analysis results (with parameters, input SHA-256 and app version)."""
+    if session_id:
+        return list_results(session_ids=[session_id])
+    if tag:
+        return list_results(session_ids=[s["session_id"] for s in get_experiment_bundle(tag.strip())["sessions"]])
+    raise HTTPException(status_code=400, detail="Give session_id or tag.")
 
 
 @router.get("/sessions/{session_id}")

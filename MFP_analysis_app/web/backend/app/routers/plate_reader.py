@@ -19,6 +19,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from ..db import get_session_record, get_upload_dir, save_session_record
+from ..provenance import record
 from ..upload_utils import stream_upload_to_file
 from ..services.plate_reader_service import preview, registry, run_mic_wizard
 
@@ -128,7 +129,7 @@ def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to load sheet: {exc}")
     try:
-        return run_mic_wizard(
+        out = run_mic_wizard(
             df,
             use_first_row_as_header=req.use_first_row_as_header,
             sample_rows=req.sample_rows,
@@ -148,6 +149,11 @@ def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"MIC wizard failed: {exc}")
+    stored = dict(out["result"])
+    if stored.get("four_pl"):
+        stored["four_pl"] = {k: v for k, v in stored["four_pl"].items() if not k.startswith("curve_")}
+    record(sid, "mic", req.model_dump(), {**stored, "sample_nan_ratio": out["sample_nan_ratio"], "config": out["config"]})
+    return out
 
 
 @router.delete("/sessions/{sid}")

@@ -24,6 +24,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from ..db import get_session_record, get_upload_dir, save_session_record
+from ..provenance import record
 from ..upload_utils import limit_bytes, stream_upload_to_file
 from ..services.lcms_service import (
     LCMSSessionState,
@@ -392,7 +393,7 @@ def deconvolute_session_spectrum(
             mzs = mzs_arr.tolist()
             ints = ints_arr.tolist()
 
-        return deconvolute_spectrum(
+        out = deconvolute_spectrum(
             mz_array=mzs,
             intensity_array=ints,
             min_charge=body.min_charge,
@@ -406,6 +407,8 @@ def deconvolute_session_spectrum(
         )
     except LCMSLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    record(sid, "deconvolution", body.model_dump(), {"components": out["components"][:100], "summary": out["summary"]})
+    return out
 
 
 @router.post("/overlays/tic")

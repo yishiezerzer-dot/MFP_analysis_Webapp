@@ -176,6 +176,7 @@ Dependencies are declared in `package.json` (React, Plotly, Tailwind toolchain, 
 | `MFP_MAX_UPLOAD_MB` | Largest accepted upload (HTTP 413 above it) | `2048` |
 | `MFP_MAX_DECOMPRESSED_MB` | Largest size an uploaded `.mzML.gz` may expand to | `8192` |
 | `MFP_CORS_ORIGINS` | Comma-separated extra origins allowed to call the API from a browser (only needed if the frontend is hosted elsewhere) | none (same-origin only) |
+| `MFP_GIT_SHA` | Commit recorded as the app version in analysis results (Railway's `RAILWAY_GIT_COMMIT_SHA` is used automatically) | `git rev-parse HEAD` if available |
 
 No `.env` file is required for core analysis modules — only for AI providers you choose to enable.
 

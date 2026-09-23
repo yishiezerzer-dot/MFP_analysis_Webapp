@@ -23,6 +23,8 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **Provenance (plan 5.1):** FTIR peaks, fits and integrations, MIC/4PL fits, LCMS deconvolutions and exported LCMS feature tables are now recorded with their exact settings, the input file's SHA-256 and the app version (`GET /api/experiments/results`). Re-running with identical settings replaces the earlier record; records are deleted with their session.
+
 - **Performance (plan 4.1):** one person's analysis (EIC, spectrum, region sum, file upload/parsing) no longer freezes the app for everyone else; analyses run in worker threads instead of on the server's single event loop.
 - **Performance (plans 4.2–4.4), measured on a 140 MB mzML (2,400 scans):** spectrum click 1.6 s → 0.01 s; EIC 3.3 s → 2.0 s the first time per file, then 0.09 s; 1-min region sum 2.6 s → 0.1 s; upload 4.0 s → 2.5 s. The first EIC/region sum builds a peak table cached next to the index (≈ 0.8× the mzML size on disk, deleted with the session). Intensities in that table are single precision, so EIC and region-sum intensities can differ from before in the 7th significant digit.
 
