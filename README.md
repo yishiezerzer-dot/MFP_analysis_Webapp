@@ -175,6 +175,7 @@ Dependencies are declared in `package.json` (React, Plotly, Tailwind toolchain, 
 | `MFP_DATA_DIR` | Where uploads, the SQLite database, caches and the automation log are stored | `/data` if it exists, else `.data` |
 | `MFP_MAX_UPLOAD_MB` | Largest accepted upload (HTTP 413 above it) | `2048` |
 | `MFP_MAX_DECOMPRESSED_MB` | Largest size an uploaded `.mzML.gz` may expand to | `8192` |
+| `MFP_CORS_ORIGINS` | Comma-separated extra origins allowed to call the API from a browser (only needed if the frontend is hosted elsewhere) | none (same-origin only) |
 
 No `.env` file is required for core analysis modules — only for AI providers you choose to enable.
 

@@ -77,3 +77,8 @@ def test_blob_store_module_removed():
     import importlib.util
 
     assert importlib.util.find_spec("app.blob_store") is None
+
+
+def test_other_websites_cannot_read_the_api_by_default():
+    resp = client.get("/api/lcms/sessions", headers={"Origin": "https://some-other-site.example"})
+    assert "access-control-allow-origin" not in {k.lower() for k in resp.headers}

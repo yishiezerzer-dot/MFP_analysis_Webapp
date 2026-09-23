@@ -5,6 +5,7 @@ lockstep with the desktop application.
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -33,13 +34,18 @@ app = FastAPI(
     ),
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# The SPA is served same-origin (by this app in production, via the Vite proxy in dev), so no
+# CORS is needed by default; a wildcard would let any website read lab data from a visitor's
+# browser. MFP_CORS_ORIGINS (comma-separated) opts specific origins in.
+_cors_origins = [o.strip() for o in os.environ.get("MFP_CORS_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.get("/api/health")

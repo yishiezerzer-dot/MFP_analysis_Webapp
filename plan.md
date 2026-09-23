@@ -172,29 +172,39 @@ Source: independent review of 2026-09-23. Finding IDs (C1, H1…, M1…, L1…) 
 
 ---
 
-## Phase 3 — Server hardening without auth (~1–1.5 days)
+## ~~Phase 3 — Server hardening without auth (~1–1.5 days)~~ ✅ DONE 2026-09-23
+
+> **Done:** 225 backend tests and 164 frontend tests pass. An end-to-end smoke test in the running app passed (browser → Vite proxy → API: upload, list and delete; the uploaded file was removed from disk).
+>
+> - **3.1:** both `from_path` routes are removed. The MCP server never used them. LCMS workspace-load now re-links only sessions that still exist on the server and asks you to re-upload the rest.
+> - **3.2:** Vercel Blob is removed completely (the frontend never used it), including the temporary restore folders. The Ollama URL now comes only from `OLLAMA_BASE_URL`; the browser-side Ollama provider is unchanged.
+> - **3.3:** no `path` field in any summary, UV summary, automation output or workspace export.
+> - **3.4:** size limits via `MFP_MAX_UPLOAD_MB` and `MFP_MAX_DECOMPRESSED_MB`. Deleting a session removes its files and index cache once they're unreferenced, and never touches anything outside the data directory. **Skipped:** the optional OpenAI daily cap. Add it if the key is set on Railway.
+> - **3.5:** no CORS by default; `MFP_CORS_ORIGINS` opts origins in.
+> - **Also:** `test_workspaces.py` no longer redirects `MFP_DATA_DIR` in the middle of the test run.
+
 
 These protect the server's own files and resources and are independent of the no-auth decision.
 
-### 3.1 Remove server-path endpoints (H7)
+### ~~3.1 Remove server-path endpoints (H7)~~
 - Delete `POST /api/lcms/sessions/from_path` and `/sessions/{sid}/uv/from_path`, plus their `api.ts` clients (check the MCP server for users first; if it needs them, restrict paths to inside `MFP_DATA_DIR` via `resolve().is_relative_to`).
 - **Test:** 404 for both routes.
 
-### 3.2 No server-side fetching of arbitrary URLs (H7)
+### ~~3.2 No server-side fetching of arbitrary URLs (H7)~~
 - Remove `blob_url` / `blob_filename` from upload routes and `upload_utils.py`, and the Vercel blob restore code (`blob_store.py`, `get_or_restore` blob branches), unless Vercel Blob is still used — if so, allowlist the `*.blob.vercel-storage.com` host and sanitise the manifest filename (`Path(name).name`).
 - Ollama base URL: only from the `OLLAMA_BASE_URL` env var; drop the request field.
 
-### 3.3 Stop leaking server paths
+### ~~3.3 Stop leaking server paths~~
 - Remove `path` from session summaries (`lcms.py:_session_summary`, `_uv_summary`, FTIR, Plate, Data Studio) and from the SI summary sheet.
 
-### 3.4 Resource limits (M6)
+### ~~3.4 Resource limits (M6)~~
 - Max upload size (env `MFP_MAX_UPLOAD_MB`, default 2048), enforced while streaming in `stream_upload_to_file`.
 - Bounded gzip decompression (stop past `MAX_DECOMPRESSED_MB`).
 - Deleting a session deletes its upload file (if no other session references the same hashed file) and its index cache.
 - Temp restore dirs removed after use.
 - Optional: cap OpenAI usage (env-configured max requests per day) since the key is shared.
 
-### 3.5 CORS
+### ~~3.5 CORS~~
 - The SPA is same-origin in production; replace `allow_origins=["*"]` with an env-configured list (default: none beyond same-origin; dev: `http://127.0.0.1:5173`).
 
 ---
@@ -281,7 +291,7 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 | 1 | ~~0 Safety net + SI disabled~~ ✅ | 0.5 d |
 | 2 | ~~1 Scientific correctness~~ ✅ | 4–5 d |
 | 3 | ~~2 Reliability~~ ✅ | 2–3 d |
-| 4 | 3 Hardening without auth | 1–1.5 d |
+| 4 | ~~3 Hardening without auth~~ ✅ | 1–1.5 d |
 | 5 | 4 Performance | 2–3 d |
 | 6 | 5 Provenance + real SI package | 4–5 d |
 | 7 | 6 UX / a11y / refactor / ops | ongoing |
