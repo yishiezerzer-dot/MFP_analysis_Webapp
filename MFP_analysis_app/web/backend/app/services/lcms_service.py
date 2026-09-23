@@ -714,6 +714,17 @@ def _parse_polymer_charges(text: str) -> List[int]:
     return charges or [1]
 
 
+def _num(settings: Dict[str, Any], key: str, default: float) -> float:
+    """Numeric setting; falls back only when missing or non-numeric (0 is a valid value)."""
+    value = settings.get(key)
+    if value is None or value == "":
+        return float(default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
 def polymer_match_labels(
     mz: np.ndarray,
     intensity: np.ndarray,
@@ -731,8 +742,8 @@ def polymer_match_labels(
     order = np.argsort(mz)
     mz_s = np.asarray(mz, dtype=float)[order]
     int_s = np.asarray(intensity, dtype=float)[order]
-    adduct_mass = float(settings.get("adduct_mass", 1.007276) or 1.007276)
-    cluster_adduct_mass = float(settings.get("cluster_adduct_mass", -1.007276) or -1.007276)
+    adduct_mass = _num(settings, "adduct_mass", 1.007276)
+    cluster_adduct_mass = _num(settings, "cluster_adduct_mass", -1.007276)
     if polarity in ("positive", "negative"):
         h = 1.007276
         sign = 1.0 if polarity == "positive" else -1.0
@@ -747,9 +758,9 @@ def polymer_match_labels(
         monomer_names=[name for name, _mass in monomers],
         monomer_masses=[mass for _name, mass in monomers],
         charges=_parse_polymer_charges(str(settings.get("charges") or "1")),
-        max_dp=max(1, min(200, int(settings.get("max_dp", 12) or 12))),
-        bond_delta=float(settings.get("bond_delta", -18.010565) or -18.010565),
-        extra_delta=float(settings.get("extra_delta", 0.0) or 0.0),
+        max_dp=max(1, min(200, int(_num(settings, "max_dp", 12)))),
+        bond_delta=_num(settings, "bond_delta", -18.010565),
+        extra_delta=_num(settings, "extra_delta", 0.0),
         polarity=polarity,
         base_adduct_mass=adduct_mass,
         enable_decarb=bool(settings.get("decarb")),
@@ -763,9 +774,9 @@ def polymer_match_labels(
         enable_formate=bool(settings.get("adduct_formate")),
         enable_acetate=bool(settings.get("adduct_acetate")),
         custom_adducts=settings.get("custom_adducts"),
-        tol_value=float(settings.get("tol_value", 0.02) or 0.02),
+        tol_value=_num(settings, "tol_value", 0.02),
         tol_unit=str(settings.get("tol_unit") or "Da"),
-        min_rel_int=float(settings.get("min_rel_int", 0.01) or 0.01),
+        min_rel_int=_num(settings, "min_rel_int", 0.01),
         allow_variant_combo=True,
     )
     labels: List[Dict[str, Any]] = []
