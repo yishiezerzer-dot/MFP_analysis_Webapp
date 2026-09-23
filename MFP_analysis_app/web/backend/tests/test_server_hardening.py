@@ -59,3 +59,21 @@ def test_ollama_base_url_cannot_be_set_by_request():
     from app.routers.ai import ChatRequest
 
     assert "ollama_base_url" not in ChatRequest.model_fields
+
+
+@pytest.mark.parametrize("route", ["/api/lcms/sessions", "/api/ftir/sessions", "/api/plate-reader/sessions", "/api/data-studio/sessions"])
+def test_uploads_require_a_file_and_never_fetch_urls(route, monkeypatch):
+    import httpx
+
+    def no_network(*_a, **_k):
+        raise AssertionError("server attempted an outbound HTTP request")
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", no_network)
+    resp = client.post(route, data={"blob_url": "http://169.254.169.254/latest/meta-data/"})
+    assert resp.status_code == 422
+
+
+def test_blob_store_module_removed():
+    import importlib.util
+
+    assert importlib.util.find_spec("app.blob_store") is None

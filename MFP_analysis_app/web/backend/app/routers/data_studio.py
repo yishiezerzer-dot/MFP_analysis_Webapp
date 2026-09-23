@@ -18,18 +18,16 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from ..blob_store import manifest_key, put_json
 from ..db import get_upload_dir, save_session_record
-from ..upload_utils import read_upload_bytes, stream_upload_to_file
+from ..upload_utils import stream_upload_to_file
 from ..services.data_studio_service import (
     DataStudioSession,
     build_histogram,
     build_plot_series,
     describe_frame,
-    get_or_restore,
     preview_rows,
     registry,
     session_summary,
@@ -92,24 +90,13 @@ class HistogramBody(BaseModel):
 
 @router.post("/sessions")
 async def create_session(
-    file: UploadFile | None = File(None),
-    blob_url: str | None = Form(None),
-    blob_filename: str | None = Form(None),
+    file: UploadFile = File(...),
     x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
     upload_dir = get_upload_dir("data_studio")
-    dest, name = await stream_upload_to_file(file, blob_url, blob_filename, upload_dir)
+    dest, name = await stream_upload_to_file(file, upload_dir)
     s = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name)
     save_session_record(s.session_id, getattr(s, "workspace_id", x_workspace_id), "data_studio", s.display_name, str(s.path))
-    if blob_url:
-        await put_json(
-            manifest_key("data_studio", s.session_id),
-            {
-                "blob_url": blob_url,
-                "filename": name,
-                "display_name": s.display_name,
-            },
-        )
     return session_summary(s)
 
 
@@ -202,7 +189,7 @@ async def get_histogram(sid: str, body: HistogramBody) -> Dict[str, Any]:
 
 
 async def _require_session(sid: str) -> DataStudioSession:
-    s = await get_or_restore(sid)
+    s = registry.get(sid)
     if s is None:
         raise HTTPException(status_code=404, detail="session not found")
     return s

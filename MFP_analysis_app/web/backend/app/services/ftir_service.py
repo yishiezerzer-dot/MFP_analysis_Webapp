@@ -191,35 +191,6 @@ class FTIRRegistry:
 registry = FTIRRegistry()
 
 
-async def get_or_restore(session_id: str) -> Optional[FTIRSession]:
-    existing = registry.get(session_id)
-    if existing is not None:
-        return existing
-
-    import tempfile
-
-    from ..blob_store import download_bytes, get_json, manifest_key
-
-    manifest = await get_json(manifest_key("ftir", session_id))
-    if manifest is None:
-        return None
-
-    data = await download_bytes(str(manifest["blob_url"]))
-    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_ftir_restore_"))
-    filename = str(manifest.get("filename") or "upload.csv")
-    dest = tmp_dir / filename
-    dest.write_bytes(data)
-    try:
-        return registry.restore_from_path(
-            session_id,
-            dest,
-            display_name=str(manifest.get("display_name") or filename),
-            y_mode=str(manifest.get("y_mode") or "absorbance"),
-        )
-    except FTIRLoadError:
-        return None
-
-
 # ---------------------------- helpers ----------------------------
 
 

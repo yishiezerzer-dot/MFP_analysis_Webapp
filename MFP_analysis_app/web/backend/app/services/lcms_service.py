@@ -6,7 +6,6 @@ subsequent requests can fetch spectra without re-parsing the whole file.
 from __future__ import annotations
 
 import threading
-import tempfile
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -219,33 +218,6 @@ class LCMSRegistry:
 
 
 registry = LCMSRegistry()
-
-
-async def get_or_restore(session_id: str) -> Optional[LCMSSessionState]:
-    existing = registry.get(session_id)
-    if existing is not None:
-        return existing
-
-    from ..blob_store import download_bytes, get_json, manifest_key
-
-    manifest = await get_json(manifest_key("lcms", session_id))
-    if manifest is None:
-        return None
-
-    data = await download_bytes(str(manifest["blob_url"]))
-    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_lcms_restore_"))
-    filename = str(manifest.get("filename") or "upload.mzML")
-    dest = tmp_dir / filename
-    dest.write_bytes(data)
-    try:
-        return registry.restore_from_path(
-            session_id,
-            dest,
-            display_name=str(manifest.get("display_name") or filename),
-            rt_unit=str(manifest.get("rt_unit") or "minutes"),
-        )
-    except LCMSLoadError:
-        return None
 
 
 def _ms1_candidates(

@@ -14,13 +14,12 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from ..blob_store import manifest_key, put_json
 from ..db import get_session_record, get_upload_dir, save_session_record
-from ..upload_utils import read_upload_bytes, stream_upload_to_file
-from ..services.plate_reader_service import get_or_restore, preview, registry, run_mic_wizard
+from ..upload_utils import stream_upload_to_file
+from ..services.plate_reader_service import preview, registry, run_mic_wizard
 
 router = APIRouter()
 
@@ -46,14 +45,12 @@ _ALLOWED = {".xlsx", ".xlsm", ".xls", ".csv", ".txt", ".tsv"}
 
 @router.post("/sessions")
 async def create_session(
-    file: UploadFile | None = File(None),
-    blob_url: str | None = Form(None),
-    blob_filename: str | None = Form(None),
+    file: UploadFile = File(...),
     x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
     upload_dir = get_upload_dir("plate_reader")
     dest, name = await stream_upload_to_file(
-        file, blob_url, blob_filename, upload_dir,
+        file, upload_dir,
         allowed_extensions=_ALLOWED,
     )
     try:
@@ -61,15 +58,6 @@ async def create_session(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to register file: {exc}")
     save_session_record(session.session_id, getattr(session, "workspace_id", x_workspace_id), "plate_reader", session.display_name, str(session.path))
-    if blob_url:
-        await put_json(
-            manifest_key("plate_reader", session.session_id),
-            {
-                "blob_url": blob_url,
-                "filename": name,
-                "display_name": session.display_name,
-            },
-        )
     return _summary(session)
 
 
@@ -81,7 +69,7 @@ def list_sessions(
 
 
 async def _require_session(sid: str):
-    s = await get_or_restore(sid)
+    s = registry.get(sid)
     if s is None:
         raise HTTPException(status_code=404, detail="session not found")
     return s

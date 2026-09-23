@@ -21,9 +21,8 @@ from pydantic import BaseModel, Field
 
 from lab_gui.ftir_io import FTIRLoadError
 
-from ..blob_store import manifest_key, put_json
 from ..db import get_upload_dir, save_session_record
-from ..upload_utils import read_upload_bytes, stream_upload_to_file
+from ..upload_utils import stream_upload_to_file
 from ..services.ftir_service import (
     FTIRSession,
     assign_peaks_with_library,
@@ -31,7 +30,6 @@ from ..services.ftir_service import (
     compute_preprocessed,
     decimate,
     fit_peak_region,
-    get_or_restore,
     integrate_region,
     library_categories,
     library_meta,
@@ -141,14 +139,12 @@ class FitRequest(SpectrumRequest):
 
 @router.post("/sessions")
 async def create_session(
-    file: UploadFile | None = File(None),
-    blob_url: str | None = Form(None),
-    blob_filename: str | None = Form(None),
+    file: UploadFile = File(...),
     y_mode: Literal["auto", "absorbance", "transmittance"] = Form("auto"),
     x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
     upload_dir = get_upload_dir("ftir")
-    dest, name = await stream_upload_to_file(file, blob_url, blob_filename, upload_dir)
+    dest, name = await stream_upload_to_file(file, upload_dir)
     try:
         state = registry.add_from_path(
             dest,
@@ -161,16 +157,6 @@ async def create_session(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"FTIR parse failed: {exc}")
     save_session_record(state.session_id, state.workspace_id, "ftir", state.display_name, str(state.path))
-    if blob_url:
-        await put_json(
-            manifest_key("ftir", state.session_id),
-            {
-                "blob_url": blob_url,
-                "filename": name,
-                "display_name": state.display_name,
-                "y_mode": state.y_mode,
-            },
-        )
     return session_summary(state)
 
 
@@ -394,7 +380,7 @@ async def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> D
 
 
 async def _require_session(sid: str) -> FTIRSession:
-    state = await get_or_restore(sid)
+    state = registry.get(sid)
     if state is None:
         raise HTTPException(status_code=404, detail="session not found")
     return state

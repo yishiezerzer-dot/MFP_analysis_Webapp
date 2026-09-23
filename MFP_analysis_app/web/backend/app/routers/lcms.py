@@ -22,9 +22,8 @@ from fastapi import APIRouter, File, Form, Header, HTTPException, Response, Uplo
 import numpy as np
 from pydantic import BaseModel, Field
 
-from ..blob_store import manifest_key, put_json
 from ..db import get_session_record, get_upload_dir, save_session_record
-from ..upload_utils import read_upload_bytes, stream_upload_to_file
+from ..upload_utils import stream_upload_to_file
 from ..services.lcms_service import (
     LCMSSessionState,
     attach_uv_from_csv,
@@ -33,7 +32,6 @@ from ..services.lcms_service import (
     extracted_ion_chromatogram,
     fetch_spectrum_at_rt,
     find_mz_across_scans,
-    get_or_restore,
     iter_ms1_spectra,
     polymer_match_labels,
     registry,
@@ -168,16 +166,12 @@ def _tic_payload(state: LCMSSessionState, polarity: Optional[str] = None) -> Dic
 
 @router.post("/sessions")
 async def create_session(
-    file: UploadFile | None = File(None),
-    blob_url: str | None = Form(None),
-    blob_filename: str | None = Form(None),
+    file: UploadFile = File(...),
     rt_unit: str = Form("minutes"),
     x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
     dest, name = await stream_upload_to_file(
         file,
-        blob_url,
-        blob_filename,
         _MZML_UPLOAD_DIR,
         allowed_extensions={".mzml", ".mzml.gz"},
     )
@@ -201,16 +195,6 @@ async def create_session(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"mzML parse failed: {exc}")
     save_session_record(state.session_id, state.workspace_id, "lcms", state.display_name, str(state.path))
-    if blob_url:
-        await put_json(
-            manifest_key("lcms", state.session_id),
-            {
-                "blob_url": blob_url,
-                "filename": name,
-                "display_name": state.display_name,
-                "rt_unit": rt_unit,
-            },
-        )
     return _session_summary(state)
 
 
@@ -222,7 +206,7 @@ def list_sessions(
 
 
 async def _require_session(sid: str) -> LCMSSessionState:
-    state = await get_or_restore(sid)
+    state = registry.get(sid)
     if state is None:
         raise HTTPException(status_code=404, detail="session not found")
     return state
@@ -409,7 +393,7 @@ async def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
     traces = []
     missing = []
     for sid in body.session_ids:
-        state = await get_or_restore(sid)
+        state = registry.get(sid)
         if state is None:
             missing.append(sid)
             continue
@@ -421,7 +405,7 @@ async def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
 async def export_tic_overlay(body: OverlayRequest) -> Response:
     rows: List[List[Any]] = [["session_id", "display_name", "rt_min", "tic", "polarity"]]
     for sid in body.session_ids:
-        state = await get_or_restore(sid)
+        state = registry.get(sid)
         if state is None:
             continue
         payload = _tic_payload(state, body.polarity)
@@ -505,8 +489,6 @@ async def attach_uv(
     state = await _require_session(sid)
     dest, name = await stream_upload_to_file(
         file,
-        None,
-        None,
         _UV_UPLOAD_DIR,
         allowed_extensions={".csv", ".tsv", ".txt"},
     )

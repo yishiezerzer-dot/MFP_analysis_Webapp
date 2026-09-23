@@ -164,31 +164,6 @@ class PlateReaderRegistry:
 registry = PlateReaderRegistry()
 
 
-async def get_or_restore(session_id: str) -> Optional[PlateSession]:
-    existing = registry.get(session_id)
-    if existing is not None:
-        return existing
-
-    import tempfile
-
-    from ..blob_store import download_bytes, get_json, manifest_key
-
-    manifest = await get_json(manifest_key("plate_reader", session_id))
-    if manifest is None:
-        return None
-
-    data = await download_bytes(str(manifest["blob_url"]))
-    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_plate_restore_"))
-    filename = str(manifest.get("filename") or "upload.xlsx")
-    dest = tmp_dir / filename
-    dest.write_bytes(data)
-    return registry.restore_from_path(
-        session_id,
-        dest,
-        display_name=str(manifest.get("display_name") or filename),
-    )
-
-
 def preview(df: pd.DataFrame, *, max_rows: int = 200) -> Dict[str, Any]:
     cols, rows = preview_dataframe(df, max_rows=max_rows)
     return {
