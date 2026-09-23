@@ -83,7 +83,7 @@ def test_ic50_outside_tested_range_is_flagged():
 
 
 def test_sample_n_counts_numeric_replicates():
-    df = _plate()
+    df = _plate().astype(object)  # like a sheet with a text cell (pandas 3 won't put str in a float column)
     df.iloc[0, 0] = "overflow"
     _cfg, res, nan_ratio = _run(df)
     assert res.sample_n[0] == 2
