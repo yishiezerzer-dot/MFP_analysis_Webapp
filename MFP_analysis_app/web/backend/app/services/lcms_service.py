@@ -174,7 +174,12 @@ class LCMSRegistry:
                         uv_p = Path(uv_path_str)
                         if uv_p.exists():
                             try:
-                                attach_uv_from_csv(state, uv_p)
+                                attach_uv_from_csv(
+                                    state,
+                                    uv_p,
+                                    filename=extra.get("uv_filename") or uv_p.name,
+                                    rt_unit=extra.get("uv_rt_unit", "auto"),
+                                )
                             except Exception:
                                 pass
                     return state
@@ -210,8 +215,14 @@ class LCMSRegistry:
                         if uv_path_str:
                             uv_p = Path(uv_path_str)
                             if uv_p.exists():
+                                extra = rec.get("extra") or {}
                                 try:
-                                    attach_uv_from_csv(restored, uv_p)
+                                    attach_uv_from_csv(
+                                        restored,
+                                        uv_p,
+                                        filename=extra.get("uv_filename") or uv_p.name,
+                                        rt_unit=extra.get("uv_rt_unit", "auto"),
+                                    )
                                 except Exception:
                                     pass
                     except Exception:
@@ -502,6 +513,14 @@ def summed_spectrum_in_rt_range(
     }
 
 
+def _is_number(value: Any) -> bool:
+    try:
+        float(str(value))
+        return True
+    except ValueError:
+        return False
+
+
 def _read_uv_csv(path: Path) -> pd.DataFrame:
     """Load a UV chromatogram CSV with a tolerant parser.
 
@@ -514,6 +533,10 @@ def _read_uv_csv(path: Path) -> pd.DataFrame:
         try:
             df = pd.read_csv(path, sep=sep, engine="python", comment="#")
             if df.shape[1] >= 2:
+                if all(_is_number(c) for c in df.columns):
+                    # No header row: re-read so the first data point isn't consumed as column names.
+                    df = pd.read_csv(path, sep=sep, engine="python", comment="#", header=None)
+                    df.columns = [str(c) for c in df.columns]
                 return df
         except Exception as exc:
             errors.append(f"sep={sep!r}: {exc}")
@@ -527,10 +550,22 @@ def _read_uv_csv(path: Path) -> pd.DataFrame:
         )
 
 
-def attach_uv_from_csv(state: LCMSSessionState, csv_path: Path, *, filename: str) -> UVSessionState:
-    """Parse a UV/DAD CSV and attach it to the given LCMS session."""
+def attach_uv_from_csv(
+    state: LCMSSessionState,
+    csv_path: Path,
+    *,
+    filename: str,
+    rt_unit: str = "auto",
+) -> UVSessionState:
+    """Parse a UV/DAD CSV and attach it to the given LCMS session.
+
+    rt_unit: "minutes" / "seconds" as chosen by the user, or "auto" to use the header hint
+    (e.g. "Time (sec)"), defaulting to minutes.
+    """
     df = _read_uv_csv(csv_path)
     info = infer_uv_columns(df)
+    if rt_unit in ("minutes", "seconds"):
+        info["unit_guess"] = rt_unit
     rt_min, signal, rt_range, warnings = parse_uv_arrays(
         df,
         xcol=info["xcol"],
@@ -563,6 +598,7 @@ def attach_uv_from_csv(state: LCMSSessionState, csv_path: Path, *, filename: str
         extra = rec.get("extra") or {}
         extra["uv_path"] = str(csv_path)
         extra["uv_filename"] = filename
+        extra["uv_rt_unit"] = rt_unit
         save_session_record(
             session_id=state.session_id,
             workspace_id=state.workspace_id,
@@ -584,6 +620,7 @@ def clear_uv(state: LCMSSessionState) -> bool:
             extra = rec.get("extra") or {}
             extra.pop("uv_path", None)
             extra.pop("uv_filename", None)
+            extra.pop("uv_rt_unit", None)
             save_session_record(
                 session_id=state.session_id,
                 workspace_id=state.workspace_id,

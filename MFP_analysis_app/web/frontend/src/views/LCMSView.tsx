@@ -245,6 +245,7 @@ function queuePlotlyElementResize(graphDiv: PlotlyHTMLElement | null) {
 
 type Polarity = "all" | "positive" | "negative" | "dual";
 type RtUnit = "minutes" | "seconds";
+type UvTimeUnit = "auto" | RtUnit;
 type TabId = "navigate" | "view" | "annotate" | "polymer";
 type GraphId = "tic" | "uv" | "spectrum" | "eic";
 type UVLabelOrientation = "horizontal" | "vertical";
@@ -1225,6 +1226,11 @@ export function LCMSView() {
     `${LCMS_STORAGE_PREFIX}.dualLayout`,
     "stacked",
     (value) => (value === "stacked" || value === "grid" ? value : "stacked"),
+  );
+  const [uvTimeUnit, setUvTimeUnit] = useStoredState<UvTimeUnit>(
+    `${LCMS_STORAGE_PREFIX}.uvTimeUnit`,
+    "auto",
+    (value) => (value === "minutes" || value === "seconds" ? value : "auto"),
   );
   const [rtUnit, setRtUnit] = useStoredState<RtUnit>(
     `${LCMS_STORAGE_PREFIX}.rtUnit`,
@@ -2586,7 +2592,7 @@ export function LCMSView() {
     setUvBusy(true);
     setError(null);
     try {
-      const summary = await api.lcms.uploadUV(activeSid, file);
+      const summary = await api.lcms.uploadUV(activeSid, file, uvTimeUnit);
       setSessions((prev) =>
         prev.map((s) => (s.session_id === summary.session_id ? summary : s)),
       );
@@ -2617,7 +2623,7 @@ export function LCMSView() {
       const matchedFiles = new Set(matches.map((match) => match.file));
       const summaries: LCMSSessionSummary[] = [];
       for (const match of matches) {
-        summaries.push(await api.lcms.uploadUV(match.session.session_id, match.file));
+        summaries.push(await api.lcms.uploadUV(match.session.session_id, match.file, uvTimeUnit));
       }
       setSessions((prev) =>
         prev.map((session) =>
@@ -4716,6 +4722,8 @@ export function LCMSView() {
           dualLayout={dualLayout}
           setDualLayout={setDualLayout}
           setRtUnit={setRtUnit}
+          uvTimeUnit={uvTimeUnit}
+          setUvTimeUnit={setUvTimeUnit}
           uvOffsetText={uvOffsetText}
           setUvOffsetText={setUvOffsetText}
           onApplyOffset={() => {
@@ -5825,6 +5833,8 @@ interface ToolsPanelProps {
   dualLayout: "stacked" | "grid";
   setDualLayout: (l: "stacked" | "grid") => void;
   setRtUnit: (u: RtUnit) => void;
+  uvTimeUnit: UvTimeUnit;
+  setUvTimeUnit: (u: UvTimeUnit) => void;
   uvOffsetText: string;
   setUvOffsetText: (v: string) => void;
   onApplyOffset: () => void;
@@ -6339,6 +6349,18 @@ function DisplayTab(p: ToolsPanelProps) {
             value={p.rtUnit}
             onChange={(e) => p.setRtUnit(e.target.value as RtUnit)}
           >
+            <option value="minutes">minutes</option>
+            <option value="seconds">seconds</option>
+          </select>
+        </Row>
+        <Row label="UV CSV time unit">
+          <select
+            className="input"
+            title="Time unit of the first column in attached UV/DAD CSV files. Auto reads it from the header (e.g. 'Time (sec)') and otherwise assumes minutes."
+            value={p.uvTimeUnit}
+            onChange={(e) => p.setUvTimeUnit(e.target.value as UvTimeUnit)}
+          >
+            <option value="auto">auto (header, else minutes)</option>
             <option value="minutes">minutes</option>
             <option value="seconds">seconds</option>
           </select>

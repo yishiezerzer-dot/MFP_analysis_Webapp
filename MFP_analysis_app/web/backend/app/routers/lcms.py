@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import hashlib
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Response, UploadFile
 import numpy as np
@@ -531,7 +531,11 @@ async def export_uv_csv(sid: str) -> Response:
 
 
 @router.post("/sessions/{sid}/uv")
-async def attach_uv(sid: str, file: UploadFile = File(...)) -> Dict[str, Any]:
+async def attach_uv(
+    sid: str,
+    file: UploadFile = File(...),
+    rt_unit: Literal["auto", "minutes", "seconds"] = Form("auto"),
+) -> Dict[str, Any]:
     state = await _require_session(sid)
     dest, name = await stream_upload_to_file(
         file,
@@ -541,7 +545,7 @@ async def attach_uv(sid: str, file: UploadFile = File(...)) -> Dict[str, Any]:
         allowed_extensions={".csv", ".tsv", ".txt"},
     )
     try:
-        attach_uv_from_csv(state, dest, filename=name)
+        attach_uv_from_csv(state, dest, filename=name, rt_unit=rt_unit)
     except UVLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:

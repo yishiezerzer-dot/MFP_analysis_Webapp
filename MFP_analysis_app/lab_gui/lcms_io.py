@@ -348,14 +348,8 @@ def infer_uv_columns(df: pd.DataFrame) -> Dict[str, Any]:
         unit_guess = "seconds"
     elif ("min" in xname) or ("minute" in xname):
         unit_guess = "minutes"
-    elif _is_numeric_name(x_best):
-        # Infer from data range: if max x value > 60, likely seconds
-        try:
-            x_vals = pd.to_numeric(df[x_best], errors="coerce").dropna()
-            if len(x_vals) > 0 and float(x_vals.max()) > 60:
-                unit_guess = "seconds"
-        except Exception:
-            pass
+    # No header hint: assume minutes. Guessing seconds from the value range turned long runs
+    # (> 60 min) into seconds; users choose the unit explicitly on import instead.
 
     reason = ""
     if low_conf:
@@ -398,7 +392,7 @@ def parse_uv_arrays(df: pd.DataFrame, *, xcol: str, ycol: str, unit_guess: str) 
     else:
         try:
             if float(np.nanmax(x)) > 500.0:
-                import_warnings.append("Time values look large; if this CSV is in seconds, choose 'seconds' in UV import settings.")
+                import_warnings.append("Time values look large; if this CSV is in seconds, set 'UV CSV time unit' to seconds (LCMS Display tab) and re-attach it.")
         except Exception:
             pass
 

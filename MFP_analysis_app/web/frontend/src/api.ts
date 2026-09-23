@@ -1098,8 +1098,8 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path }),
       }).then((r) => handle<LCMSSessionSummary>(r)),
-    uploadUV: (sid: string, file: File) =>
-      postFileUpload(`/api/lcms/sessions/${sid}/uv`, file).then((r) =>
+    uploadUV: (sid: string, file: File, rtUnit: "auto" | "minutes" | "seconds" = "auto") =>
+      postFileUpload(`/api/lcms/sessions/${sid}/uv`, file, { rt_unit: rtUnit }).then((r) =>
         handle<LCMSSessionSummary>(r),
       ),
     uv: (
