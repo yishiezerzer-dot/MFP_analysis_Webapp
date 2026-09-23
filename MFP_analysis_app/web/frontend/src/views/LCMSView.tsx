@@ -4119,7 +4119,7 @@ export function LCMSView() {
                   <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" />
                   <span className="text-sm">
                     {uploadProgress.phase === "indexing"
-                      ? `Indexing MS1 scans & building TIC index (${uploadProgress.totalFiles > 1 ? `${uploadProgress.fileIndex}/${uploadProgress.totalFiles}: ` : ""}${uploadProgress.filename})...`
+                      ? `Indexing MS1 scans & building TIC index (${uploadProgress.totalFiles > 1 ? `${uploadProgress.fileIndex}/${uploadProgress.totalFiles}: ` : ""}${uploadProgress.filename})... large files can take a minute or two`
                       : `Uploading ${uploadProgress.totalFiles > 1 ? `(${uploadProgress.fileIndex}/${uploadProgress.totalFiles}) ` : ""}${uploadProgress.filename} · ${formatBytes(uploadProgress.loadedBytes)} / ${formatBytes(uploadProgress.totalBytes)}`}
                   </span>
                 </div>

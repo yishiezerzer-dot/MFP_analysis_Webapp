@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: backend (pandas ${{ matrix.pandas }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # "lock" is what the Docker image installs; "3" checks Data Studio stays pandas-3 ready (plan 2.3).
+        pandas: ["lock", "3"]
+    defaults:
+      run:
+        working-directory: MFP_analysis_app/web/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: MFP_analysis_app/web/backend/requirements.lock
+      - run: pip install -r requirements.lock "pytest>=8.0" "pytest-asyncio>=0.23"
+      - if: matrix.pandas == '3'
+        run: pip install "pandas>=3,<4"
+      - run: python -m pytest tests/ -q -p no:cacheprovider
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: MFP_analysis_app/web/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: MFP_analysis_app/web/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:run
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t mfp-analysis:ci .
