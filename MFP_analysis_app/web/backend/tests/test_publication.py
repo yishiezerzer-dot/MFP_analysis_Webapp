@@ -39,12 +39,6 @@ def test_render_figure_pdf_with_image():
     assert resp.content.startswith(b"%PDF")
 
 
-def test_si_package_is_disabled_until_rebuilt_on_real_results():
-    tag = "SI_Test_Experiment_101"
-    save_session_record("sid_pub_ftir", "general", "ftir", "Pub_FTIR.csv", "p/ftir.csv")
-    set_session_experiment_tag("sid_pub_ftir", tag)
-
-    resp = client.post("/api/publication/si-package", json={"experiment_tag": tag})
-
-    assert resp.status_code == 410
-    assert "disabled" in resp.json()["detail"]
+def test_si_package_requires_a_tag_or_sessions():
+    resp = client.post("/api/publication/si-package", json={})
+    assert resp.status_code == 400

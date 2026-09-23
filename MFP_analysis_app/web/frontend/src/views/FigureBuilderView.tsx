@@ -110,6 +110,8 @@ export function FigureBuilderView() {
   ]);
 
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isDownloadingSI, setIsDownloadingSI] = useState(false);
+  const [includeRawFiles, setIncludeRawFiles] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -200,7 +202,7 @@ export function FigureBuilderView() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setMessage("Vector PDF generated and downloaded successfully!");
+      setMessage("Figure PDF downloaded.");
     } catch (err: any) {
       setError(`Failed to generate PDF: ${err.message || String(err)}`);
     } finally {
@@ -208,10 +210,39 @@ export function FigureBuilderView() {
     }
   };
 
+  const handleDownloadSI = async () => {
+    if (!selectedTag) {
+      setError("Choose an experiment tag first: the SI package covers the sessions tagged with it.");
+      return;
+    }
+    setIsDownloadingSI(true);
+    setError(null);
+    try {
+      const blob = await api.publication.downloadSIPackage({
+        experiment_tag: selectedTag,
+        figures: panels,
+        include_raw_files: includeRawFiles,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${selectedTag.replace(/\s+/g, "_")}_SI_Package.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setMessage("SI package downloaded (tables contain only analyses recorded in the app).");
+    } catch (err: any) {
+      setError(`Failed to build SI package: ${err.message || String(err)}`);
+    } finally {
+      setIsDownloadingSI(false);
+    }
+  };
+
   // Header configuration
   usePageHeader(
     <PageHeaderContent
-      title="Figure Engine"
+      title="Figure Engine & SI Package"
       subtitle={`${widthMm} × ${heightMm} mm (${columns} col) · ${panels.length} panels`}
       actions={
         <div className="flex items-center gap-2">
@@ -229,7 +260,16 @@ export function FigureBuilderView() {
             onClick={() => void handleExportPdf()}
             disabled={isExportingPdf}
           >
-            {isExportingPdf ? "Compiling PDF…" : "Export Vector PDF 📄"}
+            {isExportingPdf ? "Compiling PDF…" : "Export PDF 📄"}
+          </button>
+          <button
+            type="button"
+            className="btn-primary text-xs font-semibold"
+            onClick={() => void handleDownloadSI()}
+            disabled={isDownloadingSI || !selectedTag}
+            title={selectedTag ? undefined : "Choose an experiment tag first"}
+          >
+            {isDownloadingSI ? "Generating SI…" : "Download SI Package (.zip) 📦"}
           </button>
         </div>
       }
@@ -357,7 +397,8 @@ export function FigureBuilderView() {
               3. Publication Package Output
             </div>
             <p className="text-xs text-ink-600 dark:text-ink-400 mt-1">
-              Produce peer-review figures satisfying strict publisher requirements (vector PDF with embedded fonts, 600 DPI).
+              Figure PDF (panels embedded as images) and an SI package whose tables and methods text come only from
+              analyses recorded in the app, with input-file SHA-256 hashes.
             </p>
           </div>
           <div className="flex flex-col gap-2 pt-2">
@@ -367,9 +408,23 @@ export function FigureBuilderView() {
               disabled={isExportingPdf}
               className="btn-primary flex items-center justify-center gap-2 text-xs py-2 font-semibold"
             >
-              <span>{isExportingPdf ? "Compiling Vector PDF…" : "Export Vector PDF"}</span>
+              <span>{isExportingPdf ? "Compiling PDF…" : "Export PDF"}</span>
               <span className="text-[10px] opacity-80">(Helvetica / 1 pt spines)</span>
             </button>
+            <button
+              type="button"
+              onClick={() => void handleDownloadSI()}
+              disabled={isDownloadingSI || !selectedTag}
+              title={selectedTag ? undefined : "Choose an experiment tag first"}
+              className="btn-ghost border border-ink-300 dark:border-ink-700 flex items-center justify-center gap-2 text-xs py-1.5 font-medium"
+            >
+              <span>{isDownloadingSI ? "Building Package…" : "Download SI Package (.zip)"}</span>
+              <span className="text-[10px] text-ink-400">Tables + Methods</span>
+            </button>
+            <label className="flex items-center gap-2 text-[11px] text-ink-600">
+              <input type="checkbox" checked={includeRawFiles} onChange={(e) => setIncludeRawFiles(e.target.checked)} />
+              Include raw data files
+            </label>
           </div>
         </div>
       </div>

@@ -23,6 +23,8 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **SI package rebuilt (plan 5.2):** tables (LCMS features and deconvolutions, FTIR peaks/fits/integrations, 4PL fits and replicate means) contain only recorded results; the methods text is generated from the settings actually used; `manifest.json` lists every input file's SHA-256 and each result with its parameters and app version; raw input files can be included. An experiment tag (or session list) is required. "Vector PDF" is now labelled "PDF" because panels are embedded as images.
+
 - **Provenance (plan 5.1):** FTIR peaks, fits and integrations, MIC/4PL fits, LCMS deconvolutions and exported LCMS feature tables are now recorded with their exact settings, the input file's SHA-256 and the app version (`GET /api/experiments/results`). Re-running with identical settings replaces the earlier record; records are deleted with their session.
 
 - **Performance (plan 4.1):** one person's analysis (EIC, spectrum, region sum, file upload/parsing) no longer freezes the app for everyone else; analyses run in worker threads instead of on the server's single event loop.
@@ -50,4 +52,4 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 - FTIR "MSC" normalisation: the single-spectrum version regressed the spectrum on its own polynomial fit, which always returns it unchanged (a no-op). Saved settings using it switch to *none* (plan 1.8).
 
-- SI package export (`/api/publication/si-package`) is disabled: it wrote placeholder numbers and a fixed methods text instead of real results. It will be rebuilt from stored analysis results (plan Phase 5). **Any SI package downloaded before this change should not be used.**
+- The old SI package export wrote placeholder numbers and a fixed methods text instead of real results. **Any SI package downloaded before this version should not be used.**

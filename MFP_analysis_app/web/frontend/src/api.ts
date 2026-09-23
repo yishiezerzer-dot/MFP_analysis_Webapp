@@ -1214,8 +1214,7 @@ export interface FigureRenderRequest {
 export interface SIPackageRequest {
   experiment_tag?: string;
   session_ids?: string[];
-  include_tables?: boolean;
-  include_methodology?: boolean;
+  include_raw_files?: boolean;
   figures?: FigurePanelSpec[];
 }
 

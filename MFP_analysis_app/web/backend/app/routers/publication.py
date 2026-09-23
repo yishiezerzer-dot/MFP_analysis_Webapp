@@ -1,8 +1,9 @@
-"""Publication API: Journal figure builder, vector PDF generator, and SI package packager."""
+"""Publication API: journal figure PDF (panels embedded as images) and the SI package."""
 from __future__ import annotations
 
 import base64
 import io
+import re
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
@@ -15,6 +16,9 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from PIL import Image
+
+from ..db import get_experiment_bundle, get_session_record
+from ..services.si_package import build_si_package
 
 router = APIRouter()
 
@@ -140,11 +144,35 @@ def render_figure_pdf(req: FigureRenderRequest) -> Response:
     )
 
 
+class SIPackageRequest(BaseModel):
+    experiment_tag: Optional[str] = None
+    session_ids: Optional[List[str]] = None
+    include_raw_files: bool = False
+    figures: Optional[List[PanelSpec]] = None
+
+
 @router.post("/si-package")
-def generate_si_package() -> Response:
-    # Disabled: the previous implementation wrote placeholder numbers and a fixed methods text
-    # instead of the user's actual results. Rebuilt from stored analysis results in plan.md Phase 5.
-    raise HTTPException(
-        status_code=410,
-        detail="The SI package export is temporarily disabled while it is rebuilt to use real analysis results.",
+def generate_si_package(req: SIPackageRequest) -> Response:
+    """Supplementary Information ZIP built only from recorded analysis results (see services/si_package.py)."""
+    tag = (req.experiment_tag or "").strip()
+    if tag:
+        records = get_experiment_bundle(tag)["sessions"]
+    elif req.session_ids:
+        records = [r for r in (get_session_record(sid) for sid in req.session_ids) if r]
+    else:
+        raise HTTPException(status_code=400, detail="Choose an experiment tag (or sessions) for the SI package.")
+    if not records:
+        raise HTTPException(status_code=404, detail="No sessions found for this experiment.")
+    figure_pdf = None
+    if req.figures:
+        figure_pdf = render_figure_pdf(
+            FigureRenderRequest(title=f"{tag or 'Figure'}", journal_preset="nature_double", panels=req.figures)
+        ).body
+    content = build_si_package(records, experiment_tag=tag, include_raw_files=req.include_raw_files, figure_pdf=figure_pdf)
+    stem = re.sub(r"[^\w\-.]", "_", tag) if tag else "SI"
+    filename = f"{stem}_SI_Package.zip"
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
