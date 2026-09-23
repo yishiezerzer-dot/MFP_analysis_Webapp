@@ -99,11 +99,12 @@ export const lcmsHelpModule: HelpModule = {
           <DocUl>
             <DocLi>
               <strong>Polarity</strong> filters which MS1 scans contribute to TIC and spectrum (positive / negative /
-              all).
+              all). If the file has no scans of the chosen polarity you get a message instead of the other polarity's
+              data; in dual mode the polarity that exists is still shown.
             </DocLi>
             <DocLi>
-              <strong>RT units</strong> switch the chromatogram X axis between minutes and seconds (stored RT is still
-              interpreted consistently when loading spectra).
+              <strong>RT display unit</strong> switches how retention times are shown (minutes or seconds). The time
+              unit stored in each mzML file is read automatically; this setting never rescales the data.
             </DocLi>
             <DocLi>
               <strong>Show TIC / spectrum / UV</strong> toggles entire chart cards for a cleaner layout when you only

@@ -88,6 +88,13 @@ export const plateReaderHelpModule: HelpModule = {
             control line styling, and run the MIC calculation. The backend returns fitted/summary objects consumed by the
             chart card.
           </DocP>
+          <DocP>
+            The 4PL dose-response fit (IC₅₀ ± SE, Hill slope) is only made when you type the real concentrations into
+            <strong> Tick labels</strong>, in the same order as the selected columns. The
+            automatic labels (1024, 512, …, 0) are placeholders and are never fitted. The IC₅₀ unit is taken from the
+            x-axis label, e.g. “Concentration (µg/mL)”, and a warning appears if IC₅₀ falls outside the tested range.
+            Tick labels are stored per plate.
+          </DocP>
           <DocOl>
             <DocLi>Load plate → verify preview marks match the physical plate layout.</DocLi>
             <DocLi>Select concentration source columns per layout conventions.</DocLi>

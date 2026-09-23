@@ -48,3 +48,12 @@ def test_delete_closes_reader_so_file_can_be_removed():
     path = Path(get_session_record(sid)["file_path"])
     assert client.delete(f"/api/lcms/sessions/{sid}").status_code == 200
     assert not path.exists()
+
+
+def test_summary_identifies_upload_time_and_file_content():
+    import re
+
+    sid = _upload("ident.mzML")
+    summary = client.get(f"/api/lcms/sessions/{sid}").json()
+    assert summary["uploaded_at"]
+    assert re.fullmatch(r"[0-9a-f]{12}", summary["file_id"])

@@ -82,3 +82,16 @@ def test_blob_store_module_removed():
 def test_other_websites_cannot_read_the_api_by_default():
     resp = client.get("/api/lcms/sessions", headers={"Origin": "https://some-other-site.example"})
     assert "access-control-allow-origin" not in {k.lower() for k in resp.headers}
+
+
+def test_unexpected_errors_return_reference_not_internals(monkeypatch):
+    import app.routers.workspaces as ws
+
+    def boom():
+        raise RuntimeError("secret internal detail /data/uploads/x")
+
+    monkeypatch.setattr(ws, "list_workspaces", boom)
+    resp = TestClient(app, raise_server_exceptions=False).get("/api/workspaces")
+    assert resp.status_code == 500
+    detail = resp.json()["detail"]
+    assert "reference" in detail and "secret internal detail" not in detail

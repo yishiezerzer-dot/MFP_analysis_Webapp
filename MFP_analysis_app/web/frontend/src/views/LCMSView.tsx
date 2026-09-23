@@ -858,6 +858,24 @@ function nearestIndex(arr: number[], value: number): number {
   return best;
 }
 
+function formatUploaded(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+// Full name, upload time and content hash: tells apart sessions with the same (truncated) name.
+function sessionTooltip(session: LCMSSessionSummary): string {
+  const uploaded = formatUploaded(session.uploaded_at);
+  return [
+    session.display_name,
+    uploaded && `Uploaded ${uploaded}`,
+    session.file_id && `File #${session.file_id} (identical files share this)`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function formatRange(a: number | null, b: number | null): string {
   if (a == null || b == null) return "—";
   return `${a.toFixed(2)} – ${b.toFixed(2)}`;
@@ -5223,10 +5241,11 @@ function ProjectSessionRows(props: {
             onClick={() => props.onSelectSession(session.session_id)}
           >
             <div className="min-w-0 flex-1">
-              <div className="truncate font-medium">{session.display_name}</div>
+              <div className="truncate font-medium" title={sessionTooltip(session)}>{session.display_name}</div>
               <div className="text-[11px] text-ink-500">
                 {session.ms1_count} MS1 - {formatRange(session.rt_min, session.rt_max)} min
                 {session.uv?.available && " - UV"}
+                      {session.uploaded_at && ` - ${formatUploaded(session.uploaded_at)}`}
               </div>
             </div>
             <select
@@ -5349,10 +5368,11 @@ function ProjectSessionSection(props: {
                   onClick={() => props.onSelectSession(session.session_id)}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">{session.display_name}</div>
+                    <div className="truncate font-medium" title={sessionTooltip(session)}>{session.display_name}</div>
                     <div className="text-[11px] text-ink-500">
                       {session.ms1_count} MS1 - {formatRange(session.rt_min, session.rt_max)} min
                       {session.uv?.available && " - UV"}
+                      {session.uploaded_at && ` - ${formatUploaded(session.uploaded_at)}`}
                     </div>
                   </div>
                   <select

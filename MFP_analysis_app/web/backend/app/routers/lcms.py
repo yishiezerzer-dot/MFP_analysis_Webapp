@@ -13,8 +13,9 @@ Endpoints:
 """
 from __future__ import annotations
 
-import json
 import hashlib
+import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
@@ -134,6 +135,11 @@ def _uv_summary(state: LCMSSessionState) -> Dict[str, Any]:
     }
 
 
+def _file_id(path: Path) -> Optional[str]:
+    match = re.search(r"\.([0-9a-f]{12})\.", path.name)
+    return match.group(1) if match else None
+
+
 def _session_summary(state: LCMSSessionState) -> Dict[str, Any]:
     metas = state.index.ms1
     rts = [float(m.rt_min) for m in metas]
@@ -144,6 +150,9 @@ def _session_summary(state: LCMSSessionState) -> Dict[str, Any]:
         "workspace_id": state.workspace_id,
         "display_name": state.display_name,
         "experiment_tag": rec.get("experiment_tag", "") if rec else "",
+        # Upload time and the content hash in the stored file name tell same-named uploads apart.
+        "uploaded_at": rec.get("created_at") if rec else None,
+        "file_id": _file_id(state.path),
         "ms1_count": len(metas),
         "rt_min": float(min(rts)) if rts else None,
         "rt_max": float(max(rts)) if rts else None,

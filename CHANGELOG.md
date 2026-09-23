@@ -23,6 +23,12 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **LCMS sessions (plan 6.1):** each session row shows its upload time; hovering the name shows the full name, upload time and a short file ID (the start of the file's SHA-256), so two uploads with the same name can be told apart.
+
+- **Unexpected server errors (plan 6.1)** now return a short message with a reference code instead of internal details; the full traceback is written to the server log under that code.
+
+- **Help (plan 6.1):** Plate Reader help explains that the 4PL fit needs real concentrations in *Tick labels*; LCMS help describes the polarity message and that the RT unit is display-only.
+
 - **SI package rebuilt (plan 5.2):** tables (LCMS features and deconvolutions, FTIR peaks/fits/integrations, 4PL fits and replicate means) contain only recorded results; the methods text is generated from the settings actually used; `manifest.json` lists every input file's SHA-256 and each result with its parameters and app version; raw input files can be included. An experiment tag (or session list) is required. "Vector PDF" is now labelled "PDF" because panels are embedded as images.
 
 - **Provenance (plan 5.1):** FTIR peaks, fits and integrations, MIC/4PL fits, LCMS deconvolutions and exported LCMS feature tables are now recorded with their exact settings, the input file's SHA-256 and the app version (`GET /api/experiments/results`). Re-running with identical settings replaces the earlier record; records are deleted with their session.

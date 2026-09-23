@@ -125,6 +125,9 @@ export interface LCMSUVMeta {
 export interface LCMSSessionSummary {
   session_id: string;
   display_name: string;
+  uploaded_at?: string | null;
+  // First 12 hex digits of the file's SHA-256: identical uploads share it.
+  file_id?: string | null;
   experiment_tag?: string;
   ms1_count: number;
   rt_min: number | null;

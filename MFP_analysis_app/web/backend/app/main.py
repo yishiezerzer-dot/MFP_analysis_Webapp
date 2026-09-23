@@ -5,13 +5,15 @@ lockstep with the desktop application.
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
+import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 # Ensure the project root is on sys.path so we can import `lab_gui.*`
@@ -45,6 +47,18 @@ if _cors_origins:
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    # Full traceback to the server log; the browser gets a short message with a reference to
+    # find it, not internal details (paths, library messages).
+    ref = uuid.uuid4().hex[:8]
+    logging.getLogger("mfp.errors").error("Unhandled error %s on %s %s", ref, request.method, request.url.path, exc_info=exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Unexpected server error (reference {ref}). The details are in the server log."},
     )
 
 
