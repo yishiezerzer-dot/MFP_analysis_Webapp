@@ -37,7 +37,7 @@ const TABS: TabDef[] = [
   { to: "/ftir", label: "FTIR", hint: "spectra + peaks", status: "ready", icon: IconFTIR },
   { to: "/plate-reader", label: "Plate Reader", hint: "MIC wizard", status: "ready", icon: IconPlate },
   { to: "/data-studio", label: "Data Studio", hint: "plot builder", status: "ready", icon: IconTable },
-  { to: "/figures", label: "Figures & SI", hint: "paper figure engine", status: "ready", icon: IconFigures },
+  { to: "/figures", label: "Figures", hint: "paper figure engine", status: "ready", icon: IconFigures },
   { to: "/ai", label: "AI Assistant", hint: "analysis helper", status: "ready", icon: IconSparkle },
 ];
 

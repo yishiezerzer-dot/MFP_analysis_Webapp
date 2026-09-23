@@ -110,7 +110,6 @@ export function FigureBuilderView() {
   ]);
 
   const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const [isDownloadingSI, setIsDownloadingSI] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -209,34 +208,10 @@ export function FigureBuilderView() {
     }
   };
 
-  const handleDownloadSI = async () => {
-    setIsDownloadingSI(true);
-    setError(null);
-    try {
-      const blob = await api.publication.downloadSIPackage({
-        experiment_tag: selectedTag || undefined,
-        figures: panels,
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(selectedTag || "Analytical").replace(/\s+/g, "_")}_SI_Package.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setMessage("Supplementary Information package (.zip) compiled successfully!");
-    } catch (err: any) {
-      setError(`Failed to build SI package: ${err.message || String(err)}`);
-    } finally {
-      setIsDownloadingSI(false);
-    }
-  };
-
   // Header configuration
   usePageHeader(
     <PageHeaderContent
-      title="Figure Engine & SI Package Builder"
+      title="Figure Engine"
       subtitle={`${widthMm} × ${heightMm} mm (${columns} col) · ${panels.length} panels`}
       actions={
         <div className="flex items-center gap-2">
@@ -255,14 +230,6 @@ export function FigureBuilderView() {
             disabled={isExportingPdf}
           >
             {isExportingPdf ? "Compiling PDF…" : "Export Vector PDF 📄"}
-          </button>
-          <button
-            type="button"
-            className="btn-primary text-xs font-semibold"
-            onClick={() => void handleDownloadSI()}
-            disabled={isDownloadingSI}
-          >
-            {isDownloadingSI ? "Generating SI…" : "Download SI Package (.zip) 📦"}
           </button>
         </div>
       }
@@ -390,7 +357,7 @@ export function FigureBuilderView() {
               3. Publication Package Output
             </div>
             <p className="text-xs text-ink-600 dark:text-ink-400 mt-1">
-              Produce peer-review figures satisfying strict publisher requirements (vector PDF with embedded fonts, 600 DPI, plus complete audit methodology).
+              Produce peer-review figures satisfying strict publisher requirements (vector PDF with embedded fonts, 600 DPI).
             </p>
           </div>
           <div className="flex flex-col gap-2 pt-2">
@@ -402,15 +369,6 @@ export function FigureBuilderView() {
             >
               <span>{isExportingPdf ? "Compiling Vector PDF…" : "Export Vector PDF"}</span>
               <span className="text-[10px] opacity-80">(Helvetica / 1 pt spines)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleDownloadSI()}
-              disabled={isDownloadingSI}
-              className="btn-ghost border border-ink-300 dark:border-ink-700 flex items-center justify-center gap-2 text-xs py-1.5 font-medium"
-            >
-              <span>{isDownloadingSI ? "Building Package…" : "Download SI Package (.zip)"}</span>
-              <span className="text-[10px] text-ink-400">Tables + Methods</span>
             </button>
           </div>
         </div>
