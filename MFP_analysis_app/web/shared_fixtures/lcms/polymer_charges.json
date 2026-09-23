@@ -1,0 +1,141 @@
+{
+  "description": "Polymer ion m/z and labels. Consumed by backend tests/test_cross_language_fixtures.py and frontend src/lcms/__tests__/cross_language_fixtures.test.ts.",
+  "cases": [
+    {
+      "name": "[M+H]+ at z=1",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "positive",
+        "charges": "1",
+        "adduct_mass": 1.007276,
+        "enable_na": false,
+        "tol_da": 0.005,
+        "peak_mz": 739.229131
+      },
+      "expected": {
+        "matched": true,
+        "composition": "10-LA",
+        "ion": "[M+H]⁺"
+      }
+    },
+    {
+      "name": "[M+2H]2+ uses two protons",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "positive",
+        "charges": "1,2",
+        "adduct_mass": 1.007276,
+        "enable_na": false,
+        "tol_da": 0.005,
+        "peak_mz": 370.118203
+      },
+      "expected": {
+        "matched": true,
+        "composition": "10-LA",
+        "ion": "[M+2H]²⁺"
+      }
+    },
+    {
+      "name": "[M+3H]3+ uses three protons",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "positive",
+        "charges": "1,2,3",
+        "adduct_mass": 1.007276,
+        "enable_na": false,
+        "tol_da": 0.005,
+        "peak_mz": 247.081228
+      },
+      "expected": {
+        "matched": true,
+        "composition": "10-LA",
+        "ion": "[M+3H]³⁺"
+      }
+    },
+    {
+      "name": "[M-2H]2- in negative mode",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "negative",
+        "charges": "1,2",
+        "adduct_mass": -1.007276,
+        "enable_na": false,
+        "tol_da": 0.005,
+        "peak_mz": 368.103652
+      },
+      "expected": {
+        "matched": true,
+        "composition": "10-LA",
+        "ion": "[M−2H]²⁻"
+      }
+    },
+    {
+      "name": "old single-proton z=2 prediction is not a match",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "positive",
+        "charges": "1,2",
+        "adduct_mass": 1.007276,
+        "enable_na": false,
+        "tol_da": 0.005,
+        "peak_mz": 369.614566
+      },
+      "expected": {
+        "matched": false
+      }
+    },
+    {
+      "name": "Na adduct is singly charged only",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "positive",
+        "charges": "1,2",
+        "adduct_mass": 1.007276,
+        "enable_na": true,
+        "tol_da": 0.005,
+        "peak_mz": 380.605537
+      },
+      "expected": {
+        "matched": false
+      }
+    },
+    {
+      "name": "[M+Na]+ at z=1",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "positive",
+        "charges": "1,2",
+        "adduct_mass": 1.007276,
+        "enable_na": true,
+        "tol_da": 0.005,
+        "peak_mz": 761.211073
+      },
+      "expected": {
+        "matched": true,
+        "composition": "10-LA",
+        "ion": "[M+Na]⁺"
+      }
+    }
+  ]
+}

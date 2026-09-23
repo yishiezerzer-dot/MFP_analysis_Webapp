@@ -1,7 +1,12 @@
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
+
+_MFP_ROOT = Path(__file__).resolve().parents[3]
+if str(_MFP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_MFP_ROOT))
 
 # Must run before any test module imports `app.*`: data paths are resolved at import time,
 # and without this the suite writes fixture sessions into the real lab database.

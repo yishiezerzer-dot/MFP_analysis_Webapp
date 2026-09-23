@@ -4,11 +4,14 @@ import { describe, expect, it } from "vitest";
 
 import type { SpectrumData, LCMSEICData } from "../../api";
 import {
+  buildExpectedProductHits,
   buildKendrickPoints,
+  buildSpectrumIndex,
   groupFeatureRowsForMatrix,
   integrateEICPeak,
   type LCMSFeatureRow,
 } from "../analysis";
+import { polymerSettingsFixture } from "./fixtures/analysisFixtures";
 
 const FIXTURES_DIR = resolve(__dirname, "../../../../shared_fixtures/lcms");
 
@@ -145,6 +148,38 @@ describe("cross-language fixture: groupFeatureRowsForMatrix", () => {
           [...(c.expected.collision_ids as string[])].sort(),
         );
       }
+    });
+  }
+});
+
+describe("cross-language fixtures: polymer charge states", () => {
+  for (const c of load("polymer_charges.json").cases) {
+    it(c.name, () => {
+      const inp = c.input;
+      const base = polymerSettingsFixture();
+      const polarity = inp.polarity as "positive" | "negative";
+      const settings = polymerSettingsFixture({
+        shared: {
+          ...base.shared,
+          monomers_text: `${inp.monomer_name} ${inp.monomer_mass}`,
+          bond_delta: inp.bond_delta,
+          charges: inp.charges,
+          cluster: false,
+          max_dp: inp.max_dp,
+          tol_value: inp.tol_da,
+          tol_unit: "Da",
+        },
+        [polarity]: { ...base[polarity], adduct_mass: inp.adduct_mass, adduct_na: inp.enable_na },
+      });
+      const index = buildSpectrumIndex(spectrumFromFixture([inp.peak_mz], [1000]));
+      const matched = buildExpectedProductHits(settings, polarity, index, inp.max_dp, "normal", 0.2).filter(
+        (hit) => hit.observedMz != null,
+      );
+      if (!c.expected.matched) {
+        expect(matched).toEqual([]);
+        return;
+      }
+      expect(matched.map((hit) => [hit.composition, hit.ion])).toContainEqual([c.expected.composition, c.expected.ion]);
     });
   }
 });

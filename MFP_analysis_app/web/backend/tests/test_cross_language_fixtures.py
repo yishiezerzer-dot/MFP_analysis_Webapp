@@ -106,3 +106,39 @@ def test_comparison_matrix_cross_language(case: dict) -> None:
     if "collision_ids" in expected:
         cell = next(iter(matrix.groups[0].cells.values()))
         assert sorted(r.id for r in cell.collisions) == sorted(expected["collision_ids"]), case["name"]
+
+
+@pytest.mark.parametrize("case", _load("polymer_charges.json"), ids=lambda c: c["name"])
+def test_polymer_charges_cross_language(case: dict) -> None:
+    from lab_gui.lcms_polymer_match import compute_polymer_best_by_peak_sorted
+
+    inp = case["input"]
+    best = compute_polymer_best_by_peak_sorted(
+        np.array([inp["peak_mz"]]),
+        np.array([1000.0]),
+        monomer_names=[inp["monomer_name"]],
+        monomer_masses=[inp["monomer_mass"]],
+        charges=[int(z) for z in inp["charges"].split(",")],
+        max_dp=inp["max_dp"],
+        bond_delta=inp["bond_delta"],
+        extra_delta=0.0,
+        polarity=inp["polarity"],
+        base_adduct_mass=inp["adduct_mass"],
+        enable_decarb=False,
+        enable_oxid=False,
+        enable_cluster=False,
+        cluster_adduct_mass=inp["adduct_mass"],
+        enable_na=inp["enable_na"],
+        enable_k=False,
+        enable_cl=False,
+        enable_formate=False,
+        tol_value=inp["tol_da"],
+        tol_unit="Da",
+        min_rel_int=0.0,
+    )
+    expected = case["expected"]
+    if not expected["matched"]:
+        assert best == {}, case["name"]
+        return
+    label = best[0]["poly"][1]
+    assert label == f"{expected['composition']} {expected['ion']}", case["name"]

@@ -403,6 +403,19 @@ export function autoSignedProtonLike(value: number, polarity: Exclude<LCMSPolari
   return value;
 }
 
+function isProtonLike(mass: number): boolean {
+  return Math.abs(Math.abs(mass) - PROTON_MASS) <= 0.01;
+}
+
+// (z, total adduct mass) pairs; predicted m/z is (M + total) / z. Proton-like adducts scale with
+// charge ([M+zH]^z+); other adducts are singly charged unless a custom adduct gives an explicit charge,
+// in which case its mass is already the total for that charge. Mirrors lcms_polymer_match._charge_states.
+function chargeStates(mass: number, explicitCharge: number | undefined, charges: number[]): Array<{ z: number; total: number }> {
+  if (explicitCharge != null && explicitCharge > 1) return [{ z: explicitCharge, total: mass }];
+  if (isProtonLike(mass)) return charges.map((z) => ({ z, total: z * mass }));
+  return [{ z: 1, total: mass }];
+}
+
 export function ionLabel(
   core: "M" | "2M",
   adductLabel: string,
@@ -414,11 +427,12 @@ export function ionLabel(
   const suffix = charge > 1 ? `${toSuperscript(charge)}${sign}` : sign;
   const label = adductLabel.replace(/-/g, "\u2212");
   if (label) return `[${core}${label}]${suffix}`;
+  const nH = charge > 1 ? `${charge}H` : "H";
   const proton =
     Math.abs(adductMass - PROTON_MASS) <= 0.002
-      ? "+H"
+      ? `+${nH}`
       : Math.abs(adductMass + PROTON_MASS) <= 0.002
-        ? "\u2212H"
+        ? `\u2212${nH}`
         : `${adductMass >= 0 ? "+" : "\u2212"}${Math.abs(adductMass).toFixed(4)}`;
   return `[${core}${proton}]${suffix}`;
 }
@@ -838,9 +852,8 @@ export function buildExpectedProductHits(
     for (const variant of variants) {
       const neutralMass = neutralBase + variant.delta;
       for (const adduct of adducts) {
-        const effectiveCharges = adduct.charge && adduct.charge > 1 ? [adduct.charge] : charges;
-        for (const charge of effectiveCharges) {
-          const expectedMz = (neutralMass + adduct.mass) / charge;
+        for (const { z: charge, total } of chargeStates(adduct.mass, adduct.charge, charges)) {
+          const expectedMz = (neutralMass + total) / charge;
           addHit(
             composition.label,
             neutralMass,
@@ -852,8 +865,8 @@ export function buildExpectedProductHits(
       }
     }
     if (shared.cluster) {
-      for (const charge of charges) {
-        const expectedMz = (2 * neutralBase + clusterAdduct) / charge;
+      for (const { z: charge, total } of chargeStates(clusterAdduct, undefined, charges)) {
+        const expectedMz = (2 * neutralBase + total) / charge;
         const clusterMatch = findMostIntenseSpectrumPeak(index, expectedMz, tolDaFor(expectedMz));
         if (clusterMatch == null) continue;
         const monomerMz = neutralBase + clusterAdduct;

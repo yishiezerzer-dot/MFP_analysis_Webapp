@@ -437,10 +437,12 @@ export const lcmsHelpModule: HelpModule = {
           </DocP>
           <DocH4>5) Charge and adducts</DocH4>
           <DocP>
-            For each charge state <DocCode>z</DocCode> in the configured list (defaults to positive integers), and each
-            polymer adduct mass delta from <DocCode>build_default_adduct_deltas</DocCode>, the predicted m/z is{" "}
-            <DocCode>mz_pred = (neutral_variant + adduct_mass) / z</DocCode>. Cluster mode uses a parallel adduct table
-            built from the cluster base mass.
+            Proton adducts scale with charge: for each charge state <DocCode>z</DocCode> in the configured list the
+            predicted m/z is <DocCode>mz_pred = (neutral_variant + z × 1.007276) / z</DocCode>, labelled{" "}
+            <DocCode>[M+zH]^z+</DocCode> (or <DocCode>[M−zH]^z−</DocCode> in negative mode). Other adducts (Na, K, Cl,
+            formate, acetate) are matched as singly charged ions only. A custom adduct with an explicit charge uses
+            its mass as the total adduct mass for that charge: <DocCode>(neutral_variant + mass) / charge</DocCode>.
+            Cluster mode applies the same rules to the 2M mass.
           </DocP>
           <DocH4>6) Tolerance test</DocH4>
           <DocP>
