@@ -29,16 +29,24 @@ def integrate_eic_peak(rt_min: List[float], intensity: List[float], reference_rt
 
     apex_index = 0
     if reference_rt is not None:
+        # Find candidate apexes on a 3-point moving average, ignoring maxima below 5% of the
+        # largest, so a single noisy point near the reference RT can't be chosen as the peak.
+        # Mirrors integrateEICPeak in frontend/src/lcms/analysis.ts.
+        raw = [inten for _rt, inten in points]
+        n = len(raw)
+        smooth = [sum(raw[max(0, i - 1) : i + 2]) / len(raw[max(0, i - 1) : i + 2]) for i in range(n)]
+        floor = 0.05 * max(smooth)
         local_maxes: List[int] = []
-        for i, (_rt, inten) in enumerate(points):
-            if inten <= 0:
+        for i in range(n):
+            if smooth[i] <= 0 or smooth[i] < floor:
                 continue
-            prev = points[i - 1][1] if i > 0 else float("-inf")
-            nxt = points[i + 1][1] if i < len(points) - 1 else float("-inf")
-            if inten >= prev and inten >= nxt:
+            prev = smooth[i - 1] if i > 0 else float("-inf")
+            nxt = smooth[i + 1] if i < n - 1 else float("-inf")
+            if smooth[i] >= prev and smooth[i] >= nxt:
                 local_maxes.append(i)
         if local_maxes:
-            apex_index = min(local_maxes, key=lambda i: abs(points[i][0] - float(reference_rt)))
+            nearest = min(local_maxes, key=lambda i: abs(points[i][0] - float(reference_rt)))
+            apex_index = max(range(max(0, nearest - 1), min(n, nearest + 2)), key=lambda i: raw[i])
         else:
             apex_index = max(range(len(points)), key=lambda i: points[i][1])
     else:

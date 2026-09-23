@@ -19,6 +19,11 @@ Re-check analyses made before these fixes if they relied on the items below.
 - **FTIR pseudo-Voigt fits** (plan 1.8). The Voigt profile mixed a Gaussian and a Lorentzian of different widths and reported FWHM with an approximate factor (0.9 % error). It now uses a shared FWHM, so reported widths are exact for the profile; fitted component shapes, widths and area percentages from the Voigt option can differ slightly from before.
 - **FTIR "atmospheric" mask** (plan 1.8). The mask removed 1340–1900 and 3400–4000 cm⁻¹ (all carbonyl, amide I/II, O–H/N–H bands) from peak picking; it now removes only the CO₂ doublet (2310–2390 cm⁻¹). It was on in the *KBr disc* and *Polymer thin film* presets, so peaks in those regions were missing from picked-peak lists made with those presets.
 - **LCMS UV trace time axis** (plan 1.9). Headerless UV CSVs whose times went above 60 were assumed to be in seconds and divided by 60 (a 70-min run became ~1.2 min), and the first data row of headerless files was dropped as a header. Headerless files are now read in full and assumed to be minutes unless *UV CSV time unit* (Display tab) says otherwise; headers such as `Time (sec)` are still recognised.
+- **LCMS EIC peak integration with a reference RT** (plan 1.10). The apex was the raw local maximum nearest the reference RT, so a single noisy point on a peak's shoulder could be integrated instead of the peak. Candidates now come from a 3-point moving average and must reach 5 % of the trace maximum; height and area are still computed from the raw data. Integrations of clean peaks are unchanged.
+
+### Changed
+
+- LCMS feature-table CSV column `Area` renamed to `AreaCountsMin`, and areas are labelled *counts·min* in the UI (plan 1.10). Update any spreadsheet that reads the old column name.
 
 ### Fixed
 

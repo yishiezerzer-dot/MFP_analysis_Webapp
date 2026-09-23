@@ -541,20 +541,32 @@ export function integrateEICPeak(
 
   let apexIndex = 0;
   if (referenceRt != null && Number.isFinite(referenceRt)) {
+    // Candidate apexes come from a 3-point moving average and must reach 5% of its maximum, so a
+    // single noisy point near the reference RT can't be chosen. Mirrors lcms_eic.integrate_eic_peak.
+    const n = points.length;
+    const smooth = points.map((_, i) => {
+      const window = points.slice(Math.max(0, i - 1), i + 2);
+      return window.reduce((sum, p) => sum + p.intensity, 0) / window.length;
+    });
+    const floor = 0.05 * Math.max(...smooth);
     const localMaxes: number[] = [];
-    for (let i = 0; i < points.length; i += 1) {
-      const cur = points[i].intensity;
-      if (cur <= 0) continue;
-      const prev = i > 0 ? points[i - 1].intensity : -Infinity;
-      const next = i < points.length - 1 ? points[i + 1].intensity : -Infinity;
+    for (let i = 0; i < n; i += 1) {
+      const cur = smooth[i];
+      if (cur <= 0 || cur < floor) continue;
+      const prev = i > 0 ? smooth[i - 1] : -Infinity;
+      const next = i < n - 1 ? smooth[i + 1] : -Infinity;
       if (cur >= prev && cur >= next) localMaxes.push(i);
     }
     if (localMaxes.length > 0) {
-      apexIndex = localMaxes.reduce(
+      const nearest = localMaxes.reduce(
         (best, idx) =>
           Math.abs(points[idx].rt - referenceRt) < Math.abs(points[best].rt - referenceRt) ? idx : best,
         localMaxes[0],
       );
+      apexIndex = nearest;
+      for (let i = Math.max(0, nearest - 1); i <= Math.min(n - 1, nearest + 1); i += 1) {
+        if (points[i].intensity > points[apexIndex].intensity) apexIndex = i;
+      }
     } else {
       for (let i = 1; i < points.length; i += 1) {
         if (points[i].intensity > points[apexIndex].intensity) apexIndex = i;

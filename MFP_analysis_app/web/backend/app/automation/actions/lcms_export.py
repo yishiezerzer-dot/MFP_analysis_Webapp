@@ -49,7 +49,7 @@ async def export_feature_table_csv(args: LCMSExportFeatureTableCSVInput) -> LCMS
             "RTStartMin",
             "RTEndMin",
             "Height",
-            "Area",
+            "AreaCountsMin",
             "Baseline",
             "NPoints",
             "Source",

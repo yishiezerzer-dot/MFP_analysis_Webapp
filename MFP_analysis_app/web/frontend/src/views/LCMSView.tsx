@@ -6956,7 +6956,7 @@ function TICChart(props: {
               className="rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 font-mono text-[11px] font-semibold text-emerald-800 shadow-xs whitespace-nowrap"
               title={`Integrated Area: ${props.regionIntegration.area.toExponential(4)} | Apex: ${props.regionIntegration.rtApex.toFixed(3)} min | Height: ${props.regionIntegration.height.toExponential(3)}`}
             >
-              Area: {props.regionIntegration.area.toExponential(2)} (Apex {props.regionIntegration.rtApex.toFixed(3)} min, Δ {(props.regionIntegration.width).toFixed(3)} min)
+              Area: {props.regionIntegration.area.toExponential(2)} counts·min (Apex {props.regionIntegration.rtApex.toFixed(3)} min, Δ {(props.regionIntegration.width).toFixed(3)} min)
             </span>
           )}
         </div>
