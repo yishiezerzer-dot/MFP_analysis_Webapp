@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 import numpy as np
 from pydantic import BaseModel, Field
 
@@ -175,6 +176,12 @@ async def create_session(
         _MZML_UPLOAD_DIR,
         allowed_extensions={".mzml", ".mzml.gz"},
     )
+    # Decompression and parsing are CPU/disk-bound: run them in a worker thread so other
+    # users' requests keep being served.
+    return await run_in_threadpool(_ingest_mzml, dest, name, rt_unit, x_workspace_id)
+
+
+def _ingest_mzml(dest: Path, name: str, rt_unit: str, workspace_id: str) -> Dict[str, Any]:
     if dest.name.lower().endswith(".gz"):
         import gzip
         uncompressed_dest = dest.with_name(dest.name[:-3])
@@ -202,7 +209,7 @@ async def create_session(
         if name.lower().endswith(".gz"):
             name = name[:-3]
     try:
-        state = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name, rt_unit=rt_unit)
+        state = registry.add_from_path(dest, workspace_id=workspace_id, display_name=name, rt_unit=rt_unit)
     except LCMSLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -218,7 +225,7 @@ def list_sessions(
     return [_session_summary(s) for s in registry.list(workspace_id=x_workspace_id)]
 
 
-async def _require_session(sid: str) -> LCMSSessionState:
+def _require_session(sid: str) -> LCMSSessionState:
     state = registry.get(sid)
     if state is None:
         raise HTTPException(status_code=404, detail="session not found")
@@ -226,13 +233,13 @@ async def _require_session(sid: str) -> LCMSSessionState:
 
 
 @router.get("/sessions/{sid}")
-async def get_session(sid: str) -> Dict[str, Any]:
-    return _session_summary(await _require_session(sid))
+def get_session(sid: str) -> Dict[str, Any]:
+    return _session_summary(_require_session(sid))
 
 
 @router.get("/sessions/{sid}/tic")
-async def get_tic(sid: str, polarity: Optional[str] = None) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_tic(sid: str, polarity: Optional[str] = None) -> Dict[str, Any]:
+    state = _require_session(sid)
     payload = _tic_payload(state, polarity)
     return {
         "rt_min": payload["rt_min"],
@@ -242,7 +249,7 @@ async def get_tic(sid: str, polarity: Optional[str] = None) -> Dict[str, Any]:
 
 
 @router.get("/sessions/{sid}/spectrum")
-async def get_spectrum(
+def get_spectrum(
     sid: str,
     rt_min: float,
     polarity: Optional[str] = None,
@@ -250,7 +257,7 @@ async def get_spectrum(
     min_rel: float = 0.01,
     polymer_settings: Optional[str] = None,
 ) -> Dict[str, Any]:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     try:
         meta, mz, intensity = fetch_spectrum_at_rt(
             state, float(rt_min), polarity=polarity
@@ -288,14 +295,14 @@ async def get_spectrum(
 
 
 @router.get("/sessions/{sid}/find-mz")
-async def find_mz(
+def find_mz(
     sid: str,
     mz: float,
     tolerance: float = 0.01,
     tolerance_unit: str = "da",
     polarity: Optional[str] = None,
 ) -> Dict[str, Any]:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     try:
         return find_mz_across_scans(
             state,
@@ -309,8 +316,8 @@ async def find_mz(
 
 
 @router.post("/sessions/{sid}/eic")
-async def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     try:
         return extracted_ion_chromatogram(
             state,
@@ -324,8 +331,8 @@ async def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/region-spectrum")
-async def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     try:
         payload = summed_spectrum_in_rt_range(
             state,
@@ -355,10 +362,10 @@ async def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str
 
 
 @router.post("/sessions/{sid}/deconvolute")
-async def deconvolute_session_spectrum(
+def deconvolute_session_spectrum(
     sid: str, body: DeconvoluteRequest
 ) -> Dict[str, Any]:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     try:
         if body.rt_min is not None and body.rt_max is not None:
             region = summed_spectrum_in_rt_range(
@@ -402,7 +409,7 @@ async def deconvolute_session_spectrum(
 
 
 @router.post("/overlays/tic")
-async def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
+def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
     traces = []
     missing = []
     for sid in body.session_ids:
@@ -415,7 +422,7 @@ async def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
 
 
 @router.post("/exports/tic-overlay.csv")
-async def export_tic_overlay(body: OverlayRequest) -> Response:
+def export_tic_overlay(body: OverlayRequest) -> Response:
     rows: List[List[Any]] = [["session_id", "display_name", "rt_min", "tic", "polarity"]]
     for sid in body.session_ids:
         state = registry.get(sid)
@@ -428,12 +435,12 @@ async def export_tic_overlay(body: OverlayRequest) -> Response:
 
 
 @router.get("/sessions/{sid}/exports/spectrum.csv")
-async def export_spectrum_csv(
+def export_spectrum_csv(
     sid: str,
     rt_min: float,
     polarity: Optional[str] = None,
 ) -> Response:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     try:
         meta, mz, intensity = fetch_spectrum_at_rt(
             state,
@@ -449,13 +456,13 @@ async def export_spectrum_csv(
 
 
 @router.get("/sessions/{sid}/exports/labels.csv")
-async def export_labels_csv(
+def export_labels_csv(
     sid: str,
     polarity: Optional[str] = None,
     top_n: int = 10,
     min_rel: float = 0.01,
 ) -> Response:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     rows: List[List[Any]] = [
         ["spectrum_id", "rt_min", "polarity", "label_source", "mz", "intensity", "text"]
     ]
@@ -482,8 +489,8 @@ async def export_labels_csv(
 
 
 @router.get("/sessions/{sid}/exports/uv.csv")
-async def export_uv_csv(sid: str) -> Response:
-    state = await _require_session(sid)
+def export_uv_csv(sid: str) -> Response:
+    state = _require_session(sid)
     uv = state.uv
     if uv is None:
         raise HTTPException(status_code=400, detail="No UV chromatogram attached.")
@@ -499,14 +506,14 @@ async def attach_uv(
     file: UploadFile = File(...),
     rt_unit: Literal["auto", "minutes", "seconds"] = Form("auto"),
 ) -> Dict[str, Any]:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     dest, name = await stream_upload_to_file(
         file,
         _UV_UPLOAD_DIR,
         allowed_extensions={".csv", ".tsv", ".txt"},
     )
     try:
-        attach_uv_from_csv(state, dest, filename=name, rt_unit=rt_unit)
+        await run_in_threadpool(attach_uv_from_csv, state, dest, filename=name, rt_unit=rt_unit)
     except UVLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -515,13 +522,13 @@ async def attach_uv(
 
 
 @router.get("/sessions/{sid}/uv")
-async def get_uv(
+def get_uv(
     sid: str,
     top_n: int = 8,
     min_rel: float = 0.05,
     min_distance_min: Optional[float] = None,
 ) -> Dict[str, Any]:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     uv = state.uv
     if uv is None:
         return {
@@ -545,8 +552,8 @@ async def get_uv(
 
 
 @router.delete("/sessions/{sid}/uv")
-async def delete_uv(sid: str) -> Dict[str, bool]:
-    state = await _require_session(sid)
+def delete_uv(sid: str) -> Dict[str, bool]:
+    state = _require_session(sid)
     had = clear_uv(state)
     return {"deleted": bool(had)}
 

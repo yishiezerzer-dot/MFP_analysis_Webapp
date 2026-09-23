@@ -23,6 +23,8 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **Performance (plan 4.1):** one person's analysis (EIC, spectrum, region sum, file upload/parsing) no longer freezes the app for everyone else; analyses run in worker threads instead of on the server's single event loop.
+
 - LCMS feature-table CSV column `Area` renamed to `AreaCountsMin`, and areas are labelled *counts·min* in the UI (plan 1.10). Update any spreadsheet that reads the old column name.
 
 ### Fixed

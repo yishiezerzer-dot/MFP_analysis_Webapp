@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from ..db import get_session_record, get_upload_dir, save_session_record
@@ -54,7 +55,7 @@ async def create_session(
         allowed_extensions=_ALLOWED,
     )
     try:
-        session = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name)
+        session = await run_in_threadpool(registry.add_from_path, dest, workspace_id=x_workspace_id, display_name=name)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to register file: {exc}")
     save_session_record(session.session_id, getattr(session, "workspace_id", x_workspace_id), "plate_reader", session.display_name, str(session.path))
@@ -68,7 +69,7 @@ def list_sessions(
     return [_summary(s) for s in registry.list(workspace_id=x_workspace_id)]
 
 
-async def _require_session(sid: str):
+def _require_session(sid: str):
     s = registry.get(sid)
     if s is None:
         raise HTTPException(status_code=404, detail="session not found")
@@ -76,8 +77,8 @@ async def _require_session(sid: str):
 
 
 @router.get("/sessions/{sid}")
-async def get_session(sid: str) -> Dict[str, Any]:
-    return _summary(await _require_session(sid))
+def get_session(sid: str) -> Dict[str, Any]:
+    return _summary(_require_session(sid))
 
 
 class LoadRequest(BaseModel):
@@ -87,8 +88,8 @@ class LoadRequest(BaseModel):
 
 
 @router.post("/sessions/{sid}/load")
-async def load_sheet(sid: str, req: LoadRequest) -> Dict[str, Any]:
-    s = await _require_session(sid)
+def load_sheet(sid: str, req: LoadRequest) -> Dict[str, Any]:
+    s = _require_session(sid)
     try:
         df = s.load_dataframe(
             sheet_name=req.sheet_name,
@@ -117,8 +118,8 @@ class MICRequest(BaseModel):
 
 
 @router.post("/sessions/{sid}/mic")
-async def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
-    s = await _require_session(sid)
+def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
+    s = _require_session(sid)
     try:
         df = s.load_dataframe(
             sheet_name=req.sheet_name,

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from ..db import get_upload_dir, save_session_record
@@ -95,7 +96,7 @@ async def create_session(
 ) -> Dict[str, Any]:
     upload_dir = get_upload_dir("data_studio")
     dest, name = await stream_upload_to_file(file, upload_dir)
-    s = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name)
+    s = await run_in_threadpool(registry.add_from_path, dest, workspace_id=x_workspace_id, display_name=name)
     save_session_record(s.session_id, getattr(s, "workspace_id", x_workspace_id), "data_studio", s.display_name, str(s.path))
     return session_summary(s)
 
@@ -108,8 +109,8 @@ def list_sessions(
 
 
 @router.get("/sessions/{sid}")
-async def get_session(sid: str) -> Dict[str, Any]:
-    return session_summary(await _require_session(sid))
+def get_session(sid: str) -> Dict[str, Any]:
+    return session_summary(_require_session(sid))
 
 
 @router.delete("/sessions/{sid}")
@@ -120,8 +121,8 @@ def delete_session(sid: str) -> Dict[str, bool]:
 
 
 @router.patch("/sessions/{sid}/load")
-async def update_load_options(sid: str, body: LoadOptions) -> Dict[str, Any]:
-    s = await _require_session(sid)
+def update_load_options(sid: str, body: LoadOptions) -> Dict[str, Any]:
+    s = _require_session(sid)
     s.set_load_options(
         sheet_name=body.sheet_name,
         header_row=int(body.header_row),
@@ -136,8 +137,8 @@ async def update_load_options(sid: str, body: LoadOptions) -> Dict[str, Any]:
 
 
 @router.get("/sessions/{sid}/schema")
-async def get_schema(sid: str) -> Dict[str, Any]:
-    s = await _require_session(sid)
+def get_schema(sid: str) -> Dict[str, Any]:
+    s = _require_session(sid)
     try:
         df = s.raw()
     except Exception as exc:  # noqa: BLE001
@@ -146,8 +147,8 @@ async def get_schema(sid: str) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/preview")
-async def get_preview(sid: str, body: PreviewBody) -> Dict[str, Any]:
-    s = await _require_session(sid)
+def get_preview(sid: str, body: PreviewBody) -> Dict[str, Any]:
+    s = _require_session(sid)
     try:
         df = s.apply_transforms(body.transforms)
     except Exception as exc:  # noqa: BLE001
@@ -159,8 +160,8 @@ async def get_preview(sid: str, body: PreviewBody) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/plot")
-async def get_plot_data(sid: str, body: PlotBody) -> Dict[str, Any]:
-    s = await _require_session(sid)
+def get_plot_data(sid: str, body: PlotBody) -> Dict[str, Any]:
+    s = _require_session(sid)
     try:
         df = s.apply_transforms(body.transforms)
     except Exception as exc:  # noqa: BLE001
@@ -176,8 +177,8 @@ async def get_plot_data(sid: str, body: PlotBody) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/histogram")
-async def get_histogram(sid: str, body: HistogramBody) -> Dict[str, Any]:
-    s = await _require_session(sid)
+def get_histogram(sid: str, body: HistogramBody) -> Dict[str, Any]:
+    s = _require_session(sid)
     try:
         df = s.apply_transforms(body.transforms)
     except Exception as exc:  # noqa: BLE001
@@ -188,7 +189,7 @@ async def get_histogram(sid: str, body: HistogramBody) -> Dict[str, Any]:
 # ------------------------------ utils ------------------------------
 
 
-async def _require_session(sid: str) -> DataStudioSession:
+def _require_session(sid: str) -> DataStudioSession:
     s = registry.get(sid)
     if s is None:
         raise HTTPException(status_code=404, detail="session not found")

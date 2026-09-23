@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from lab_gui.ftir_io import FTIRLoadError
@@ -146,7 +147,8 @@ async def create_session(
     upload_dir = get_upload_dir("ftir")
     dest, name = await stream_upload_to_file(file, upload_dir)
     try:
-        state = registry.add_from_path(
+        state = await run_in_threadpool(
+            registry.add_from_path,
             dest,
             workspace_id=x_workspace_id,
             display_name=name,
@@ -168,8 +170,8 @@ def list_sessions(
 
 
 @router.get("/sessions/{sid}")
-async def get_session(sid: str) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_session(sid: str) -> Dict[str, Any]:
+    state = _require_session(sid)
     return session_summary(state)
 
 
@@ -182,8 +184,8 @@ def delete_session(sid: str) -> Dict[str, bool]:
 
 
 @router.post("/sessions/{sid}/spectrum")
-async def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     res = compute_preprocessed(
         state,
         mode=body.mode,
@@ -244,8 +246,8 @@ async def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/peaks")
-async def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     # Peaks are always picked on the full-resolution preprocessed array.
     x, y_proc = compute_preprocessed(
         state,
@@ -298,8 +300,8 @@ async def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/integrate")
-async def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     try:
         return integrate_region(
             state,
@@ -312,9 +314,9 @@ async def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/subtract")
-async def subtract_spectrum(sid: str, body: SubtractRequest) -> Dict[str, Any]:
-    state_a = await _require_session(sid)
-    state_b = await _require_session(body.sid_b)
+def subtract_spectrum(sid: str, body: SubtractRequest) -> Dict[str, Any]:
+    state_a = _require_session(sid)
+    state_b = _require_session(body.sid_b)
     try:
         return subtract_sessions(
             state_a,
@@ -333,8 +335,8 @@ async def subtract_spectrum(sid: str, body: SubtractRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/match")
-async def match_references(sid: str, body: MatchRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def match_references(sid: str, body: MatchRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     return match_session_references(
         state,
         region=None if body.region is None else (body.region[0], body.region[1]),
@@ -345,8 +347,8 @@ async def match_references(sid: str, body: MatchRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/fit")
-async def fit_region(sid: str, body: FitRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def fit_region(sid: str, body: FitRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     try:
         return fit_peak_region(
             state,
@@ -370,8 +372,8 @@ def get_library_categories() -> Dict[str, Any]:
 
 
 @router.put("/sessions/{sid}/peak-labels")
-async def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     override = body.override.model_dump() if body.override is not None else None
     return set_peak_label_override(state, body.wn, override)
 
@@ -379,7 +381,7 @@ async def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> D
 # ------------------------------ util ------------------------------
 
 
-async def _require_session(sid: str) -> FTIRSession:
+def _require_session(sid: str) -> FTIRSession:
     state = registry.get(sid)
     if state is None:
         raise HTTPException(status_code=404, detail="session not found")
