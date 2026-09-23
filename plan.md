@@ -132,31 +132,41 @@ Source: independent review of 2026-09-23. Finding IDs (C1, H1…, M1…, L1…) 
 
 ---
 
-## Phase 2 — Reliability and silent failures (~2–3 days)
+## ~~Phase 2 — Reliability and silent failures (~2–3 days)~~ ✅ DONE 2026-09-23
+
+> **Done:** one commit per task on `fix/review-phase-0-1`. 211 backend tests pass (also in the locked Python 3.12 venv; the full suite also passes on pandas 3.0.6) and 164 frontend tests pass. The restore-error banner was checked in the running app.
+>
+> - **2.2:** all four registries now share a `_restore_record` that logs failures and records them per session. They're served at `GET /api/workspaces/{wid}/restore-errors` and shown in a dismissable app-wide banner. A missing UV trace is reported too.
+> - **Found in 2.2:** FTIR peak fits that failed returned the starting guesses as if they were results. They're now flagged (`converged`/`fit_error`) with a warning in the UI. Asking for more components than detected peaks crashed the fit; it now works.
+> - **2.3/2.4 (Data Studio, kept minimal as agreed):** pandas-3 fixes; load options persist. The deployment stays pinned to pandas 2.3 (upgrading is now low-risk but still a deliberate step).
+> - **2.6:** the bridge keeps one connection per tab and routes by `X-Browser-Id`; MCP clients fall back to the most recent tab. The action log lives in `MFP_DATA_DIR/automation/`.
+>
+> **Not done:** a better fit baseline for Lorentzian tails (from the Phase 1 notes). It's optional, so I left it.
+
 
 ### ~~2.1 UV attachment lost on restart (M1)~~ ✅ done with 1.9
 - **File:** `lcms_service.py` (~177, 214)
 - **Change:** pass `filename=extra.get("uv_filename") or uv_p.name`.
 - **Test:** attach UV → new registry instance → list → UV available.
 
-### 2.2 Replace bare `except: pass` (M2)
+### ~~2.2 Replace bare `except: pass` (M2)~~
 - **Files:** all `services/*.py` restore paths, `lcms_io.py` cache, `data_studio_io.py`
 - **Change:** log with `logging.exception`, and surface a per-session `restore_error` so the UI can show "file missing / failed to load" instead of the session disappearing.
 - Data Studio baseline: if the chosen baseline value is NaN, warn and skip rather than turning the column into NaN.
 - Surface `transform_warnings` in the Data Studio UI.
 
-### 2.3 Data Studio under pandas 3 (H9 follow-through)
+### ~~2.3 Data Studio under pandas 3 (H9 follow-through)~~
 - **File:** `lab_gui/data_studio_io.py` (~23–50, 212)
 - **Change:** `_coerce_numeric` → try `pd.to_numeric(col)` and catch the error per column (no `errors="ignore"`); `_replace_decimal_commas` checks `is_string_dtype` / `is_object_dtype`; `fillna(method="ffill")` → `.ffill()`.
 - **Tests:** run under both pandas 2.3 and 3.x in CI (matrix job); decimal-comma CSV numeric; ffill works.
 
-### 2.4 Persist Data Studio load options
+### ~~2.4 Persist Data Studio load options~~
 - Save `sheet_name`, `header_row` and `decimal_comma` into the session's `extra_json` and restore them.
 
-### 2.5 FTIR metadata bloat (L6)
+### ~~2.5 FTIR metadata bloat (L6)~~
 - Stop the metadata scan at the first numeric data line; cap `meta` at 100 keys.
 
-### 2.6 Automation bridge with several users (M8, functional part)
+### ~~2.6 Automation bridge with several users (M8, functional part)~~
 - **File:** `automation/browser_bridge.py`
 - **Change:** key connections by `browser_id` instead of one global active tab; route each action to the tab that requested it. Move the action log into `MFP_DATA_DIR` so it survives deploys. (Confirmation tokens stay as a safety prompt, not an access control.)
 
@@ -270,7 +280,7 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 |---|---|---|
 | 1 | ~~0 Safety net + SI disabled~~ ✅ | 0.5 d |
 | 2 | ~~1 Scientific correctness~~ ✅ | 4–5 d |
-| 3 | 2 Reliability | 2–3 d |
+| 3 | ~~2 Reliability~~ ✅ | 2–3 d |
 | 4 | 3 Hardening without auth | 1–1.5 d |
 | 5 | 4 Performance | 2–3 d |
 | 6 | 5 Provenance + real SI package | 4–5 d |
