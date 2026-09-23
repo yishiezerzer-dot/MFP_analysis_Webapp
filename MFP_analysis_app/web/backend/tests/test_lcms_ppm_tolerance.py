@@ -1,3 +1,4 @@
+import threading
 import numpy as np
 import pytest
 from unittest.mock import MagicMock
@@ -14,13 +15,16 @@ def test_extracted_ion_chromatogram_ppm(monkeypatch):
     mz2 = np.array([100.0, 500.015, 800.0], dtype=float)
     int2 = np.array([15.0, 800.0, 25.0], dtype=float)
 
-    def fake_iter_ms1(state, **kwargs):
-        yield meta1, mz1, int1
-        yield meta2, mz2, int2
-
-    monkeypatch.setattr(lcms_service, "iter_ms1_spectra", fake_iter_ms1)
+    table = lcms_service.PeakTable(
+        mz=np.concatenate([mz1, mz2]),
+        intensity=np.concatenate([int1, int2]).astype(np.float32),
+        offsets=np.array([0, 3, 6], dtype=np.int64),
+    )
+    monkeypatch.setattr(lcms_service, "peak_table", lambda state: table)
 
     state = MagicMock()
+    state.index.ms1 = [meta1, meta2]
+    state._reader_lock = threading.Lock()
 
     # 1. Test Da tolerance
     res_da = lcms_service.extracted_ion_chromatogram(state, 500.0, tolerance=0.01, tolerance_unit="da")

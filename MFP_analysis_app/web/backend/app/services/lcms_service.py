@@ -69,6 +69,7 @@ class LCMSSessionState:
     # One open reader per session (use only while holding _reader_lock). Opening re-indexes the
     # whole file, which cost ~1 s per spectrum click on a 140 MB file when done per request.
     _reader: Optional[Any] = None
+    _peaks: Optional["PeakTable"] = None
 
     def reader(self) -> Any:
         """Open (once) and return the mzML reader. Caller must hold _reader_lock."""
@@ -84,6 +85,7 @@ class LCMSSessionState:
                     self._reader.close()
                 finally:
                     self._reader = None
+            self._peaks = None  # drop memory maps so the files can be deleted
 
     def ms1_meta(self) -> List[Dict[str, Any]]:
         return [
@@ -235,6 +237,9 @@ class LCMSRegistry:
             removed = remove_unreferenced_files(rec)
             if cache_path is not None and Path(rec["file_path"]).resolve() in removed:
                 cache_path.unlink(missing_ok=True)
+                peaks_base = cache_path.with_name(cache_path.stem + ".peaks")
+                for f in _peak_table_files(peaks_base):
+                    f.unlink(missing_ok=True)
         return in_memory or rec is not None
 
     def list(self, workspace_id: Optional[str] = None) -> List[LCMSSessionState]:
@@ -253,6 +258,84 @@ class LCMSRegistry:
 
 
 registry = LCMSRegistry()
+
+
+@dataclass
+class PeakTable:
+    """All MS1 peaks of a file in index (RT) order: scan i owns mz[offsets[i]:offsets[i+1]].
+
+    Memory-mapped from files next to the index cache, so repeated EICs and region sums are
+    vectorised array operations instead of decoding every spectrum again.
+    """
+
+    mz: np.ndarray  # float64
+    intensity: np.ndarray  # float32 (relative precision ~1e-7)
+    offsets: np.ndarray  # int64, len n_scans + 1
+
+
+def _peak_table_base(state: "LCMSSessionState") -> Optional[Path]:
+    cache_json = state.index._cache_path()
+    return None if cache_json is None else cache_json.with_name(cache_json.stem + ".peaks")
+
+
+def _peak_table_files(base: Path) -> Tuple[Path, Path, Path]:
+    return (
+        base.with_name(base.name + ".mz.f64"),
+        base.with_name(base.name + ".int.f32"),
+        base.with_name(base.name + ".offsets.npy"),
+    )
+
+
+def peak_table(state: "LCMSSessionState") -> PeakTable:
+    """Load or build the session's peak table. Caller must hold state._reader_lock."""
+    if state._peaks is not None:
+        return state._peaks
+    base = _peak_table_base(state)
+    if base is None:
+        raise LCMSLoadError("mzML file is missing.")
+    mz_file, int_file, off_file = _peak_table_files(base)
+    n_scans = len(state.index.ms1)
+    offsets: Optional[np.ndarray] = None
+    if off_file.exists() and mz_file.exists() and int_file.exists():
+        offsets = np.load(off_file)
+        total = int(offsets[-1]) if offsets.size else 0
+        if offsets.size != n_scans + 1 or mz_file.stat().st_size != total * 8 or int_file.stat().st_size != total * 4:
+            offsets = None  # stale or partial cache
+    if offsets is None:
+        # Stream spectra to disk one at a time so a large file never sits in RAM at once.
+        rdr = state.reader()
+        counts = []
+        tmp_mz = mz_file.with_name(mz_file.name + ".tmp")
+        tmp_int = int_file.with_name(int_file.name + ".tmp")
+        with open(tmp_mz, "wb") as f_mz, open(tmp_int, "wb") as f_int:
+            for meta in state.index.ms1:
+                mz_vals, int_vals = _spectrum_arrays_from_reader(rdr, str(meta.spectrum_id))
+                f_mz.write(np.ascontiguousarray(mz_vals, dtype=np.float64).tobytes())
+                f_int.write(np.ascontiguousarray(int_vals, dtype=np.float32).tobytes())
+                counts.append(int(mz_vals.size))
+        offsets = np.concatenate([[0], np.cumsum(counts, dtype=np.int64)]).astype(np.int64)
+        tmp_mz.replace(mz_file)
+        tmp_int.replace(int_file)
+        np.save(off_file, offsets)
+    total = int(offsets[-1])
+    if total == 0:
+        mz_arr, int_arr = np.zeros(0, dtype=np.float64), np.zeros(0, dtype=np.float32)
+    else:
+        mz_arr = np.memmap(mz_file, dtype=np.float64, mode="r", shape=(total,))
+        int_arr = np.memmap(int_file, dtype=np.float32, mode="r", shape=(total,))
+    state._peaks = PeakTable(mz=mz_arr, intensity=int_arr, offsets=offsets)
+    return state._peaks
+
+
+def _scan_selection(state: "LCMSSessionState", polarity: Optional[str]) -> np.ndarray:
+    """Boolean mask over state.index.ms1 for the requested polarity (same rules as _ms1_candidates)."""
+    metas = state.index.ms1
+    if polarity in ("positive", "negative"):
+        sel = np.fromiter((m.polarity == polarity for m in metas), dtype=bool, count=len(metas))
+        if not sel.any():
+            raise LCMSLoadError(f"This file has no {polarity}-polarity MS1 scans.")
+        return sel
+    return np.ones(len(metas), dtype=bool)
 
 
 def _ms1_candidates(
@@ -364,30 +447,30 @@ def extracted_ion_chromatogram(
         unit = "da"
         tol = tol_val
 
-    rows: List[Tuple[float, float, Optional[str]]] = []
-    best: Dict[str, Any] = {
-        "rt_min": None,
-        "intensity": 0.0,
-        "mz": None,
-        "spectrum_id": None,
-        "polarity": None,
-    }
-    for meta, mz_vals, int_vals in iter_ms1_spectra(state, polarity=polarity):
-        mask = np.abs(mz_vals - target) <= tol
-        intensity = float(np.nansum(int_vals[mask])) if np.any(mask) else 0.0
-        if intensity > float(best["intensity"]):
-            local_mz = None
-            if np.any(mask):
-                local_idx = int(np.argmax(int_vals[mask]))
-                local_mz = float(mz_vals[mask][local_idx])
-            best = {
-                "rt_min": float(meta.rt_min),
-                "intensity": intensity,
-                "mz": local_mz,
-                "spectrum_id": meta.spectrum_id,
-                "polarity": meta.polarity,
-            }
-        rows.append((float(meta.rt_min), intensity, meta.polarity))
+    metas = state.index.ms1
+    sel = _scan_selection(state, polarity)
+    with state._reader_lock:
+        table = peak_table(state)
+    # One pass over every peak: window mask, then sum intensities per scan.
+    hit = np.flatnonzero(np.abs(table.mz - target) <= tol)
+    hit_scan = np.searchsorted(table.offsets, hit, side="right") - 1
+    hit_int = np.nan_to_num(np.asarray(table.intensity[hit], dtype=np.float64))
+    sums = np.bincount(hit_scan, weights=hit_int, minlength=len(metas))
+
+    idx = np.flatnonzero(sel)
+    rows = [(float(metas[i].rt_min), float(sums[i]), metas[i].polarity) for i in idx]
+    best: Dict[str, Any] = {"rt_min": None, "intensity": 0.0, "mz": None, "spectrum_id": None, "polarity": None}
+    if idx.size and float(sums[idx].max()) > 0.0:
+        b = int(idx[int(np.argmax(sums[idx]))])  # first scan with the maximum, as before
+        in_scan = hit[hit_scan == b]
+        local = in_scan[int(np.argmax(table.intensity[in_scan]))]
+        best = {
+            "rt_min": float(metas[b].rt_min),
+            "intensity": float(sums[b]),
+            "mz": float(table.mz[local]),
+            "spectrum_id": metas[b].spectrum_id,
+            "polarity": metas[b].polarity,
+        }
     return {
         "target_mz": target,
         "tolerance": tol,
@@ -439,25 +522,19 @@ def summed_spectrum_in_rt_range(
     lo = min(float(rt_min), float(rt_max))
     hi = max(float(rt_min), float(rt_max))
     width = max(1e-6, float(bin_width))
-    totals: Dict[int, float] = {}
-    weighted_mz: Dict[int, float] = {}
-    n_scans = 0
-    for _meta, mz_vals, int_vals in iter_ms1_spectra(
-        state,
-        polarity=polarity,
-        rt_min=lo,
-        rt_max=hi,
-    ):
-        n_scans += 1
-        keys = np.rint(mz_vals / width).astype(np.int64)
-        for key, mz_value, intensity in zip(keys.tolist(), mz_vals.tolist(), int_vals.tolist()):
-            if not np.isfinite(mz_value) or not np.isfinite(intensity):
-                continue
-            key_int = int(key)
-            value = float(intensity)
-            totals[key_int] = totals.get(key_int, 0.0) + value
-            weighted_mz[key_int] = weighted_mz.get(key_int, 0.0) + float(mz_value) * value
-    if not totals:
+    metas = state.index.ms1
+    sel = _scan_selection(state, polarity)
+    rts = np.fromiter((float(m.rt_min) for m in metas), dtype=float, count=len(metas))
+    scan_mask = sel & (rts >= lo) & (rts <= hi)
+    n_scans = int(scan_mask.sum())
+    with state._reader_lock:
+        table = peak_table(state)
+    peak_mask = np.repeat(scan_mask, np.diff(table.offsets))
+    mz_vals = np.asarray(table.mz[peak_mask], dtype=np.float64)
+    int_vals = np.asarray(table.intensity[peak_mask], dtype=np.float64)
+    finite = np.isfinite(mz_vals) & np.isfinite(int_vals)
+    mz_vals, int_vals = mz_vals[finite], int_vals[finite]
+    if mz_vals.size == 0:
         return {
             "rt_min": lo,
             "rt_max": hi,
@@ -466,14 +543,11 @@ def summed_spectrum_in_rt_range(
             "mz": [],
             "intensity": [],
         }
-    mz_out = np.asarray(
-        [
-            (weighted_mz.get(key, 0.0) / total) if total > 0 else key * width
-            for key, total in totals.items()
-        ],
-        dtype=float,
-    )
-    int_out = np.asarray(list(totals.values()), dtype=float)
+    # Bin by rounded m/z; each bin reports its intensity-weighted mean m/z and summed intensity.
+    keys, inverse = np.unique(np.rint(mz_vals / width).astype(np.int64), return_inverse=True)
+    int_out = np.bincount(inverse, weights=int_vals)
+    weighted = np.bincount(inverse, weights=mz_vals * int_vals)
+    mz_out = np.where(int_out > 0, weighted / np.where(int_out > 0, int_out, 1.0), keys * width)
     imax = float(np.nanmax(int_out)) if int_out.size else 0.0
     if imax > 0 and min_rel > 0:
         keep = int_out >= float(min_rel) * imax

@@ -24,6 +24,7 @@ Re-check analyses made before these fixes if they relied on the items below.
 ### Changed
 
 - **Performance (plan 4.1):** one person's analysis (EIC, spectrum, region sum, file upload/parsing) no longer freezes the app for everyone else; analyses run in worker threads instead of on the server's single event loop.
+- **Performance (plans 4.2–4.4), measured on a 140 MB mzML (2,400 scans):** spectrum click 1.6 s → 0.01 s; EIC 3.3 s → 2.0 s the first time per file, then 0.09 s; 1-min region sum 2.6 s → 0.1 s; upload 4.0 s → 2.5 s. The first EIC/region sum builds a peak table cached next to the index (≈ 0.8× the mzML size on disk, deleted with the session). Intensities in that table are single precision, so EIC and region-sum intensities can differ from before in the 7th significant digit.
 
 - LCMS feature-table CSV column `Area` renamed to `AreaCountsMin`, and areas are labelled *counts·min* in the UI (plan 1.10). Update any spreadsheet that reads the old column name.
 
