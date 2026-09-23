@@ -693,7 +693,7 @@ export function PlateReaderView() {
                   Rename
                 </button>
                 <button
-                  className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 group-hover:visible"
+                  className="inline-flex min-h-6 min-w-6 items-center justify-center invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 group-hover:visible"
                   onClick={(e) => {
                     e.stopPropagation();
                     onRemove(s.session_id);
@@ -896,6 +896,10 @@ function LoadControls(props: {
   );
 }
 
+function roleName(role: RowRole): string {
+  return role === "none" ? "unassigned" : role;
+}
+
 function roleLabel(role: RowRole) {
   if (role === "sample") return "S";
   if (role === "control") return "C";
@@ -991,7 +995,7 @@ function PreviewTable(props: {
                 title="Move right"
               >↓</button>
               <button
-                className="ml-1 text-ink-300 hover:text-red-500"
+                className="inline-flex min-h-6 min-w-6 items-center justify-center ml-1 text-ink-300 hover:text-red-500"
                 onClick={() => props.onToggleCol(c)}
                 title="Remove"
               >✕</button>
@@ -1013,6 +1017,14 @@ function PreviewTable(props: {
                   <th
                     key={c}
                     onClick={() => props.onToggleCol(c)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        props.onToggleCol(c);
+                      }
+                    }}
+                    tabIndex={0}
+                    aria-pressed={active}
                     className={clsx(
                       "cursor-pointer select-none border-b border-ink-200 px-2 py-1.5 text-left font-medium",
                       active ? "bg-brand-500 text-white" : "bg-ink-50 text-ink-700 hover:bg-ink-100",
@@ -1036,9 +1048,13 @@ function PreviewTable(props: {
                       {(["none", "sample", "control", "blank"] as RowRole[]).map((r) => (
                         <button
                           key={r}
+                          type="button"
                           onClick={() => props.onSetRole(i, r)}
+                          aria-label={`Mark row ${i + 1} as ${roleName(r)}`}
+                          aria-pressed={role === r}
+                          title={`Mark row ${i + 1} as ${roleName(r)}`}
                           className={clsx(
-                            "rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
+                            "min-h-6 min-w-6 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
                             role === r ? activeRoleClass(r) : "border border-ink-200 bg-surface text-ink-400 hover:bg-ink-100",
                           )}
                         >

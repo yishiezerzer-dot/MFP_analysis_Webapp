@@ -4942,7 +4942,7 @@ function SessionsSidebar(props: {
               type="button"
               onClick={props.onCreateProject}
               title="Create project"
-              className="rounded-md border border-ink-200 bg-surface px-1.5 py-0.5 text-[11px] font-medium text-ink-700 hover:bg-ink-100"
+              className="min-h-6 rounded-md border border-ink-200 bg-surface px-1.5 py-0.5 text-[11px] font-medium text-ink-700 hover:bg-ink-100"
             >
               + Project
             </button>
@@ -6038,6 +6038,7 @@ function ToolsTab(p: ToolsPanelProps) {
           <input
             type="number"
             className="input flex-1"
+            aria-label={`Jump to retention time (${p.rtUnit === "seconds" ? "s" : "min"})`}
             placeholder="e.g. 2.45"
             value={p.rtJumpText}
             onChange={(e) => p.setRtJumpText(e.target.value)}
@@ -6366,11 +6367,12 @@ function GroupBox({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
+  // Wrapping the control in the <label> associates the text with it for screen readers.
   return (
-    <div className="flex items-center justify-between gap-2">
-      <label className="text-sm text-ink-700">{label}</label>
+    <label className="flex items-center justify-between gap-2">
+      <span className="text-sm text-ink-700">{label}</span>
       {children}
-    </div>
+    </label>
   );
 }
 

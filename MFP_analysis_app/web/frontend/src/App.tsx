@@ -188,6 +188,17 @@ function Sidebar() {
     return stored === null ? true : stored === "1";
   });
   const [hovered, setHovered] = useState(false);
+  // On phone-width screens a pinned 256 px sidebar leaves almost no room for the view, so it
+  // collapses to the icon rail (it still expands on hover/tap).
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const onChange = () => setNarrow(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   useEffect(() => {
     try {
@@ -197,7 +208,7 @@ function Sidebar() {
     }
   }, [pinned]);
 
-  const expanded = pinned || hovered;
+  const expanded = (pinned && !narrow) || hovered;
   const { activeWorkspace } = useWorkspace();
 
   const currentUser: AppUser = useMemo(

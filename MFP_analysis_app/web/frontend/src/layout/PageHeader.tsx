@@ -17,7 +17,7 @@ export function PageHeaderContent({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex h-12 flex-wrap items-center justify-between gap-3 px-4">
+    <div className="flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-1.5">
       <div className="min-w-0 flex items-baseline gap-2.5">
         <h1 className="truncate text-[14px] font-semibold tracking-tight text-ink-900">{title}</h1>
         {subtitle !== undefined && (

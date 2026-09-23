@@ -299,6 +299,7 @@ export function FigureBuilderView() {
             <div className="mt-1 flex gap-2">
               <select
                 className="input flex-1 text-xs"
+                aria-label="Tagged experiment"
                 value={selectedTag}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -341,6 +342,7 @@ export function FigureBuilderView() {
             </label>
             <select
               className="input mt-1 w-full text-xs"
+              aria-label="Target publication standard"
               value={presetKey}
               onChange={(e) => setPresetKey(e.target.value as JournalKey)}
             >
@@ -362,6 +364,7 @@ export function FigureBuilderView() {
                 <input
                   type="number"
                   className="input text-xs"
+                  aria-label="Width (mm)"
                   value={customWidth}
                   onChange={(e) => setCustomWidth(Number(e.target.value))}
                 />
@@ -371,6 +374,7 @@ export function FigureBuilderView() {
                 <input
                   type="number"
                   className="input text-xs"
+                  aria-label="Height (mm)"
                   value={customHeight}
                   onChange={(e) => setCustomHeight(Number(e.target.value))}
                 />
@@ -382,6 +386,7 @@ export function FigureBuilderView() {
                   min={1}
                   max={4}
                   className="input text-xs"
+                  aria-label="Columns"
                   value={customCols}
                   onChange={(e) => setCustomCols(Number(e.target.value))}
                 />
@@ -481,7 +486,7 @@ export function FigureBuilderView() {
                     <button
                       type="button"
                       onClick={() => handleRemovePanel(idx)}
-                      className="opacity-0 group-hover:opacity-100 text-ink-400 hover:text-red-500 text-xs transition-opacity"
+                      className="inline-flex min-h-6 min-w-6 items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-ink-400 hover:text-red-500 text-xs transition-opacity"
                       title="Remove panel"
                     >
                       ✕
@@ -534,6 +539,7 @@ export function FigureBuilderView() {
                   <input
                     type="text"
                     className="input font-bold text-center uppercase"
+                    aria-label={`Panel ${idx + 1} label`}
                     value={panel.panel_label}
                     maxLength={2}
                     onChange={(e) => handleUpdatePanel(idx, { panel_label: e.target.value })}
@@ -544,6 +550,7 @@ export function FigureBuilderView() {
                   <input
                     type="text"
                     className="input w-full font-medium"
+                    aria-label={`Panel ${idx + 1} title`}
                     value={panel.title || ""}
                     onChange={(e) => handleUpdatePanel(idx, { title: e.target.value })}
                   />
@@ -552,6 +559,7 @@ export function FigureBuilderView() {
                   <label className="text-[10px] text-ink-400 font-medium">Instrument</label>
                   <select
                     className="input w-full text-xs"
+                    aria-label={`Panel ${idx + 1} instrument`}
                     value={panel.source_module || "data_studio"}
                     onChange={(e) => handleUpdatePanel(idx, { source_module: e.target.value })}
                   >
@@ -564,7 +572,8 @@ export function FigureBuilderView() {
                 <button
                   type="button"
                   onClick={() => handleRemovePanel(idx)}
-                  className="mt-3 rounded p-1.5 text-ink-400 hover:bg-ink-100 hover:text-red-500"
+                  aria-label={`Remove panel ${idx + 1}`}
+                  className="mt-3 inline-flex min-h-6 min-w-6 items-center justify-center rounded p-1.5 text-ink-400 hover:bg-ink-100 hover:text-red-500"
                 >
                   ✕
                 </button>
