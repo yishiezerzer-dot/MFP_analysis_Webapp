@@ -27,3 +27,18 @@ def test_ffill_fills_forward():
     out = apply_transform_steps(df, [{"type": "fillna", "columns": ["y"], "value": "ffill"}])
     assert out["y"].tolist() == [1.0, 1.0, 3.0]
     assert out.attrs["transform_warnings"] == []
+
+
+def test_load_options_survive_restart(tmp_path):
+    from app.services.data_studio_service import registry
+
+    path = tmp_path / "table.csv"
+    path.write_text("instrument;run 7\nt;y\n0;1,5\n1;2,5\n", encoding="utf-8")
+    s = registry.add_from_path(path, workspace_id="ds_ws", display_name="table.csv")
+    s.set_load_options(sheet_name=None, header_row=1, decimal_comma=True)
+
+    with registry._lock:
+        registry._sessions.pop(s.session_id)
+    restored = registry.get(s.session_id)
+    assert (restored.header_row, restored.decimal_comma) == (1, True)
+    assert restored.raw()["y"].tolist() == [1.5, 2.5]

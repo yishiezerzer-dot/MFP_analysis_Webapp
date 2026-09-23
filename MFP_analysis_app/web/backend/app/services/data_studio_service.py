@@ -78,6 +78,19 @@ class DataStudioSession:
                 self.decimal_comma = bool(decimal_comma)
                 self._raw = None
                 self._transformed = None
+        if changed:
+            from ..db import get_session_record, save_session_record
+            rec = get_session_record(self.session_id)
+            if rec:
+                extra = rec.get("extra") or {}
+                extra["load_options"] = {
+                    "sheet_name": self.sheet_name,
+                    "header_row": self.header_row,
+                    "decimal_comma": self.decimal_comma,
+                }
+                save_session_record(
+                    self.session_id, self.workspace_id, "data_studio", self.display_name, str(self.path), extra=extra
+                )
 
     def apply_transforms(self, steps: List[Dict[str, Any]]) -> pd.DataFrame:
         with self._lock:
@@ -188,6 +201,13 @@ class DataStudioRegistry:
         except Exception as exc:  # noqa: BLE001 - any parser failure is reported, not raised
             record_restore_error(rec, f"Could not load {p.name}: {exc}", exc)
             return None
+        opts = (rec.get("extra") or {}).get("load_options")
+        if opts:
+            restored.set_load_options(
+                sheet_name=opts.get("sheet_name"),
+                header_row=int(opts.get("header_row") or 0),
+                decimal_comma=bool(opts.get("decimal_comma")),
+            )
         clear_restore_error(rec["session_id"])
         return restored
 
