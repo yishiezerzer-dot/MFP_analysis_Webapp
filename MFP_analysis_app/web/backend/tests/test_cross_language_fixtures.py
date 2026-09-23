@@ -148,3 +148,42 @@ def test_polymer_matching_cross_language(case: dict) -> None:
     parts = [expected["composition"], expected.get("variant", ""), expected["ion"]]
     wanted = " ".join(part for part in parts if part)
     assert wanted in [label for _err, label, _mz, _int in best[0].values()], case["name"]
+
+
+@pytest.mark.parametrize(
+    "case",
+    _load("polymer_charges.json") + _load("polymer_variants.json"),
+    ids=lambda c: c["name"],
+)
+def test_automation_expected_products_match_fixtures(case: dict) -> None:
+    from app.automation.actions.lcms_polymer import compute_expected_product_hits
+
+    inp = case["input"]
+    hits = compute_expected_product_hits(
+        np.array([inp["peak_mz"]]),
+        np.array([1000.0]),
+        polarity=inp["polarity"],
+        settings={
+            "monomers_text": f"{inp['monomer_name']}, {inp['monomer_mass']}",
+            "charges": inp["charges"],
+            "bond_delta": inp["bond_delta"],
+            "adduct_mass": inp["adduct_mass"],
+            "adduct_na": inp["enable_na"],
+            "adduct_cl": inp.get("enable_cl", False),
+            "adduct_formate": inp.get("enable_formate", False),
+            "oxid": inp.get("oxid", False),
+            "decarb": inp.get("decarb", False),
+            "h2o_loss": inp.get("h2o_loss", False),
+            "tol_value": inp["tol_da"],
+            "tol_unit": "Da",
+        },
+        max_dp=inp["max_dp"],
+        resolution_mode="normal",
+        low_resolution_tolerance=0.2,
+    )
+    matched = [(h.composition, h.variant) for h in hits if h.observed_mz is not None]
+    expected = case["expected"]
+    if not expected["matched"]:
+        assert matched == [], case["name"]
+        return
+    assert (expected["composition"], expected.get("variant", "")) in matched, case["name"]

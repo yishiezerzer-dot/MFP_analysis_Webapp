@@ -194,7 +194,7 @@ def _is_proton_like(delta_mass: float) -> bool:
     return abs(abs(float(delta_mass)) - PROTON_MASS) <= 0.01
 
 
-def _charge_states(
+def charge_states(
     adduct_mass: float,
     explicit_charge: Optional[int],
     charges: Sequence[int],
@@ -209,6 +209,17 @@ def _charge_states(
     if _is_proton_like(adduct_mass):
         return [(int(z), float(z) * float(adduct_mass)) for z in charges]
     return [(1, float(adduct_mass))]
+
+
+def setting_float(settings: Dict[str, Any], key: str, default: float) -> float:
+    """Numeric UI setting; falls back only when missing or non-numeric (0 is a valid value)."""
+    value = settings.get(key)
+    if value is None or value == "":
+        return float(default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
 
 
 def build_default_adduct_deltas(
@@ -573,7 +584,7 @@ def compute_polymer_best_by_peak_sorted(
     neutral_min_allowed = None
     neutral_max_allowed = None
     for _lbl, dm, ch in poly_adducts:
-        for z, total_adduct in _charge_states(dm, ch, charges_use):
+        for z, total_adduct in charge_states(dm, ch, charges_use):
             lo = float(mz_lo) * float(z) - (total_adduct + var_max)
             hi = float(mz_hi) * float(z) - (total_adduct + var_min)
             neutral_min_allowed = lo if neutral_min_allowed is None else min(neutral_min_allowed, lo)
@@ -725,7 +736,7 @@ def compute_polymer_best_by_peak_sorted(
             tag_txt = ("" if not v.tag else f" {str(v.tag)}")
 
             for adduct_lbl, adduct_mass_val, explicit_ch in poly_adducts:
-                for z, total_adduct in _charge_states(adduct_mass_val, explicit_ch, charges_use):
+                for z, total_adduct in charge_states(adduct_mass_val, explicit_ch, charges_use):
                     mz_pred = (float(neutral_var) + float(total_adduct)) / float(z)
                     tol_da, tol_ppm = _tol_to_da(mz_pred=float(mz_pred), tol_value=float(tol_value), tol_unit=str(tol_unit))
 
@@ -775,7 +786,7 @@ def compute_polymer_best_by_peak_sorted(
         if enable_cluster:
             neutral_dimer = 2.0 * float(neutral_poly)
             for adduct_lbl, adduct_mass_val in cluster_adducts:
-                for z, total_adduct in _charge_states(adduct_mass_val, None, charges_use):
+                for z, total_adduct in charge_states(adduct_mass_val, None, charges_use):
                     mz_pred = (float(neutral_dimer) + float(total_adduct)) / float(z)
                     tol_da, tol_ppm = _tol_to_da(mz_pred=float(mz_pred), tol_value=float(tol_value), tol_unit=str(tol_unit))
                     match = find_best_peak_match(
@@ -1034,7 +1045,7 @@ def explain_best_match_for_peak_sorted(
             kind = _kind_for_variant(str(v.tag))
             comp = f"{base_label}{('' if not v.tag else ' ' + str(v.tag))}".strip()
             for adduct_lbl, adduct_mass_val, explicit_ch in poly_adducts:
-                for z, total_adduct in _charge_states(adduct_mass_val, explicit_ch, charges_use):
+                for z, total_adduct in charge_states(adduct_mass_val, explicit_ch, charges_use):
                     mz_pred = (float(neutral_var) + float(total_adduct)) / float(z)
                     consider_candidate(
                         kind=str(kind),
@@ -1048,7 +1059,7 @@ def explain_best_match_for_peak_sorted(
         if enable_cluster:
             neutral_dimer = 2.0 * float(neutral_poly)
             for adduct_lbl, adduct_mass_val in cluster_adducts:
-                for z, total_adduct in _charge_states(adduct_mass_val, None, charges_use):
+                for z, total_adduct in charge_states(adduct_mass_val, None, charges_use):
                     # Find dimer peak intensity first; the monomer must be at least as intense.
                     mz_pred = (float(neutral_dimer) + float(total_adduct)) / float(z)
                     tol_da_dim, tol_ppm_dim = _tol_to_da(

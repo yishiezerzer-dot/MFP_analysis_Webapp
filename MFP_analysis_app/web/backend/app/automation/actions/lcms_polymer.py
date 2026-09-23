@@ -51,7 +51,7 @@ def _parse_charges(text: str) -> List[int]:
 
 
 def _tol_da(mz: float, settings: Dict[str, Any], resolution_mode: str, low_resolution_tolerance: float) -> float:
-    value = max(0.0, float(settings.get("tol_value", 0.02) or 0.02))
+    value = max(0.0, poly_match.setting_float(settings, "tol_value", 0.02))
     unit = str(settings.get("tol_unit") or "Da").lower()
     configured = abs(float(mz)) * value / 1e6 if unit == "ppm" else value
     if resolution_mode == "low":
@@ -65,10 +65,11 @@ def _ion_label(core: str, adduct_label: str, adduct_mass: float, charge: int, po
     label = str(adduct_label or "")
     if label:
         return f"[{core}{label}]{suffix}"
+    n_h = "H" if charge <= 1 else f"{charge}H"
     if abs(float(adduct_mass) - poly_match.PROTON_MASS) <= 0.002:
-        proton = "+H"
+        proton = f"+{n_h}"
     elif abs(float(adduct_mass) + poly_match.PROTON_MASS) <= 0.002:
-        proton = "-H"
+        proton = f"-{n_h}"
     else:
         proton = f"{float(adduct_mass):+.4f}"
     return f"[{core}{proton}]{suffix}"
@@ -111,8 +112,8 @@ def compute_expected_product_hits(
     charges = _parse_charges(str(settings.get("charges") or "1"))
     dp_max = max(1, min(200, int(max_dp)))
 
-    base_adduct = float(settings.get("adduct_mass", poly_match.PROTON_MASS) or poly_match.PROTON_MASS)
-    cluster_adduct = float(settings.get("cluster_adduct_mass", base_adduct) or base_adduct)
+    base_adduct = poly_match.setting_float(settings, "adduct_mass", poly_match.PROTON_MASS)
+    cluster_adduct = poly_match.setting_float(settings, "cluster_adduct_mass", base_adduct)
     adducts = poly_match.build_default_adduct_deltas(
         polarity=polarity,
         base_adduct_mass=base_adduct,
@@ -174,12 +175,16 @@ def compute_expected_product_hits(
             mass += int(count) * float(masses[index])
             parts.append(f"{int(count)}-{names[index]}")
         composition = " + ".join(parts)
-        neutral_base = mass + (dp - 1) * float(settings.get("bond_delta", 0.0) or 0.0) + float(settings.get("extra_delta", 0.0) or 0.0)
+        neutral_base = (
+            mass
+            + (dp - 1) * poly_match.setting_float(settings, "bond_delta", 0.0)
+            + poly_match.setting_float(settings, "extra_delta", 0.0)
+        )
         for variant in variants:
             neutral_mass = neutral_base + float(variant.mass_delta)
-            for charge in charges:
-                for adduct_label, adduct_mass in adducts:
-                    expected_mz = (neutral_mass + float(adduct_mass)) / float(charge)
+            for adduct_label, adduct_mass in adducts:
+                for charge, total_adduct in poly_match.charge_states(adduct_mass, None, charges):
+                    expected_mz = (neutral_mass + float(total_adduct)) / float(charge)
                     add_hit(
                         composition,
                         neutral_mass,
@@ -188,9 +193,9 @@ def compute_expected_product_hits(
                         expected_mz,
                     )
         if settings.get("cluster"):
-            for charge in charges:
-                for adduct_label, adduct_mass in cluster_adducts:
-                    expected_mz = (2 * neutral_base + float(adduct_mass)) / float(charge)
+            for adduct_label, adduct_mass in cluster_adducts:
+                for charge, total_adduct in poly_match.charge_states(adduct_mass, None, charges):
+                    expected_mz = (2 * neutral_base + float(total_adduct)) / float(charge)
                     tolerance_da = _tol_da(expected_mz, settings, resolution_mode, low_resolution_tolerance)
                     dimer_match = _best_match(mz_s, int_s, expected_mz, tolerance_da)
                     if dimer_match is None:
