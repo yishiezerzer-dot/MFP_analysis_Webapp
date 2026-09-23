@@ -878,8 +878,9 @@ export const api = {
   },
 
   ftir: {
-    upload: (file: File, yMode: FTIRYMode = "transmittance") =>
-      postFileUpload("/api/ftir/sessions", file, { y_mode: yMode }).then((r) =>
+    // Without yMode the backend detects absorbance/transmittance from the file.
+    upload: (file: File, yMode?: FTIRYMode) =>
+      postFileUpload("/api/ftir/sessions", file, yMode ? { y_mode: yMode } : {}).then((r) =>
         handle<FTIRSessionSummary>(r),
       ),
     list: () => apiFetch("/api/ftir/sessions").then((r) => handle<FTIRSessionSummary[]>(r)),

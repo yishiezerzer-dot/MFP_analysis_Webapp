@@ -57,7 +57,7 @@ interface PeakPickOptions {
 }
 
 const DEFAULT_PRE: FTIRPreprocessOptions = {
-  mode: "transmittance",
+  mode: "absorbance",
   smoothing_window: 0,
   poly_order: 2,
   baseline: "airpls",
@@ -70,10 +70,10 @@ const DEFAULT_PRE: FTIRPreprocessOptions = {
 };
 
 const FTIR_PRESETS: Record<string, Partial<FTIRPreprocessOptions>> = {
-  "KBr disc": { mode: "transmittance", smoothing_window: 5, poly_order: 2, baseline: "asls", normalize: "max", baseline_lambda: 100000, baseline_p: 0.01, mask_atmospheric: true },
-  "ATR sample": { mode: "absorbance", smoothing_window: 5, poly_order: 2, baseline: "rubberband", normalize: "vector", atr_correction: true, atr_n_crystal: 1.5 },
-  "Polymer thin film": { mode: "absorbance", smoothing_window: 5, poly_order: 2, baseline: "airpls", normalize: "snv", mask_atmospheric: true },
-  "Raw film": { mode: "absorbance", smoothing_window: 0, poly_order: 2, baseline: "none", normalize: "none" },
+  "KBr disc": { smoothing_window: 5, poly_order: 2, baseline: "asls", normalize: "max", baseline_lambda: 100000, baseline_p: 0.01, mask_atmospheric: true },
+  "ATR sample": { smoothing_window: 5, poly_order: 2, baseline: "rubberband", normalize: "vector", atr_correction: true, atr_n_crystal: 1.5 },
+  "Polymer thin film": { smoothing_window: 5, poly_order: 2, baseline: "airpls", normalize: "snv", mask_atmospheric: true },
+  "Raw film": { smoothing_window: 0, poly_order: 2, baseline: "none", normalize: "none" },
 };
 
 const DEFAULT_PEAK: PeakPickOptions = {
@@ -553,6 +553,15 @@ export function FTIRView() {
     [sessions, activeSid],
   );
 
+  // The y-mode is a property of the file (detected on upload); apply it once when a session
+  // becomes active, leaving the user free to override it afterwards.
+  const modeSyncedForSidRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active || modeSyncedForSidRef.current === active.session_id) return;
+    modeSyncedForSidRef.current = active.session_id;
+    if (active.y_mode && active.y_mode !== pre.mode) setPre({ ...pre, mode: active.y_mode });
+  }, [active, pre, setPre]);
+
   useEffect(() => {
     let cancelled = false;
     api.ftir
@@ -723,7 +732,7 @@ export function FTIRView() {
     try {
       const uploaded: FTIRSessionSummary[] = [];
       for (const file of files) {
-        const s = await api.ftir.upload(file, pre.mode);
+        const s = await api.ftir.upload(file);
         uploaded.push(s);
       }
       if (uploaded.length > 0) {
@@ -1092,7 +1101,8 @@ export function FTIRView() {
       "##DATA TYPE=INFRARED SPECTRUM",
       "##ORIGIN=MFP Analysis App",
       "##XUNITS=1/CM",
-      `##YUNITS=${pre.mode === "absorbance" ? "ABSORBANCE" : "TRANSMITTANCE"}`,
+      // Processed spectra are always absorbance (transmittance input is converted server-side).
+      "##YUNITS=ABSORBANCE",
       `##FIRSTX=${spectrum.wn[0] ?? ""}`,
       `##LASTX=${spectrum.wn[spectrum.wn.length - 1] ?? ""}`,
       `##NPOINTS=${spectrum.wn.length}`,
@@ -3005,7 +3015,7 @@ function SpectrumChart(props: {
         titlefont: { size: props.graphSettings.axisTitleSize },
         tickfont: { size: props.graphSettings.axisTickSize },
         title: {
-          text: mode === "absorbance" ? "Absorbance" : "Transmittance",
+          text: mode === "absorbance" ? "Absorbance" : "Absorbance (converted from transmittance)",
           font: { size: axisTitleSize },
           standoff: axisTitleStandoff,
         },

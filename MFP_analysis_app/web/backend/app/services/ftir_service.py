@@ -24,6 +24,7 @@ from lab_gui.ftir_analysis import (
     atmospheric_mask_regions,
     classify_amide_subband,
     compute_second_derivative,
+    detect_y_mode,
     mask_atmospheric_regions,
     pick_peaks,
     pick_peaks_second_derivative,
@@ -59,7 +60,7 @@ class FTIRRegistry:
         *,
         workspace_id: str = "general",
         display_name: Optional[str] = None,
-        y_mode: str = "absorbance",
+        y_mode: Optional[str] = None,
     ) -> FTIRSession:
         try:
             x, y, meta = _parse_ftir_xy_numpy(str(path))
@@ -73,6 +74,8 @@ class FTIRRegistry:
         order = np.argsort(x)
         x = np.asarray(x[order], dtype=float)
         y = np.asarray(y[order], dtype=float)
+        if not y_mode:
+            y_mode, _source = detect_y_mode(meta or {}, y)
 
         session = FTIRSession(
             session_id=uuid.uuid4().hex,

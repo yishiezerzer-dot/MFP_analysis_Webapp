@@ -115,6 +115,12 @@ export const ftirHelpModule: HelpModule = {
             baseline algorithms (ASLS, airPLS, rubberband, etc.), normalization (max, vector, SNV), atmospheric masking,
             and ATR correction with crystal index. Built-in presets (KBr disc, ATR sample, …) fill sensible defaults.
           </DocP>
+          <DocP>
+            Whether a file is absorbance or transmittance is detected on upload (from its y-unit metadata, otherwise
+            from the value range) and can be changed in the Mode selector. Transmittance (% or fraction) is converted to
+            absorbance, A = −log₁₀T, before any other step, so baselines, peak heights, areas and fits are always in
+            absorbance units.
+          </DocP>
           <DocH4>Apply</DocH4>
           <DocP>
             Reprocess sends current options to the backend and replaces the displayed spectrum; watch the busy state if

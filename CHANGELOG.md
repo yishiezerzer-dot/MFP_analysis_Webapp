@@ -15,10 +15,12 @@ Re-check analyses made before these fixes if they relied on the items below.
 - **Plate Reader MIC 4PL fit** (plan 1.6). With the default auto tick labels (1024, 512, …, 0) the curve was fitted to those placeholder numbers, so the reported IC₅₀ was in meaningless units (e.g. 32.1 for a true 2.0 µg/mL), and with auto labels off the column headers were used. A fit is now only made from concentrations typed into *Tick labels*; bars and curve share a log₂ concentration axis; IC₅₀ is shown with its standard error and flagged when outside the tested range. **Any IC₅₀ reported before this change should be recomputed.**
 - **Plate Reader blank-subtraction error bars** (plan 1.6). Error bars now add the standard error of the blank mean (blank SD/√n) instead of the blank SD, so they are slightly smaller than before.
 - **Plate Reader concentrations are stored per plate** (plan 1.6). Previously the tick labels typed for one plate were silently reused for the next.
+- **FTIR transmittance spectra** (plan 1.7). Transmittance data were baseline-corrected, normalised and integrated as-is, but every baseline method estimates a lower envelope, which for %T runs through the absorption bands and inverts or distorts intensities (e.g. a 0.8 A band became 0 or −46 after correction). Transmittance is now converted to absorbance (A = −log₁₀T) before any processing, so displayed y-values, peak heights, integrated areas and fit components are in absorbance. The default mode was *transmittance* with an airPLS baseline, so **FTIR intensities, areas and amide-I percentages from before this change may be wrong** unless the mode matched the data and no baseline was used. The y-mode is now detected per file on upload.
 
 ### Fixed
 
 - LCMS single-scan deconvolution (no RT range) always failed with a server error; it now works (plan 1.5).
+- FTIR import of plain comma- or semicolon-separated two-column files (without an `XYDATA` marker) failed with "File must contain at least two numeric columns"; they now load (plan 1.7). Semicolon files with decimal commas are still not supported.
 
 ### Removed
 

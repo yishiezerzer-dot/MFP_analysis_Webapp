@@ -144,13 +144,18 @@ async def create_session(
     file: UploadFile | None = File(None),
     blob_url: str | None = Form(None),
     blob_filename: str | None = Form(None),
-    y_mode: YMode = Form("absorbance"),
+    y_mode: Literal["auto", "absorbance", "transmittance"] = Form("auto"),
     x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
     upload_dir = get_upload_dir("ftir")
     dest, name = await stream_upload_to_file(file, blob_url, blob_filename, upload_dir)
     try:
-        state = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name, y_mode=y_mode)
+        state = registry.add_from_path(
+            dest,
+            workspace_id=x_workspace_id,
+            display_name=name,
+            y_mode=None if y_mode == "auto" else y_mode,
+        )
     except FTIRLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
@@ -163,7 +168,7 @@ async def create_session(
                 "blob_url": blob_url,
                 "filename": name,
                 "display_name": state.display_name,
-                "y_mode": y_mode,
+                "y_mode": state.y_mode,
             },
         )
     return session_summary(state)
@@ -238,7 +243,7 @@ async def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
             y_proc,
             smoothing_window=max(5, body.smoothing_window or 15),
             poly_order=max(2, body.poly_order or 3),
-            mode=body.mode,
+            mode="absorbance",
         )
         _xd, d2y_d = decimate(x, d2y, max_points=body.max_points)
         _xd, neg_d2y_d = decimate(x, neg_d2y, max_points=body.max_points)
@@ -273,7 +278,7 @@ async def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
         picked = pick_peaks_second_derivative(
             x_pick,
             y_pick,
-            mode=body.mode,
+            mode="absorbance",
             min_distance_cm1=float(body.min_distance_cm1),
             top_n=int(body.top_n or 0),
             smoothing_window=body.smoothing_window or 9,
@@ -283,7 +288,7 @@ async def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
         picked = pick_peaks(
             x_pick,
             y_pick,
-            mode=body.mode,
+            mode="absorbance",
             min_prominence=float(body.min_prominence),
             min_height=(None if body.min_height is None else float(body.min_height)),
             min_distance_cm1=float(body.min_distance_cm1),
