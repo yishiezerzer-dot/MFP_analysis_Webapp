@@ -65,7 +65,6 @@ class LCMSSessionState:
     _reader_lock: threading.Lock
     workspace_id: str = "general"
     uv: Optional[UVSessionState] = None
-    _scan_cache: Dict[str, Tuple[Dict[str, Any], np.ndarray, np.ndarray]] = field(default_factory=dict)
     # One open reader per session (use only while holding _reader_lock). Opening re-indexes the
     # whole file, which cost ~1 s per spectrum click on a 140 MB file when done per request.
     _reader: Optional[Any] = None
@@ -383,12 +382,9 @@ def fetch_spectrum_at_rt(
     i = int(np.argmin(np.abs(rts - float(target_rt_min))))
     chosen = candidates[i]
 
-    cache_key = f"{chosen.spectrum_id}:{polarity}"
+    # No per-session spectrum cache: with the persistent reader a spectrum is ~10 ms to decode,
+    # and caching decoded arrays grew memory without bound across sessions.
     with state._reader_lock:
-        cached = state._scan_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
         mz_vals, int_vals = _spectrum_arrays_from_reader(state.reader(), str(chosen.spectrum_id))
 
         meta = {
@@ -398,13 +394,7 @@ def fetch_spectrum_at_rt(
             "polarity": chosen.polarity,
             "n_peaks": int(mz_vals.size),
         }
-        res = (meta, mz_vals, int_vals)
-        if len(state._scan_cache) >= 120:
-            for _ in range(20):
-                if state._scan_cache:
-                    del state._scan_cache[next(iter(state._scan_cache))]
-        state._scan_cache[cache_key] = res
-        return res
+        return meta, mz_vals, int_vals
 
 
 def iter_ms1_spectra(

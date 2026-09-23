@@ -28,10 +28,7 @@ from lab_gui.ai_assistant import AIAssistant, AIAssistantResponse, SYSTEM_PROMPT
 from lab_gui.ai_ollama_client import OllamaChatClient
 from lab_gui.ai_openai_client import OpenAIChatClient
 
-from .data_studio_service import registry as ds_registry
-from .ftir_service import registry as ftir_registry
-from .lcms_service import registry as lcms_registry
-from .plate_reader_service import registry as plate_registry
+from ..db import list_session_records
 
 
 # ------------------------------ providers ------------------------------
@@ -182,48 +179,32 @@ def _guess_active_module(snap: Dict[str, Any]) -> str:
     return "General"
 
 
-def _snapshot_lcms() -> Dict[str, Any]:
-    sessions: List[Dict[str, Any]] = []
-    for s in lcms_registry.list():
-        sessions.append({"session_id": s.session_id, "display_name": s.display_name})
-    if not sessions:
-        summary = "LCMS module is available; no mzML sessions loaded."
-    else:
-        summary = f"LCMS has {len(sessions)} session(s) loaded."
+def _snapshot(module: str, loaded: str, empty: str) -> Dict[str, Any]:
+    # Session records only: listing names must not parse (restore) every uploaded file.
+    sessions = [
+        {"session_id": rec["session_id"], "display_name": rec["display_name"]}
+        for rec in list_session_records(module=module)
+    ]
+    summary = loaded.format(n=len(sessions)) if sessions else empty
     return {"sessions": sessions, "summary": summary}
+
+
+def _snapshot_lcms() -> Dict[str, Any]:
+    return _snapshot("lcms", "LCMS has {n} session(s) loaded.", "LCMS module is available; no mzML sessions loaded.")
 
 
 def _snapshot_ftir() -> Dict[str, Any]:
-    sessions: List[Dict[str, Any]] = []
-    for s in ftir_registry.list():
-        sessions.append({"session_id": s.session_id, "display_name": s.display_name})
-    if not sessions:
-        summary = "FTIR module is available; no spectra loaded."
-    else:
-        summary = f"FTIR has {len(sessions)} spectrum session(s) loaded."
-    return {"sessions": sessions, "summary": summary}
+    return _snapshot("ftir", "FTIR has {n} spectrum session(s) loaded.", "FTIR module is available; no spectra loaded.")
 
 
 def _snapshot_plate() -> Dict[str, Any]:
-    sessions: List[Dict[str, Any]] = []
-    for s in plate_registry.list():
-        sessions.append({"session_id": s.session_id, "display_name": s.display_name})
-    if not sessions:
-        summary = "Plate Reader module is available; no plates loaded."
-    else:
-        summary = f"Plate Reader has {len(sessions)} plate session(s) loaded."
-    return {"sessions": sessions, "summary": summary}
+    return _snapshot(
+        "plate_reader", "Plate Reader has {n} plate session(s) loaded.", "Plate Reader module is available; no plates loaded."
+    )
 
 
 def _snapshot_ds() -> Dict[str, Any]:
-    sessions: List[Dict[str, Any]] = []
-    for s in ds_registry.list():
-        sessions.append({"session_id": s.session_id, "display_name": s.display_name})
-    if not sessions:
-        summary = "Data Studio is available; no tables loaded."
-    else:
-        summary = f"Data Studio has {len(sessions)} table session(s) loaded."
-    return {"sessions": sessions, "summary": summary}
+    return _snapshot("data_studio", "Data Studio has {n} table session(s) loaded.", "Data Studio is available; no tables loaded.")
 
 
 # ------------------------------ chat ------------------------------
