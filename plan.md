@@ -250,15 +250,22 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 
 ---
 
-## Phase 5 — Reproducibility, then rebuild the SI package (~4–5 days)
+## ~~Phase 5 — Reproducibility, then rebuild the SI package (~4–5 days)~~ ✅ DONE 2026-09-23
 
-### 5.1 Provenance record per result
+> **Done:** 257 backend tests pass (also in the locked Python 3.12 venv) and 164 frontend tests pass.
+>
+> - **5.1:** new `analysis_results` table and `app/provenance.py`. Recorded: FTIR peaks, fits and integrations; MIC/4PL; LCMS deconvolution; exported LCMS feature tables. Each record has its settings, the input file's SHA-256 and the app version (`0.1.0+<git sha>`, from Railway's `RAILWAY_GIT_COMMIT_SHA` or `MFP_GIT_SHA`). Records are listed at `GET /api/experiments/results`.
+> - **Scope change in 5.1:** exported CSV/PNG files don't get a provenance header, because extra lines break spreadsheets. The SI package's `manifest.json` carries the provenance instead. EIC peak integrations happen in the browser, so they're recorded when the feature table is exported.
+> - **5.2:** tables come only from recorded results, and tests check every exported number against the app's own responses. The methods text is generated from the stored settings. `manifest.json` lists every input file's SHA-256 and each result's settings; raw input files are optional; the buttons are back. The "Vector PDF" label is now "PDF" (true vector panels were not attempted).
+
+
+### ~~5.1 Provenance record per result~~
 - New table `analysis_results(id, session_id, module, kind, params_json, result_json, input_sha256, app_version, created_at)`.
 - Write a row whenever the user runs MIC, FTIR peaks/fit/integrate, LCMS EIC integration, deconvolution or feature table.
 - Every CSV/JSON/PNG export includes a small header or sidecar containing params, input hash and app version.
 - `app_version` from the git SHA injected at Docker build (`ARG GIT_SHA`).
 
-### 5.2 Rebuild the SI package (C1, real fix)
+### ~~5.2 Rebuild the SI package (C1, real fix)~~
 - Tables are built **only** from `analysis_results` rows (no placeholders; an empty section says "no stored results").
 - The methods text is generated from the stored `params_json` (actual baseline method and λ, tolerances, fit model, n replicates); no claims about fit quality beyond the stored R² values.
 - Optionally include the raw input files (the user chooses) and a `manifest.json` with hashes.
@@ -308,7 +315,7 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 | 3 | ~~2 Reliability~~ ✅ | 2–3 d |
 | 4 | ~~3 Hardening without auth~~ ✅ | 1–1.5 d |
 | 5 | ~~4 Performance~~ ✅ | 2–3 d |
-| 6 | 5 Provenance + real SI package | 4–5 d |
+| 6 | ~~5 Provenance + real SI package~~ ✅ | 4–5 d |
 | 7 | 6 UX / a11y / refactor / ops | ongoing |
 
 ## Still to validate against reference data (not code changes)
