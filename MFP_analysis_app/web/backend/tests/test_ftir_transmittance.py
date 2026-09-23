@@ -86,3 +86,23 @@ def test_parser_reads_common_delimited_exports(tmp_path, content):
     x, y, _meta = _parse_ftir_xy_numpy(str(path))
     assert x.size == 20
     assert x[0] == pytest.approx(600.0) and y[0] == pytest.approx(0.5)
+
+
+def test_metadata_scan_does_not_store_data_rows(tmp_path):
+    from lab_gui.ftir_io import _parse_ftir_xy_numpy
+
+    path = tmp_path / "plain.csv"
+    path.write_text("\n".join(f"{600 + i},{0.5}" for i in range(3000)), encoding="utf-8")
+    _x, _y, meta = _parse_ftir_xy_numpy(str(path))
+    assert len(meta) == 0
+
+
+def test_metadata_header_before_xydata_is_kept(tmp_path):
+    from lab_gui.ftir_io import _parse_ftir_xy_numpy
+
+    rows = "\n".join(f"{600 + i},{0.5}" for i in range(50))
+    path = tmp_path / "with_meta.csv"
+    path.write_text(f"TITLE,Sample A\nYUNITS,%T\nXYDATA\n{rows}\n", encoding="utf-8")
+    x, _y, meta = _parse_ftir_xy_numpy(str(path))
+    assert meta == {"TITLE": "Sample A", "YUNITS": "%T"}
+    assert x.size == 50

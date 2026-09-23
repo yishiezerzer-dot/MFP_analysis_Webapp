@@ -72,7 +72,9 @@ def _parse_ftir_xy_only(path_str: str) -> Tuple[List[float], List[float], Dict[s
                         k, v = line.split(",", 1)
                         k = str(k).strip().upper()
                         v = str(v).strip()
-                        if k:
+                        # Skip data rows (numeric first field) so plain CSVs don't turn into
+                        # thousands of "metadata" entries.
+                        if k and len(meta) < 100 and _try_parse_float_pair(line) is None:
                             meta[k] = v
                     except Exception:
                         pass
@@ -132,7 +134,14 @@ def _parse_ftir_xy_numpy(path_str: str) -> Tuple[np.ndarray, np.ndarray, Dict[st
                         k, v = s.split(",", 1)
                         k = str(k).strip().upper()
                         v = str(v).strip()
-                        if k:
+                        try:
+                            float(k)
+                            # Numeric first field: this is data, not a KEY,VALUE header line.
+                            # Plain CSVs have no XYDATA marker, so stop scanning here.
+                            break
+                        except ValueError:
+                            pass
+                        if k and len(meta) < 100:
                             meta[k] = v
                     except Exception:
                         pass
