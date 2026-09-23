@@ -209,27 +209,42 @@ These protect the server's own files and resources and are independent of the no
 
 ---
 
-## Phase 4 — Performance (~2–3 days)
+## ~~Phase 4 — Performance (~2–3 days)~~ ✅ DONE 2026-09-23
+
+> **Done:** 245 backend tests pass, including real-server concurrency tests and equivalence tests against a pyteomics reference. Measured on the same 140 MB mzML (2,400 scans) as the review, with another client polling `/api/health` throughout:
+>
+> | | before | after |
+> |---|---|---|
+> | Upload + parse | 4.0 s (server frozen 3.4 s) | 2.5 s (health ≤ 0.03 s) |
+> | Spectrum click | 1.6 s | 0.002–0.011 s |
+> | EIC | 3.3 s | 2.0 s first per file (builds peak table), then 0.07–0.09 s, also after a restart |
+> | Region sum, 1 min | 2.6 s | 0.1 s |
+> | Server blocked during work | yes (1.4–3.4 s) | no (≤ 0.03 s) |
+>
+> - The peak table costs about 0.8× the mzML size on disk and is removed with the session. Its intensities are float32 (≈7 significant digits).
+> - **4.5:** the unbounded per-session spectrum cache was removed (not needed at ~2 ms per spectrum), and the AI context reads database records instead of parsing files.
+> - **Not done:** evicting idle sessions. Each LCMS session used since the last restart keeps one open file handle plus small index metadata, which is fine at lab scale. Revisit if hundreds of sessions are opened between restarts.
+
 
 Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1.6 s, EIC 3.3 s, region sum 2.6 s; server fully blocked during each.
 
-### 4.1 Stop blocking the event loop (H8)
+### ~~4.1 Stop blocking the event loop (H8)~~
 - Convert CPU-bound `async def` handlers that don't `await` I/O into plain `def` (FastAPI runs them in the thread pool), or wrap the work in `run_in_threadpool`. Covers the lcms, ftir, plate_reader, data_studio and publication routers.
 - **Verify:** health check stays < 100 ms while an EIC runs (reuse the `block.py` measurement as a test or benchmark).
 
-### 4.2 Persistent reader per session
+### ~~4.2 Persistent reader per session~~
 - Keep one open `mzml.PreIndexedMzML` / `MzML` reader per session (under the existing lock), created once; close it on delete.
 - **Target:** spectrum click < 100 ms on the 140 MB file.
 
-### 4.3 Vectorise region summing
+### ~~4.3 Vectorise region summing~~
 - Replace the per-point Python loop (`lcms_service.py:459`) with `np.concatenate` + `np.bincount`.
 - **Target:** < 0.5 s for a 1-minute window.
 
-### 4.4 Fast EIC
+### ~~4.4 Fast EIC~~
 - At load, optionally build a compact centroided peak table (scan index, m/z, intensity) stored as `.npz` next to the index cache; EIC becomes a vectorised mask.
 - **Target:** EIC < 0.3 s.
 
-### 4.5 Memory caps
+### ~~4.5 Memory caps~~
 - Global LRU for scan caches (e.g. 500 MB total across sessions, env-configurable); evict idle sessions' parsed state after N minutes.
 - `/api/ai/context` should list DB records only and not restore/parse files.
 
@@ -292,7 +307,7 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 | 2 | ~~1 Scientific correctness~~ ✅ | 4–5 d |
 | 3 | ~~2 Reliability~~ ✅ | 2–3 d |
 | 4 | ~~3 Hardening without auth~~ ✅ | 1–1.5 d |
-| 5 | 4 Performance | 2–3 d |
+| 5 | ~~4 Performance~~ ✅ | 2–3 d |
 | 6 | 5 Provenance + real SI package | 4–5 d |
 | 7 | 6 UX / a11y / refactor / ops | ongoing |
 
