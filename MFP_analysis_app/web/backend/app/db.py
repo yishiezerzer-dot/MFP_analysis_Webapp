@@ -8,6 +8,7 @@ Provides storage for:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import threading
@@ -225,6 +226,7 @@ def save_session_record(
 
 
 def delete_session_record(session_id: str) -> None:
+    clear_restore_error(session_id)
     with _DB_LOCK:
         conn = get_db_connection()
         try:
@@ -351,6 +353,42 @@ def get_experiment_bundle(tag: str, workspace_id: Optional[str] = None) -> Dict[
         finally:
             conn.close()
 
+
+
+# --- Session restore failures ------------------------------------------------
+# Sessions are rebuilt from their files after a restart. When that fails (file deleted,
+# unreadable, parser error) the session used to vanish silently; failures are now logged and
+# kept here so the UI can say which sessions couldn't be loaded and why.
+
+_restore_log = logging.getLogger("mfp.restore")
+_RESTORE_ERRORS: Dict[str, Dict[str, Any]] = {}
+_RESTORE_ERRORS_LOCK = threading.Lock()
+
+
+def record_restore_error(record: Dict[str, Any], reason: str, exc: Optional[BaseException] = None) -> None:
+    _restore_log.warning(
+        "Could not restore %s session %s (%s): %s",
+        record.get("module"), record.get("session_id"), record.get("display_name"), reason,
+        exc_info=exc,
+    )
+    with _RESTORE_ERRORS_LOCK:
+        _RESTORE_ERRORS[str(record.get("session_id"))] = {
+            "session_id": record.get("session_id"),
+            "workspace_id": record.get("workspace_id"),
+            "module": record.get("module"),
+            "display_name": record.get("display_name"),
+            "reason": reason,
+        }
+
+
+def clear_restore_error(session_id: str) -> None:
+    with _RESTORE_ERRORS_LOCK:
+        _RESTORE_ERRORS.pop(str(session_id), None)
+
+
+def list_restore_errors(workspace_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    with _RESTORE_ERRORS_LOCK:
+        return [e for e in _RESTORE_ERRORS.values() if workspace_id is None or e["workspace_id"] == workspace_id]
 
 
 # --- Workspace Module State (Auto-save / Restore) -----------------------------

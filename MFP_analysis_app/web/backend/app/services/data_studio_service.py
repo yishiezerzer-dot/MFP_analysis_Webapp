@@ -169,18 +169,27 @@ class DataStudioRegistry:
         from ..db import get_session_record
         rec = get_session_record(sid)
         if rec and rec.get("module") == "data_studio":
-            p = Path(rec["file_path"])
-            if p.exists():
-                try:
-                    return self.restore_from_path(
-                        sid,
-                        p,
-                        workspace_id=rec.get("workspace_id", "general"),
-                        display_name=rec.get("display_name"),
-                    )
-                except Exception:
-                    pass
+            return self._restore_record(rec)
         return None
+
+    def _restore_record(self, rec: Dict[str, Any]) -> Optional[DataStudioSession]:
+        from ..db import clear_restore_error, record_restore_error
+        p = Path(rec["file_path"])
+        if not p.exists():
+            record_restore_error(rec, f"File not found: {p.name}")
+            return None
+        try:
+            restored = self.restore_from_path(
+                rec["session_id"],
+                p,
+                workspace_id=rec.get("workspace_id", "general"),
+                display_name=rec.get("display_name"),
+            )
+        except Exception as exc:  # noqa: BLE001 - any parser failure is reported, not raised
+            record_restore_error(rec, f"Could not load {p.name}: {exc}", exc)
+            return None
+        clear_restore_error(rec["session_id"])
+        return restored
 
     def remove(self, sid: str) -> bool:
         from ..db import delete_session_record
@@ -196,17 +205,7 @@ class DataStudioRegistry:
             with self._lock:
                 already = sid in self._sessions
             if not already:
-                p = Path(rec["file_path"])
-                if p.exists():
-                    try:
-                        self.restore_from_path(
-                            sid,
-                            p,
-                            workspace_id=rec.get("workspace_id", "general"),
-                            display_name=rec.get("display_name"),
-                        )
-                    except Exception:
-                        pass
+                self._restore_record(rec)
         with self._lock:
             if workspace_id:
                 return [s for s in self._sessions.values() if s.workspace_id == workspace_id]

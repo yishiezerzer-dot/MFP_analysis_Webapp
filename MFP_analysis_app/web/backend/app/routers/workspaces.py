@@ -12,6 +12,7 @@ from ..db import (
     create_workspace,
     get_workspace,
     get_workspace_state,
+    list_restore_errors,
     list_workspaces,
     save_workspace_state,
     touch_workspace,
@@ -74,3 +75,9 @@ def set_module_state(wid: str, module: str, body: WorkspaceStateRequest) -> Dict
     save_workspace_state(wid, module, body.state)
     touch_workspace(wid)
     return {"status": "ok", "workspace_id": wid, "module": module}
+
+
+@router.get("/{wid}/restore-errors")
+def get_restore_errors(wid: str) -> List[Dict[str, Any]]:
+    """Sessions in this workspace whose files couldn't be reloaded, with the reason."""
+    return list_restore_errors(workspace_id=wid)

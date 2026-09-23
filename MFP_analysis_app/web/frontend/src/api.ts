@@ -92,6 +92,14 @@ export function uploadFileWithProgress(
   });
 }
 
+export interface RestoreError {
+  session_id: string;
+  workspace_id: string;
+  module: string;
+  display_name: string;
+  reason: string;
+}
+
 export interface WorkspaceSummary {
   id: string;
   name: string;
@@ -656,6 +664,9 @@ export interface FTIRFitResponse {
   };
   r2: number | null;
   residual_rms: number;
+  // False when the optimiser failed: components are then only the starting guesses.
+  converged?: boolean;
+  fit_error?: string | null;
 }
 
 // --- Data Studio types ---
@@ -1128,6 +1139,8 @@ export const api = {
 
   workspaces: {
     list: () => apiFetch("/api/workspaces").then((r) => handle<WorkspaceSummary[]>(r)),
+    restoreErrors: (id: string) =>
+      apiFetch(`/api/workspaces/${id}/restore-errors`).then((r) => handle<RestoreError[]>(r)),
     get: (id: string) => apiFetch(`/api/workspaces/${id}`).then((r) => handle<WorkspaceSummary>(r)),
     create: (name: string, id?: string) =>
       apiFetch("/api/workspaces", {

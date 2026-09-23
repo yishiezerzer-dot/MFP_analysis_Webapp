@@ -246,7 +246,10 @@ def apply_transform_steps(df: pd.DataFrame, steps: List[Dict[str, Any]]) -> pd.D
                             baseline_val = float(series.iloc[0])
                         except Exception:
                             baseline_val = series.mean()
-                    out[c] = series - float(baseline_val or 0.0)
+                    if baseline_val is None or not np.isfinite(float(baseline_val)):
+                        _warn(f"baseline: no numeric baseline value for column {c}; column left unchanged")
+                        continue
+                    out[c] = series - float(baseline_val)
 
             elif stype == "log":
                 base = float(step.get("base") or 10.0)

@@ -37,3 +37,28 @@ def test_msc_normalisation_is_rejected():
     client = TestClient(app)
     resp = client.post("/api/ftir/sessions/nonexistent/spectrum", json={"normalize": "msc"})
     assert resp.status_code == 422
+
+
+def test_failed_fit_is_reported_not_returned_as_result(monkeypatch):
+    import scipy.optimize
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("Optimal parameters not found")
+
+    monkeypatch.setattr(scipy.optimize, "curve_fit", boom)
+    y = np.exp(-0.5 * ((X - 1700) / 8.0) ** 2)
+    out = fit_peak_region(_session(y), region=(1300, 2100), n_components=2, profile="gauss", preprocess=PRE)
+    assert out["converged"] is False
+    assert "Optimal parameters not found" in out["fit_error"]
+
+
+def test_successful_fit_reports_converged():
+    y = np.exp(-0.5 * ((X - 1700) / 8.0) ** 2)
+    out = fit_peak_region(_session(y), region=(1300, 2100), n_components=1, profile="gauss", preprocess=PRE)
+    assert out["converged"] is True and out["fit_error"] is None
+
+
+def test_more_components_than_detected_peaks_does_not_crash():
+    y = np.exp(-0.5 * ((X - 1700) / 8.0) ** 2)
+    out = fit_peak_region(_session(y), region=(1300, 2100), n_components=3, profile="gauss", preprocess=PRE)
+    assert len(out["components"]) == 3

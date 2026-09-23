@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -113,7 +114,8 @@ class MzMLTICIndex:
             tmp_file.write_text(json.dumps(payload), encoding="utf-8")
             tmp_file.replace(cache_file)
         except Exception:
-            pass
+            # The index still works without the cache; it just gets rebuilt on the next load.
+            logging.getLogger("mfp.lcms").warning("Could not write LCMS index cache %s", cache_file, exc_info=True)
 
     def build(self) -> None:
         """Build MS1 index, using fast disk cache if available."""

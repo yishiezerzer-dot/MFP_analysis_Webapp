@@ -27,6 +27,9 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Fixed
 
+- **FTIR peak fits that failed to converge** were shown as results: the table then contained the initial guesses (with an R²) instead of fitted values. Failed fits are now flagged with a warning (plan 2.2). Asking for more components than detected peaks crashed the fit; it now works.
+- Saved sessions whose files are missing or unreadable after a restart no longer disappear silently: a banner lists them with the reason, and the server log records the error (plan 2.2).
+- Data Studio *baseline* step with a missing first value turned the whole column empty; it now leaves the column unchanged and shows a warning (plan 2.2).
 - LCMS single-scan deconvolution (no RT range) always failed with a server error; it now works (plan 1.5).
 - Attached UV traces disappeared after every server restart (the restore call was missing an argument and the error was swallowed); they are now restored (plans 1.9 / 2.1).
 - FTIR import of plain comma- or semicolon-separated two-column files (without an `XYDATA` marker) failed with "File must contain at least two numeric columns"; they now load (plan 1.7). Semicolon files with decimal commas are still not supported.

@@ -2466,6 +2466,12 @@ function QuantToolsCard(props: {
         </div>
         {props.fitResult && (
           <div className="mt-3">
+            {props.fitResult.converged === false && (
+              <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                ⚠ The fit did not converge ({props.fitResult.fit_error}). The components below are only the starting
+                guesses, not fitted values — try fewer components, another profile or a narrower region.
+              </div>
+            )}
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-600">
               <div className="flex flex-wrap gap-2">
                 <Metric label="R²" value={props.fitResult.r2 == null ? "-" : props.fitResult.r2.toFixed(4)} />

@@ -16,6 +16,8 @@ import { BrowserBridgeProvider } from "./automation/BrowserBridge";
 import { useWorkspace } from "./context/WorkspaceContext";
 import { FileIngestionProvider } from "./context/FileIngestionContext";
 import { GlobalDropOverlay } from "./components/GlobalDropOverlay";
+import { AlertBanner } from "./components/AlertBanner";
+import { api, type RestoreError } from "./api";
 import mfpLogo from "./assets/mfp-logo.png";
 
 const CURRENT_USER: AppUser = {
@@ -339,6 +341,7 @@ function Layout() {
       <header className="shrink-0 border-b border-ink-200/70 shadow-sm" style={{ backgroundColor: "rgb(var(--surface))" }}>
         {headerNode ?? <div className="h-12" aria-hidden="true" />}
       </header>
+      <RestoreErrorsBanner />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar />
         <main className="min-w-0 flex-1 overflow-hidden" style={{ backgroundColor: "rgb(var(--canvas))" }}>
@@ -346,6 +349,44 @@ function Layout() {
         </main>
       </div>
     </div>
+  );
+}
+
+// Sessions whose files couldn't be reloaded after a server restart used to vanish silently.
+// Views restore sessions when they list them, so re-check shortly after each navigation.
+function RestoreErrorsBanner() {
+  const { activeWorkspaceId } = useWorkspace();
+  const location = useLocation();
+  const [errors, setErrors] = useState<RestoreError[]>([]);
+  const [dismissed, setDismissed] = useState<string>("");
+
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api.workspaces
+        .restoreErrors(activeWorkspaceId)
+        .then((list) => {
+          if (!cancelled) setErrors(list);
+        })
+        .catch(() => undefined);
+    }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeWorkspaceId, location.pathname]);
+
+  const key = errors.map((e) => `${e.session_id}:${e.reason}`).join("|");
+  if (errors.length === 0 || key === dismissed) return null;
+  return (
+    <AlertBanner
+      kind="warning"
+      className="m-2 shrink-0"
+      message={`${errors.length} saved session(s) could not be reloaded`}
+      detail={errors.map((e) => `${e.display_name} (${e.module}): ${e.reason}`).join(" · ")}
+      onDismiss={() => setDismissed(key)}
+    />
   );
 }
 

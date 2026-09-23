@@ -158,34 +158,44 @@ class LCMSRegistry:
         from ..db import get_session_record
         rec = get_session_record(session_id)
         if rec and rec.get("module") == "lcms":
-            p = Path(rec["file_path"])
-            if p.exists():
-                extra = rec.get("extra") or {}
-                try:
-                    state = self.restore_from_path(
-                        session_id,
-                        p,
-                        workspace_id=rec.get("workspace_id", "general"),
-                        display_name=rec.get("display_name"),
-                        rt_unit=extra.get("rt_unit", "minutes"),
-                    )
-                    uv_path_str = extra.get("uv_path")
-                    if uv_path_str:
-                        uv_p = Path(uv_path_str)
-                        if uv_p.exists():
-                            try:
-                                attach_uv_from_csv(
-                                    state,
-                                    uv_p,
-                                    filename=extra.get("uv_filename") or uv_p.name,
-                                    rt_unit=extra.get("uv_rt_unit", "auto"),
-                                )
-                            except Exception:
-                                pass
-                    return state
-                except Exception:
-                    pass
+            return self._restore_record(rec)
         return None
+
+    def _restore_record(self, rec: Dict[str, Any]) -> Optional[LCMSSessionState]:
+        from ..db import clear_restore_error, record_restore_error
+        extra = rec.get("extra") or {}
+        p = Path(rec["file_path"])
+        if not p.exists():
+            record_restore_error(rec, f"File not found: {p.name}")
+            return None
+        try:
+            state = self.restore_from_path(
+                rec["session_id"],
+                p,
+                workspace_id=rec.get("workspace_id", "general"),
+                display_name=rec.get("display_name"),
+                rt_unit=extra.get("rt_unit", "minutes"),
+            )
+        except Exception as exc:  # noqa: BLE001 - any parser failure is reported, not raised
+            record_restore_error(rec, f"Could not load {p.name}: {exc}", exc)
+            return None
+        clear_restore_error(rec["session_id"])
+
+        uv_path_str = extra.get("uv_path")
+        if uv_path_str:
+            uv_p = Path(uv_path_str)
+            try:
+                if not uv_p.exists():
+                    raise FileNotFoundError(f"File not found: {uv_p.name}")
+                attach_uv_from_csv(
+                    state,
+                    uv_p,
+                    filename=extra.get("uv_filename") or uv_p.name,
+                    rt_unit=extra.get("uv_rt_unit", "auto"),
+                )
+            except Exception as exc:  # noqa: BLE001 - session is usable without its UV trace
+                record_restore_error(rec, f"Loaded, but its UV trace could not be re-attached: {exc}", exc)
+        return state
 
     def remove(self, session_id: str) -> bool:
         from ..db import delete_session_record
@@ -201,32 +211,7 @@ class LCMSRegistry:
             with self._lock:
                 already = sid in self._sessions
             if not already:
-                p = Path(rec["file_path"])
-                if p.exists():
-                    try:
-                        restored = self.restore_from_path(
-                            sid,
-                            p,
-                            workspace_id=rec.get("workspace_id", "general"),
-                            display_name=rec.get("display_name"),
-                            rt_unit=(rec.get("extra") or {}).get("rt_unit", "minutes"),
-                        )
-                        uv_path_str = (rec.get("extra") or {}).get("uv_path")
-                        if uv_path_str:
-                            uv_p = Path(uv_path_str)
-                            if uv_p.exists():
-                                extra = rec.get("extra") or {}
-                                try:
-                                    attach_uv_from_csv(
-                                        restored,
-                                        uv_p,
-                                        filename=extra.get("uv_filename") or uv_p.name,
-                                        rt_unit=extra.get("uv_rt_unit", "auto"),
-                                    )
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
+                self._restore_record(rec)
         with self._lock:
             if workspace_id:
                 return [s for s in self._sessions.values() if s.workspace_id == workspace_id]

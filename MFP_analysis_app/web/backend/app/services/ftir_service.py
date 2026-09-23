@@ -144,20 +144,28 @@ class FTIRRegistry:
         from ..db import get_session_record
         rec = get_session_record(sid)
         if rec and rec.get("module") == "ftir":
-            p = Path(rec["file_path"])
-            if p.exists():
-                extra = rec.get("extra") or {}
-                try:
-                    return self.restore_from_path(
-                        sid,
-                        p,
-                        workspace_id=rec.get("workspace_id", "general"),
-                        display_name=rec.get("display_name"),
-                        y_mode=extra.get("y_mode", "absorbance"),
-                    )
-                except Exception:
-                    pass
+            return self._restore_record(rec)
         return None
+
+    def _restore_record(self, rec: Dict[str, Any]) -> Optional[FTIRSession]:
+        from ..db import clear_restore_error, record_restore_error
+        p = Path(rec["file_path"])
+        if not p.exists():
+            record_restore_error(rec, f"File not found: {p.name}")
+            return None
+        try:
+            restored = self.restore_from_path(
+                rec["session_id"],
+                p,
+                workspace_id=rec.get("workspace_id", "general"),
+                display_name=rec.get("display_name"),
+                y_mode=(rec.get("extra") or {}).get("y_mode", "absorbance"),
+            )
+        except Exception as exc:  # noqa: BLE001 - any parser failure is reported, not raised
+            record_restore_error(rec, f"Could not load {p.name}: {exc}", exc)
+            return None
+        clear_restore_error(rec["session_id"])
+        return restored
 
     def remove(self, sid: str) -> bool:
         from ..db import delete_session_record
@@ -173,18 +181,7 @@ class FTIRRegistry:
             with self._lock:
                 already = sid in self._sessions
             if not already:
-                p = Path(rec["file_path"])
-                if p.exists():
-                    try:
-                        self.restore_from_path(
-                            sid,
-                            p,
-                            workspace_id=rec.get("workspace_id", "general"),
-                            display_name=rec.get("display_name"),
-                            y_mode=(rec.get("extra") or {}).get("y_mode", "absorbance"),
-                        )
-                    except Exception:
-                        pass
+                self._restore_record(rec)
         with self._lock:
             if workspace_id:
                 return [s for s in self._sessions.values() if s.workspace_id == workspace_id]
@@ -420,6 +417,13 @@ def fit_peak_region(
     n_comp = max(1, min(6, int(n_components or 1)))
     prof = str(profile or "gauss").strip().lower()
     centers = _initial_component_centers(xr, positive, n_comp)
+    # The centre finder can return fewer starts than requested (e.g. one clear peak but two
+    # components); pad with evenly spaced starts so every component has parameters.
+    for extra in np.linspace(float(xr[0]), float(xr[-1]), n_comp + 2)[1:-1]:
+        if len(centers) >= n_comp:
+            break
+        centers.append(float(extra))
+    centers = sorted(centers[:n_comp])
     width0 = max(2.0, abs(hi - lo) / max(8.0, n_comp * 3.0))
     p0: List[float] = []
     bounds_lo: List[float] = []
@@ -431,6 +435,7 @@ def fit_peak_region(
         bounds_hi.extend([max(1e-9, float(np.nanmax(positive)) * 2.5), hi, abs(hi - lo)])
 
     params = p0
+    fit_error: Optional[str] = None
     try:
         from scipy.optimize import curve_fit  # type: ignore
 
@@ -443,8 +448,10 @@ def fit_peak_region(
             maxfev=20000,
         )
         params = [float(v) for v in params_arr.tolist()]
-    except Exception:
-        params = p0
+    except Exception as exc:  # noqa: BLE001 - reported to the caller instead of raised
+        # The components below then show the initial guesses; flag that instead of
+        # presenting them as a fit.
+        fit_error = str(exc) or exc.__class__.__name__
 
     raw_areas = []
     for idx in range(n_comp):
@@ -509,6 +516,8 @@ def fit_peak_region(
         },
         "r2": r2,
         "residual_rms": float(np.sqrt(np.mean(residual * residual))),
+        "converged": fit_error is None,
+        "fit_error": fit_error,
     }
 
 
