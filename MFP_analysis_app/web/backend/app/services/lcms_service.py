@@ -260,7 +260,9 @@ def _ms1_candidates(
     metas = state.index.ms1
     if polarity in ("positive", "negative"):
         filtered = [m for m in metas if m.polarity == polarity]
-        return filtered or metas
+        if not filtered:
+            raise LCMSLoadError(f"This file has no {polarity}-polarity MS1 scans.")
+        return filtered
     return metas
 
 

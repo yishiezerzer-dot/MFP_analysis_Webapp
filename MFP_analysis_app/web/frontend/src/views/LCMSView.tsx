@@ -377,6 +377,22 @@ interface LCMSProjectPersistenceEnvelope {
 }
 
 const POLYMER_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.polymerSettings.default";
+
+// Dual-polarity requests: a file may contain only one polarity, in which case the backend
+// rejects the other request; show what exists and report the missing side.
+function splitDualResults<T>(results: [PromiseSettledResult<T>, PromiseSettledResult<T>]) {
+  const [pos, neg] = results;
+  const failures = [
+    pos.status === "rejected" ? `ESI+: ${String(pos.reason)}` : null,
+    neg.status === "rejected" ? `ESI−: ${String(neg.reason)}` : null,
+  ].filter((msg): msg is string => msg != null);
+  return {
+    pos: pos.status === "fulfilled" ? pos.value : null,
+    neg: neg.status === "fulfilled" ? neg.value : null,
+    notice: failures.length > 0 ? failures.join(" · ") : null,
+    bothFailed: failures.length === 2,
+  };
+}
 const POLYMER_MONOMER_PRESETS_STORAGE_KEY = "mfp.lcms.polymerMonomerPresets";
 const LCMS_PROJECTS_STORAGE_KEY = "mfp.lcms.projects";
 const KENDRICK_SETTINGS_STORAGE_KEY = "mfp.lcms.kendrickSettings";
@@ -2071,7 +2087,7 @@ export function LCMSView() {
       setSelectedUvRt(options?.uvRtMin ?? null);
 
       if (polarity === "dual") {
-        Promise.all([
+        Promise.allSettled([
           api.lcms.spectrum(activeSid, {
             rt_min: rtMin,
             polarity: "positive",
@@ -2087,11 +2103,17 @@ export function LCMSView() {
             polymer: getApiPolymerSettingsForSession(activeSid, "negative"),
           }),
         ])
-          .then(([spPos, spNeg]) => {
+          .then((results) => {
+            const { pos: spPos, neg: spNeg, notice, bothFailed } = splitDualResults(results);
+            if (bothFailed) {
+              setError(notice);
+              return;
+            }
+            if (notice) setInfo(notice);
             setSpectrumPos(spPos);
             setSpectrumNeg(spNeg);
-            setSpectrum(spPos);
-            if (transferMsToUv || options?.forceUvTransfer) {
+            setSpectrum(spPos ?? spNeg);
+            if (spPos && (transferMsToUv || options?.forceUvTransfer)) {
               storeUvLabelsFromSpectrum(spPos, options?.uvRtMin ?? rtMin - uvOffset, {
                 snap: snapUvLabels,
               });
@@ -3316,7 +3338,7 @@ export function LCMSView() {
         setBusy(true);
         setError(null);
         try {
-          const [dataPos, dataNeg] = await Promise.all([
+          const results = await Promise.allSettled([
             api.lcms.regionSpectrum(activeSid, {
               rt_min: lo,
               rt_max: hi,
@@ -3334,14 +3356,17 @@ export function LCMSView() {
               polymer: getApiPolymerSettingsForSession(activeSid, "negative"),
             }),
           ]);
-          const spPos = spectrumFromRegionData(dataPos, lo, hi);
-          const spNeg = spectrumFromRegionData(dataNeg, lo, hi);
+          const { pos: dataPos, neg: dataNeg, notice, bothFailed } = splitDualResults(results);
+          if (bothFailed) throw new Error(notice ?? "No MS1 scans in this region.");
+          const spPos = dataPos ? spectrumFromRegionData(dataPos, lo, hi) : null;
+          const spNeg = dataNeg ? spectrumFromRegionData(dataNeg, lo, hi) : null;
           setSpectrumPos(spPos);
           setSpectrumNeg(spNeg);
-          setSpectrum(spPos);
+          setSpectrum(spPos ?? spNeg);
           setShowSpectrum(true);
           setInfo(
-            `Sliced & summed Dual MS1: ${dataPos.n_scans} ESI+ scans, ${dataNeg.n_scans} ESI- scans (${lo.toFixed(3)}-${hi.toFixed(3)} min).`,
+            `Sliced & summed Dual MS1: ${dataPos?.n_scans ?? 0} ESI+ scans, ${dataNeg?.n_scans ?? 0} ESI- scans (${lo.toFixed(3)}-${hi.toFixed(3)} min).` +
+              (notice ? ` ${notice}` : ""),
           );
         } catch (err) {
           setError(String(err));

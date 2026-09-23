@@ -409,17 +409,16 @@ async def deconvolute_session_spectrum(
         elif body.rt_min is not None:
             meta, mzs_arr, ints_arr = fetch_spectrum_at_rt(
                 state,
-                rt_min=float(body.rt_min),
+                float(body.rt_min),
                 polarity=body.polarity,
             )
             mzs = mzs_arr.tolist()
             ints = ints_arr.tolist()
         else:
-            if len(state.tic_index.rt_min) == 0:
+            if not state.index.ms1:
                 raise HTTPException(status_code=400, detail="Empty TIC index")
-            highest_idx = int(np.argmax(state.tic_index.tic))
-            rt = float(state.tic_index.rt_min[highest_idx])
-            meta, mzs_arr, ints_arr = fetch_spectrum_at_rt(state, rt_min=rt)
+            apex = max(state.index.ms1, key=lambda m: float(m.tic))
+            meta, mzs_arr, ints_arr = fetch_spectrum_at_rt(state, float(apex.rt_min), polarity=body.polarity)
             mzs = mzs_arr.tolist()
             ints = ints_arr.tolist()
 
