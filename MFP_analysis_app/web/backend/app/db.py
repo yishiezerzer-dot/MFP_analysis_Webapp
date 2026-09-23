@@ -236,6 +236,35 @@ def delete_session_record(session_id: str) -> None:
             conn.close()
 
 
+def _session_file_paths(record: Dict[str, Any]) -> List[Path]:
+    extra = record.get("extra") or {}
+    paths = [record.get("file_path"), extra.get("uv_path")]
+    return [Path(p) for p in paths if p]
+
+
+def remove_unreferenced_files(record: Dict[str, Any]) -> List[Path]:
+    """Delete a removed session's uploaded files unless another session still uses them.
+
+    Identical uploads share one content-hashed file, so a file is only deleted once no session
+    record refers to it. Only files inside the data directory are ever touched.
+    """
+    data_dir = get_data_dir().resolve()
+    still_used = {
+        p.resolve() for rec in list_session_records() for p in _session_file_paths(rec)
+    }
+    removed: List[Path] = []
+    for path in _session_file_paths(record):
+        resolved = path.resolve()
+        if resolved in still_used or not resolved.is_relative_to(data_dir) or not resolved.is_file():
+            continue
+        try:
+            resolved.unlink()
+            removed.append(resolved)
+        except OSError:
+            _restore_log.warning("Could not delete %s", resolved, exc_info=True)
+    return removed
+
+
 def get_session_record(session_id: str) -> Optional[Dict[str, Any]]:
     with _DB_LOCK:
         conn = get_db_connection()

@@ -1,12 +1,6 @@
-import os
-import tempfile
 import pytest
 from pathlib import Path
 from fastapi.testclient import TestClient
-
-# Use temporary directory for testing database and files
-_TMP_DIR = tempfile.mkdtemp(prefix="mfp_test_data_")
-os.environ["MFP_DATA_DIR"] = _TMP_DIR
 
 from app.main import app
 from app.db import init_db, list_workspaces, create_workspace, get_workspace

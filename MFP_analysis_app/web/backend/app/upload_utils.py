@@ -1,9 +1,19 @@
 import hashlib
+import os
 import uuid
 from pathlib import Path
 from typing import Optional, Set
 
 from fastapi import HTTPException, UploadFile
+
+
+def limit_bytes(env_var: str, default_mb: float) -> int:
+    """Size limit from an environment variable in MB (read per call so it can be changed)."""
+    try:
+        mb = float(os.environ.get(env_var, default_mb))
+    except ValueError:
+        mb = default_mb
+    return int(mb * 1024 * 1024)
 
 
 async def stream_upload_to_file(
@@ -29,6 +39,8 @@ async def stream_upload_to_file(
             raise HTTPException(status_code=400, detail=f"Invalid file extension. Expected one of: {exts_str}")
 
     temp_dest = dest_dir / f".tmp_{uuid.uuid4().hex}"
+    max_bytes = limit_bytes("MFP_MAX_UPLOAD_MB", 2048)
+    written = 0
 
     try:
         with open(temp_dest, "wb") as f:
@@ -36,6 +48,12 @@ async def stream_upload_to_file(
                 chunk = await file.read(chunk_size)
                 if not chunk:
                     break
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File is larger than the {max_bytes / 1024 / 1024:g} MB upload limit.",
+                    )
                 hasher.update(chunk)
                 f.write(chunk)
     except Exception as exc:

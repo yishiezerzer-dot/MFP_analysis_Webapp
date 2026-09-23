@@ -197,10 +197,21 @@ class LCMSRegistry:
         return state
 
     def remove(self, session_id: str) -> bool:
-        from ..db import delete_session_record
+        from ..db import delete_session_record, get_session_record, remove_unreferenced_files
+        rec = get_session_record(session_id)
+        cache_path = None
+        if rec:
+            # Resolve the index cache location while the mzML still exists (it keys on file stats).
+            rt_unit = (rec.get("extra") or {}).get("rt_unit", "minutes")
+            cache_path = MzMLTICIndex(Path(rec["file_path"]), rt_unit=rt_unit)._cache_path()
         delete_session_record(session_id)
         with self._lock:
-            return self._sessions.pop(session_id, None) is not None
+            in_memory = self._sessions.pop(session_id, None) is not None
+        if rec:
+            removed = remove_unreferenced_files(rec)
+            if cache_path is not None and Path(rec["file_path"]).resolve() in removed:
+                cache_path.unlink(missing_ok=True)
+        return in_memory or rec is not None
 
     def list(self, workspace_id: Optional[str] = None) -> List[LCMSSessionState]:
         from ..db import list_session_records

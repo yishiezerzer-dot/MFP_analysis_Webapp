@@ -172,6 +172,9 @@ Dependencies are declared in `package.json` (React, Plotly, Tailwind toolchain, 
 | --- | --- | --- |
 | `OPENAI_API_KEY` | OpenAI AI provider | unset → demo/fallback |
 | `OLLAMA_BASE_URL` | Local Ollama LLM | `http://127.0.0.1:11434` |
+| `MFP_DATA_DIR` | Where uploads, the SQLite database, caches and the automation log are stored | `/data` if it exists, else `.data` |
+| `MFP_MAX_UPLOAD_MB` | Largest accepted upload (HTTP 413 above it) | `2048` |
+| `MFP_MAX_DECOMPRESSED_MB` | Largest size an uploaded `.mzML.gz` may expand to | `8192` |
 
 No `.env` file is required for core analysis modules — only for AI providers you choose to enable.
 

@@ -23,7 +23,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from ..db import get_session_record, get_upload_dir, save_session_record
-from ..upload_utils import stream_upload_to_file
+from ..upload_utils import limit_bytes, stream_upload_to_file
 from ..services.lcms_service import (
     LCMSSessionState,
     attach_uv_from_csv,
@@ -177,14 +177,27 @@ async def create_session(
     )
     if dest.name.lower().endswith(".gz"):
         import gzip
-        import shutil
         uncompressed_dest = dest.with_name(dest.name[:-3])
-        with gzip.open(dest, "rb") as f_in, open(uncompressed_dest, "wb") as f_out:
-            shutil.copyfileobj(f_in, f_out)
+        # Bound the decompressed size: a small .gz can expand to fill the disk.
+        max_bytes = limit_bytes("MFP_MAX_DECOMPRESSED_MB", 8192)
+        written = 0
         try:
-            dest.unlink()
-        except Exception:
-            pass
+            with gzip.open(dest, "rb") as f_in, open(uncompressed_dest, "wb") as f_out:
+                while chunk := f_in.read(1024 * 1024):
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"Decompressed file is larger than the {max_bytes / 1024 / 1024:g} MB limit.",
+                        )
+                    f_out.write(chunk)
+        except (HTTPException, OSError, EOFError) as exc:
+            uncompressed_dest.unlink(missing_ok=True)
+            if isinstance(exc, HTTPException):
+                raise
+            raise HTTPException(status_code=400, detail=f"Could not decompress {name}: {exc}") from exc
+        finally:
+            dest.unlink(missing_ok=True)
         dest = uncompressed_dest
         if name.lower().endswith(".gz"):
             name = name[:-3]

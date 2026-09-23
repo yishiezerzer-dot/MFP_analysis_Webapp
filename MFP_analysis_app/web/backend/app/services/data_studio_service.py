@@ -212,10 +212,14 @@ class DataStudioRegistry:
         return restored
 
     def remove(self, sid: str) -> bool:
-        from ..db import delete_session_record
+        from ..db import delete_session_record, get_session_record, remove_unreferenced_files
+        rec = get_session_record(sid)
         delete_session_record(sid)
+        if rec:
+            remove_unreferenced_files(rec)
         with self._lock:
-            return self._sessions.pop(sid, None) is not None
+            in_memory = self._sessions.pop(sid, None) is not None
+        return in_memory or rec is not None
 
     def list(self, workspace_id: Optional[str] = None) -> List[DataStudioSession]:
         from ..db import list_session_records
