@@ -273,4 +273,7 @@ def _result_to_dict(res: PlateReaderMICWizardResult) -> Dict[str, Any]:
         "blank_mean": list(getattr(res, "blank_mean", None)) if getattr(res, "blank_mean", None) is not None else None,
         "blank_std": list(getattr(res, "blank_std", None)) if getattr(res, "blank_std", None) is not None else None,
         "four_pl": getattr(res, "four_pl", None),
+        "four_pl_skipped_reason": res.four_pl_skipped_reason,
+        "x_positions": list(res.x_positions),
+        "sample_n": list(res.sample_n),
     }

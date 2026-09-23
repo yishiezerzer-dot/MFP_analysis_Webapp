@@ -390,6 +390,13 @@ export interface FourPLFit {
   r_squared: number;
   curve_x: number[];
   curve_y: number[];
+  // Absent in results saved by older versions.
+  bottom_se?: number | null;
+  top_se?: number | null;
+  ic50_se?: number | null;
+  hill_slope_se?: number | null;
+  ic50_in_range?: boolean;
+  curve_x_positions?: number[];
 }
 
 export interface MICResult {
@@ -421,6 +428,9 @@ export interface MICResult {
     blank_mean?: number[] | null;
     blank_std?: number[] | null;
     four_pl?: FourPLFit | null;
+    four_pl_skipped_reason?: string | null;
+    x_positions?: number[];
+    sample_n?: number[];
   };
   sample_nan_ratio: number;
 }
