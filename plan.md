@@ -275,7 +275,7 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 
 ---
 
-## Phase 6 — UX, accessibility, maintainability, operations (ongoing)
+## ~~Phase 6 — UX, accessibility, maintainability, operations~~ ✅ DONE 2026-09-23
 
 ### ~~6.1 UX~~ ✅ DONE 2026-09-23
 - Session list: show full names in a tooltip, plus upload time and a short hash to tell duplicates apart.
@@ -288,11 +288,13 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 - Minimum 24×24 px targets for icon buttons; label the 2 unlabeled inputs; keyboard focus styles check.
 - Test at a 390 px viewport (not verified in the review).
 
-### 6.3 Maintainability (L5)
+### ~~6.3 Maintainability (L5)~~ ✅ DONE 2026-09-23
 - Split `LCMSView.tsx` (9.8k lines) into panel components + hooks per feature (TIC, spectrum, UV, EIC, polymer), one PR per panel, no behaviour change.
 - Single source for polymer defaults (`analysis.ts`); delete the copy in `LCMSView.tsx`.
 - Keep one lockfile (npm or pnpm) and untrack `node_modules/.vite/...` and `tsconfig.tsbuildinfo`.
 - Replace placeholder docstrings as files are touched.
+
+> **Done:** `LCMSView.tsx` 9,738 → 3,879 lines. Shared types/helpers moved to `lcms/viewShared.tsx`; sessions sidebar, tools panel, TIC/EIC/UV/spectrum charts and dialogs each moved to `components/lcms/`. Code moved unchanged (only `export` added); no import cycles. Checked: type-check, 164 tests, build, and the live view (TIC, scan stepping, Display tab, EIC dialog and chart, no console errors). A further split of `LCMSView`'s own state into hooks is left for when that code is next changed.
 
 ### ~~6.4 CI~~ ✅ DONE 2026-09-23
 - GitHub Actions: backend pytest (pandas 2.3 and 3.x matrix), frontend lint + vitest, Docker build.
@@ -318,7 +320,7 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 | 4 | ~~3 Hardening without auth~~ ✅ | 1–1.5 d |
 | 5 | ~~4 Performance~~ ✅ | 2–3 d |
 | 6 | ~~5 Provenance + real SI package~~ ✅ | 4–5 d |
-| 7 | 6 UX / a11y / refactor / ops | ongoing |
+| 7 | ~~6 UX / a11y / refactor / ops~~ ✅ | ongoing |
 
 ## Still to validate against reference data (not code changes)
 
