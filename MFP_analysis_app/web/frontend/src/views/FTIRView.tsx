@@ -70,9 +70,9 @@ const DEFAULT_PRE: FTIRPreprocessOptions = {
 };
 
 const FTIR_PRESETS: Record<string, Partial<FTIRPreprocessOptions>> = {
-  "KBr disc": { smoothing_window: 5, poly_order: 2, baseline: "asls", normalize: "max", baseline_lambda: 100000, baseline_p: 0.01, mask_atmospheric: true },
+  "KBr disc": { smoothing_window: 5, poly_order: 2, baseline: "asls", normalize: "max", baseline_lambda: 100000, baseline_p: 0.01 },
   "ATR sample": { smoothing_window: 5, poly_order: 2, baseline: "rubberband", normalize: "vector", atr_correction: true, atr_n_crystal: 1.5 },
-  "Polymer thin film": { smoothing_window: 5, poly_order: 2, baseline: "airpls", normalize: "snv", mask_atmospheric: true },
+  "Polymer thin film": { smoothing_window: 5, poly_order: 2, baseline: "airpls", normalize: "snv" },
   "Raw film": { smoothing_window: 0, poly_order: 2, baseline: "none", normalize: "none" },
 };
 
@@ -443,7 +443,10 @@ export function FTIRView() {
   const [storedPre, setStoredPre] = useStoredState<FTIRPreprocessOptions>(
     `${FTIR_STORAGE_PREFIX}.preprocess`,
     DEFAULT_PRE,
-    (value) => ({ ...DEFAULT_PRE, ...value }),
+    (value) => {
+      const merged = { ...DEFAULT_PRE, ...value };
+      return (merged.normalize as string) === "msc" ? { ...merged, normalize: "none" } : merged;
+    },
   );
   const {
     state: pre,
@@ -1003,7 +1006,8 @@ export function FTIRView() {
       }
       const availableIds = new Set(sessions.map((session) => session.session_id));
       const missing = workspace.sessions.filter((session) => !availableIds.has(session.session_id));
-      setPre({ ...DEFAULT_PRE, ...(workspace.viewState.preprocess ?? {}) });
+      const loadedPre = { ...DEFAULT_PRE, ...(workspace.viewState.preprocess ?? {}) };
+      setPre((loadedPre.normalize as string) === "msc" ? { ...loadedPre, normalize: "none" } : loadedPre);
       setPk({ ...DEFAULT_PEAK, ...(workspace.viewState.peakPick ?? {}) });
       setAssignmentConstraints({
         ...DEFAULT_ASSIGNMENT_CONSTRAINTS,
@@ -1688,7 +1692,6 @@ function PreprocessCard(props: {
             <option value="snv">SNV</option>
             <option value="vector">vector</option>
             <option value="min-max">min-max</option>
-            <option value="msc">MSC fallback</option>
           </select>
         </Field>
         <Field label="Baseline lambda">
@@ -1720,26 +1723,26 @@ function PreprocessCard(props: {
           />
         </Field>
         <Field label="Atmospheric mask">
-          <Tooltip content="Exclude CO2 and H2O atmospheric regions from peak picking and shade them on the chart">
+          <Tooltip content="Exclude the CO₂ doublet (2310–2390 cm⁻¹) from peak picking and shade it. Water-vapour lines overlap sample bands and can't be masked; use background subtraction.">
             <label className="flex h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 text-sm">
               <input
                 type="checkbox"
                 checked={pre.mask_atmospheric}
                 onChange={(e) => setPre({ ...pre, mask_atmospheric: e.target.checked })}
               />
-              Mask CO2/H2O
+              Mask CO₂
             </label>
           </Tooltip>
         </Field>
         <Field label="ATR correction">
-          <Tooltip content="Apply a gentle wavenumber-dependent ATR penetration-depth correction">
+          <Tooltip content="Approximate ATR correction: scales intensity by ν/ν_ref (penetration depth ∝ 1/ν). Not a full optical correction.">
             <label className="flex h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 text-sm">
               <input
                 type="checkbox"
                 checked={pre.atr_correction}
                 onChange={(e) => setPre({ ...pre, atr_correction: e.target.checked })}
               />
-              Correct ATR
+              Correct ATR (approx.)
             </label>
           </Tooltip>
         </Field>

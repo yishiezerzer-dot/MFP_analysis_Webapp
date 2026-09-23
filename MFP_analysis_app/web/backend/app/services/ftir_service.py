@@ -466,7 +466,8 @@ def fit_peak_region(
         area_pct = float(round(100.0 * max(0.0, area) / max(1e-12, total_area), 2))
 
         # FWHM conversion factors
-        fwhm_factor = 2.35482 if prof == "gauss" else (2.0 if prof == "lorentz" else 2.1774)
+        # width is sigma (gauss), HWHM (lorentz) or the FWHM itself (pseudo-Voigt)
+        fwhm_factor = 2.35482 if prof == "gauss" else (2.0 if prof == "lorentz" else 1.0)
         fwhm_val = float(round(abs(width) * fwhm_factor, 2))
 
         components.append(
@@ -565,8 +566,10 @@ def _profile(x: np.ndarray, amp: float, center: float, width: float, profile: st
     if profile == "lorentz":
         return float(amp) / (1.0 + ((x - float(center)) / w) ** 2)
     if profile == "voigt":
-        gauss = float(amp) * np.exp(-0.5 * ((x - float(center)) / w) ** 2)
-        lorentz = float(amp) / (1.0 + ((x - float(center)) / w) ** 2)
+        # Pseudo-Voigt (50/50) with a shared FWHM `w`: Gaussian sigma = w/2.35482, Lorentzian
+        # HWHM = w/2, so the profile's FWHM is exactly w.
+        gauss = float(amp) * np.exp(-0.5 * ((x - float(center)) / (w / 2.35482)) ** 2)
+        lorentz = float(amp) / (1.0 + ((x - float(center)) / (w / 2.0)) ** 2)
         return 0.5 * (gauss + lorentz)
     return float(amp) * np.exp(-0.5 * ((x - float(center)) / w) ** 2)
 

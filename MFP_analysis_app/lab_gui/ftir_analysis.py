@@ -154,8 +154,6 @@ def preprocess_spectrum(
         y_out = _normalize_vector(y_out)
     elif nrm in {"min-max", "minmax"}:
         y_out = _normalize_minmax(y_out)
-    elif nrm == "msc":
-        y_out = _normalize_msc(y_out)
 
     if return_baseline:
         return x, np.asarray(y_out, dtype=float), np.asarray(base_curve, dtype=float)
@@ -468,34 +466,6 @@ def _normalize_minmax(y: np.ndarray) -> np.ndarray:
     return ((yy - lo) / span).astype(float)
 
 
-def _normalize_msc(y: np.ndarray) -> np.ndarray:
-    """Multiplicative Scatter Correction — single-spectrum variant.
-
-    Uses the spectrum's own quadratic trend as a proxy reference, then
-    removes additive and multiplicative scatter via linear regression.
-    This is the standard approach when a batch mean spectrum is unavailable.
-    """
-    yy = np.asarray(y, dtype=float)
-    n = int(yy.size)
-    if n < 4:
-        return yy
-    x_idx = np.linspace(0.0, 1.0, n, dtype=float)
-    try:
-        coeffs = np.polyfit(x_idx, yy, deg=2)
-        ref = np.polyval(coeffs, x_idx)
-    except Exception:
-        return yy
-    A = np.column_stack([np.ones(n, dtype=float), ref])
-    try:
-        result = np.linalg.lstsq(A, yy, rcond=None)
-        a, b = float(result[0][0]), float(result[0][1])
-    except Exception:
-        return yy
-    if not (math.isfinite(a) and math.isfinite(b)) or abs(b) < 1e-12:
-        return yy
-    return ((yy - a) / b).astype(float)
-
-
 def _atr_correct(x: np.ndarray, y: np.ndarray, *, n_crystal: float) -> np.ndarray:
     xx = np.asarray(x, dtype=float)
     yy = np.asarray(y, dtype=float)
@@ -509,10 +479,11 @@ def _atr_correct(x: np.ndarray, y: np.ndarray, *, n_crystal: float) -> np.ndarra
     return (yy * factor).astype(float)
 
 
+# Only the CO2 asymmetric-stretch doublet is masked. Water-vapour lines span 1340-1900 and
+# 3400-4000 cm^-1, overlapping amide I/II, carbonyl and O-H/N-H bands; masking those regions
+# deletes real sample peaks, so vapour has to be handled by background subtraction instead.
 ATMOSPHERIC_MASK_REGIONS: Tuple[Tuple[float, float, str], ...] = (
     (2310.0, 2390.0, "CO2"),
-    (1340.0, 1900.0, "H2O"),
-    (3400.0, 4000.0, "H2O"),
 )
 
 

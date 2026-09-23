@@ -57,7 +57,7 @@ router = APIRouter()
 
 YMode = Literal["absorbance", "transmittance"]
 Baseline = Literal["none", "polyfit", "rubberband", "asls", "airpls"]
-Normalize = Literal["none", "max", "area", "snv", "vector", "min-max", "msc"]
+Normalize = Literal["none", "max", "area", "snv", "vector", "min-max"]
 IntegrationBaseline = Literal["linear", "horizontal", "tangent"]
 FitProfile = Literal["gauss", "lorentz", "voigt"]
 

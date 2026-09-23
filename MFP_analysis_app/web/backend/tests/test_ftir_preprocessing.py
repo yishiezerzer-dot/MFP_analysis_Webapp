@@ -47,13 +47,15 @@ def test_vector_and_minmax_normalization():
     assert np.isclose(float(y_mm.max()), 1.0)
 
 
-def test_atmospheric_mask_removes_expected_regions():
-    x = np.array([1200.0, 1500.0, 2350.0, 2500.0, 3600.0])
+def test_atmospheric_mask_removes_only_co2_region():
+    # Water-vapour lines overlap the amide/carbonyl (1340-1900) and O-H/N-H (3400-4000)
+    # regions; masking them would delete real bands, so only the CO2 doublet is masked.
+    x = np.array([1200.0, 1650.0, 1735.0, 2350.0, 2500.0, 3300.0, 3600.0])
     y = np.arange(x.size, dtype=float)
     x_masked, y_masked = mask_atmospheric_regions(x, y)
 
-    assert x_masked.tolist() == [1200.0, 2500.0]
-    assert y_masked.tolist() == [0.0, 3.0]
+    assert x_masked.tolist() == [1200.0, 1650.0, 1735.0, 2500.0, 3300.0, 3600.0]
+    assert y_masked.tolist() == [0.0, 1.0, 2.0, 4.0, 5.0, 6.0]
 
 
 def test_atr_correction_changes_intensity_scale():

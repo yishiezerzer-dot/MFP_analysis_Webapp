@@ -439,7 +439,7 @@ export interface MICResult {
 
 export type FTIRYMode = "absorbance" | "transmittance";
 export type FTIRBaseline = "none" | "polyfit" | "rubberband" | "asls" | "airpls";
-export type FTIRNormalize = "none" | "max" | "area" | "snv" | "vector" | "min-max" | "msc";
+export type FTIRNormalize = "none" | "max" | "area" | "snv" | "vector" | "min-max";
 
 export interface FTIRSessionSummary {
   session_id: string;

@@ -112,8 +112,8 @@ export const ftirHelpModule: HelpModule = {
           <DocH4>Modes and presets</DocH4>
           <DocP>
             Preprocessing options include absorbance/transmittance, Savitzky–Golay smoothing window, polynomial order,
-            baseline algorithms (ASLS, airPLS, rubberband, etc.), normalization (max, vector, SNV), atmospheric masking,
-            and ATR correction with crystal index. Built-in presets (KBr disc, ATR sample, …) fill sensible defaults.
+            baseline algorithms (ASLS, airPLS, rubberband, etc.), normalization (max, vector, SNV), CO₂ masking,
+            and an approximate ATR correction (ν/ν_ref) with crystal index. Built-in presets (KBr disc, ATR sample, …) fill sensible defaults.
           </DocP>
           <DocP>
             Whether a file is absorbance or transmittance is detected on upload (from its y-unit metadata, otherwise
