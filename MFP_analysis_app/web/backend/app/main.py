@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -22,12 +23,25 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from .automation import router as automation  # noqa: E402
+from .backup import start_nightly_backups  # noqa: E402
 from .db import init_db  # noqa: E402
 from .routers import ai, data_studio, experiments, ftir, lcms, plate_reader, publication, workspaces  # noqa: E402
 
 init_db()
 
+# One timestamped line per record on stdout, which Railway collects; uvicorn keeps its own access log.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    stop = start_nightly_backups()
+    yield
+    stop.set()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="MFP Analysis Web API",
     version="0.1.0",
     description=(

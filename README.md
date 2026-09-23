@@ -172,7 +172,7 @@ Dependencies are declared in `package.json` (React, Plotly, Tailwind toolchain, 
 | --- | --- | --- |
 | `OPENAI_API_KEY` | OpenAI AI provider | unset → demo/fallback |
 | `OLLAMA_BASE_URL` | Local Ollama LLM | `http://127.0.0.1:11434` |
-| `MFP_DATA_DIR` | Where uploads, the SQLite database, caches and the automation log are stored | `/data` if it exists, else `.data` |
+| `MFP_DATA_DIR` | Where uploads, the SQLite database, caches, backups and the automation log are stored | `/data` in the Docker image; locally `/data` if it exists, else `.data` |
 | `MFP_MAX_UPLOAD_MB` | Largest accepted upload (HTTP 413 above it) | `2048` |
 | `MFP_MAX_DECOMPRESSED_MB` | Largest size an uploaded `.mzML.gz` may expand to | `8192` |
 | `MFP_CORS_ORIGINS` | Comma-separated extra origins allowed to call the API from a browser (only needed if the frontend is hosted elsewhere) | none (same-origin only) |
@@ -354,7 +354,29 @@ Interactive OpenAPI documentation: http://127.0.0.1:8000/docs
 
 ---
 
+## Deployment and operations (Railway)
+
+The app is deployed from the `Dockerfile` (`railway.toml`) and is **public**: anyone with the Railway link can use it and see all lab data. There is no login by design.
+
+- **Volume.** Attach a Railway volume mounted at `/data`. The image sets `MFP_DATA_DIR=/data`, so the database (`mfp_database.db`), uploads, LCMS index caches, the automation log and backups all live there and survive redeploys. Without a volume, everything is lost on each deploy.
+- **Nightly database snapshots.** The server copies every SQLite database to `/data/backups/db-YYYYMMDD-HHMMSS/` once a day (and at startup if the last copy is older than a day), keeping the newest 7. Copies are consistent even while the app is writing. They protect against a bad write or accidental deletion, not against losing the volume.
+- **Off-site copy.** Uploads are never rewritten, so they need a copy elsewhere rather than versions. Make a full archive (databases + uploads, no caches) from a shell on the service (`railway ssh`), then copy it off Railway:
+
+  ```bash
+  cd /app/MFP_analysis_app/web/backend
+  python -m app.backup /data/mfp-full.tar.gz
+  ```
+
+  Restore by stopping the service, extracting the archive into `/data`, and starting it again.
+- **Logs.** Server messages are single timestamped lines (`time LEVEL logger: message`) on stdout, visible in Railway's log view. Unexpected errors are shown to users with a reference code; search the logs for that code to find the traceback.
+- **AI assistant.** If `OPENAI_API_KEY` is set, every visitor uses it. Set a monthly usage limit on the key's project in the OpenAI dashboard.
+- **Health check.** `GET /api/health`.
+
+---
+
 ## Contributing / verification
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and on pushes to `main`: backend tests on the locked dependencies and on pandas 3, frontend type-check and tests, and a Docker build.
 
 ```powershell
 # Frontend type-check

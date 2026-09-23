@@ -277,13 +277,13 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 
 ## Phase 6 — UX, accessibility, maintainability, operations (ongoing)
 
-### 6.1 UX
+### ~~6.1 UX~~ ✅ DONE 2026-09-23
 - Session list: show full names in a tooltip, plus upload time and a short hash to tell duplicates apart.
 - Long operations: a server-side progress or spinner state per panel, and clear "this may take ~Ns for large files" hints.
 - Error messages: map exceptions to user-facing text; keep details in the server logs.
 - Help pages: document polarity handling, the concentration requirement for 4PL, and %T→A conversion.
 
-### 6.2 Accessibility
+### ~~6.2 Accessibility~~ ✅ DONE 2026-09-23
 - `aria-label`/`title` on row-role buttons ("Mark row 1 as sample/control/blank/none").
 - Minimum 24×24 px targets for icon buttons; label the 2 unlabeled inputs; keyboard focus styles check.
 - Test at a 390 px viewport (not verified in the review).
@@ -294,15 +294,17 @@ Baseline measurements (140 MB mzML, 2,400 scans): upload 4.0 s, spectrum click 1
 - Keep one lockfile (npm or pnpm) and untrack `node_modules/.vite/...` and `tsconfig.tsbuildinfo`.
 - Replace placeholder docstrings as files are touched.
 
-### 6.4 CI
+### ~~6.4 CI~~ ✅ DONE 2026-09-23
 - GitHub Actions: backend pytest (pandas 2.3 and 3.x matrix), frontend lint + vitest, Docker build.
 
-### 6.5 Operations and hosting (decide here)
+### ~~6.5 Operations and hosting~~ ✅ DONE 2026-09-23
 - Railway: confirm a volume at `/data`; set `MFP_DATA_DIR=/data` explicitly so the index cache and automation log also persist; nightly backup of `/data` (SQLite `.backup` + uploads) to cloud storage; structured logging.
 - Because there is no auth, choose one:
   - **(a)** Host on a lab-network machine / behind the university VPN (recommended for GB-scale files and private data), or
   - **(b)** Keep Railway but restrict access at the network level (e.g. Cloudflare Access with an `@mail.huji.ac.il` email rule — no code changes, no app login), or
   - **(c)** Accept public access knowingly.
+
+> **Decision (2026-09-23): (c).** The app stays public on the Railway link so anyone in the lab can reach it without a VPN. Consequences accepted: anyone with the link can see and delete lab data, and can use the OpenAI key if one is set (put a monthly limit on it). Done: `MFP_DATA_DIR=/data` in the image, nightly SQLite snapshots in `/data/backups` (7 kept), `python -m app.backup` full archive for off-site copies, timestamped logs, operations section in the README. **Still manual:** confirm the Railway volume is mounted at `/data` and copy an archive off Railway regularly.
 
 ---
 

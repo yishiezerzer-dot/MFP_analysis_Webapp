@@ -23,6 +23,10 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **Operations (plan 6.5):** the server snapshots its SQLite databases to `<data>/backups` once a day (newest 7 kept); `python -m app.backup OUT.tar.gz` writes a full archive (databases + uploads) for an off-site copy. The Docker image sets `MFP_DATA_DIR=/data`, so LCMS index caches now also persist on the Railway volume instead of being rebuilt after each deploy. Server logs are timestamped single lines. Hosting stays public on the Railway link (decision recorded in `plan.md`).
+
+- **CI (plan 6.4):** GitHub Actions runs backend tests (locked deps and pandas 3), frontend type-check and tests, and a Docker build.
+
 - **LCMS sessions (plan 6.1):** each session row shows its upload time; hovering the name shows the full name, upload time and a short file ID (the start of the file's SHA-256), so two uploads with the same name can be told apart.
 
 - **Unexpected server errors (plan 6.1)** now return a short message with a reference code instead of internal details; the full traceback is written to the server log under that code.

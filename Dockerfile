@@ -28,5 +28,7 @@ COPY --from=frontend /frontend/dist ./MFP_analysis_app/web/frontend/dist
 WORKDIR /app/MFP_analysis_app/web/backend
 
 ENV PYTHONUNBUFFERED=1
+# Railway volume mount point: database, uploads, index caches, automation log and backups.
+ENV MFP_DATA_DIR=/data
 
 CMD ["sh", "-c", "python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
