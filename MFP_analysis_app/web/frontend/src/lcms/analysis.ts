@@ -320,9 +320,11 @@ export type CsvCell = string | number | boolean | null | undefined;
 export const PROTON_MASS = 1.007276;
 export const NA_MASS = 22.989218;
 export const K_MASS = 38.963158;
-export const CL_MASS = 34.968853;
-export const FORMATE_MASS = 44.997655;
-export const ACETATE_MASS = 59.013851;
+// Anion adducts are anion masses (neutral radical + electron); keep in sync with lcms_polymer_match.py.
+export const ELECTRON_MASS = 0.00054858;
+export const CL_MASS = 34.968853 + ELECTRON_MASS;
+export const FORMATE_MASS = 44.997655 + ELECTRON_MASS;
+export const ACETATE_MASS = 59.013851 + ELECTRON_MASS;
 export const H2O_LOSS_MASS = 18.010565;
 export const CO2_LOSS_MASS = 43.989829;
 export const OXIDATION_MASS = 15.994915;
@@ -807,10 +809,20 @@ export function buildExpectedProductHits(
       }
     }
   }
-  const variants: Array<{ label: string; delta: number }> = [{ label: "", delta: 0 }];
-  if (shared.h2o_loss) variants.push({ label: "-H2O", delta: -H2O_LOSS_MASS });
-  if (shared.decarb) variants.push({ label: "-CO2", delta: -CO2_LOSS_MASS });
-  if (shared.oxid) variants.push({ label: "+O", delta: OXIDATION_MASS });
+  // All combinations of the enabled modifications, in the same order and tag format as
+  // lcms_polymer_match.generate_variants (e.g. "+O-CO2").
+  const modifications: Array<{ label: string; delta: number }> = [];
+  if (shared.oxid) modifications.push({ label: "+O", delta: OXIDATION_MASS });
+  if (shared.decarb) modifications.push({ label: "-CO2", delta: -CO2_LOSS_MASS });
+  if (shared.h2o_loss) modifications.push({ label: "-H2O", delta: -H2O_LOSS_MASS });
+  const variants: Array<{ label: string; delta: number }> = [];
+  for (let mask = 0; mask < 1 << modifications.length; mask += 1) {
+    const picked = modifications.filter((_, i) => mask & (1 << i));
+    variants.push({
+      label: picked.map((m) => m.label).join(""),
+      delta: picked.reduce((sum, m) => sum + m.delta, 0),
+    });
+  }
   const tolDaFor = (mz: number) => {
     const configuredTolerance =
       shared.tol_unit === "ppm" ? (Math.abs(mz) * Math.max(0, shared.tol_value)) / 1e6 : Math.max(0, shared.tol_value);

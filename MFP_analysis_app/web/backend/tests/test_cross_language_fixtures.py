@@ -108,8 +108,12 @@ def test_comparison_matrix_cross_language(case: dict) -> None:
         assert sorted(r.id for r in cell.collisions) == sorted(expected["collision_ids"]), case["name"]
 
 
-@pytest.mark.parametrize("case", _load("polymer_charges.json"), ids=lambda c: c["name"])
-def test_polymer_charges_cross_language(case: dict) -> None:
+@pytest.mark.parametrize(
+    "case",
+    _load("polymer_charges.json") + _load("polymer_variants.json"),
+    ids=lambda c: c["name"],
+)
+def test_polymer_matching_cross_language(case: dict) -> None:
     from lab_gui.lcms_polymer_match import compute_polymer_best_by_peak_sorted
 
     inp = case["input"]
@@ -124,14 +128,15 @@ def test_polymer_charges_cross_language(case: dict) -> None:
         extra_delta=0.0,
         polarity=inp["polarity"],
         base_adduct_mass=inp["adduct_mass"],
-        enable_decarb=False,
-        enable_oxid=False,
+        enable_decarb=inp.get("decarb", False),
+        enable_oxid=inp.get("oxid", False),
+        enable_h2o_loss=inp.get("h2o_loss", False),
         enable_cluster=False,
         cluster_adduct_mass=inp["adduct_mass"],
         enable_na=inp["enable_na"],
         enable_k=False,
-        enable_cl=False,
-        enable_formate=False,
+        enable_cl=inp.get("enable_cl", False),
+        enable_formate=inp.get("enable_formate", False),
         tol_value=inp["tol_da"],
         tol_unit="Da",
         min_rel_int=0.0,
@@ -140,5 +145,6 @@ def test_polymer_charges_cross_language(case: dict) -> None:
     if not expected["matched"]:
         assert best == {}, case["name"]
         return
-    label = best[0]["poly"][1]
-    assert label == f"{expected['composition']} {expected['ion']}", case["name"]
+    parts = [expected["composition"], expected.get("variant", ""), expected["ion"]]
+    wanted = " ".join(part for part in parts if part)
+    assert wanted in [label for _err, label, _mz, _int in best[0].values()], case["name"]

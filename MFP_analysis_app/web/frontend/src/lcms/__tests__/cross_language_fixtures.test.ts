@@ -152,8 +152,9 @@ describe("cross-language fixture: groupFeatureRowsForMatrix", () => {
   }
 });
 
-describe("cross-language fixtures: polymer charge states", () => {
-  for (const c of load("polymer_charges.json").cases) {
+describe("cross-language fixtures: polymer matching", () => {
+  const cases = [...load("polymer_charges.json").cases, ...load("polymer_variants.json").cases];
+  for (const c of cases) {
     it(c.name, () => {
       const inp = c.input;
       const base = polymerSettingsFixture();
@@ -165,11 +166,20 @@ describe("cross-language fixtures: polymer charge states", () => {
           bond_delta: inp.bond_delta,
           charges: inp.charges,
           cluster: false,
+          oxid: Boolean(inp.oxid),
+          decarb: Boolean(inp.decarb),
+          h2o_loss: Boolean(inp.h2o_loss),
           max_dp: inp.max_dp,
           tol_value: inp.tol_da,
           tol_unit: "Da",
         },
-        [polarity]: { ...base[polarity], adduct_mass: inp.adduct_mass, adduct_na: inp.enable_na },
+        [polarity]: {
+          ...base[polarity],
+          adduct_mass: inp.adduct_mass,
+          adduct_na: inp.enable_na,
+          adduct_cl: Boolean(inp.enable_cl),
+          adduct_formate: Boolean(inp.enable_formate),
+        },
       });
       const index = buildSpectrumIndex(spectrumFromFixture([inp.peak_mz], [1000]));
       const matched = buildExpectedProductHits(settings, polarity, index, inp.max_dp, "normal", 0.2).filter(
@@ -179,7 +189,11 @@ describe("cross-language fixtures: polymer charge states", () => {
         expect(matched).toEqual([]);
         return;
       }
-      expect(matched.map((hit) => [hit.composition, hit.ion])).toContainEqual([c.expected.composition, c.expected.ion]);
+      expect(matched.map((hit) => [hit.composition, hit.variant, hit.ion])).toContainEqual([
+        c.expected.composition,
+        c.expected.variant ?? "",
+        c.expected.ion,
+      ]);
     });
   }
 });
