@@ -2491,7 +2491,7 @@ export function LCMSView() {
       });
 
       const uploadPromises = files.map((file, idx) =>
-        api.lcms.upload(file, rtUnit, (loaded) => updateProgress(idx, loaded)),
+        api.lcms.upload(file, (loaded) => updateProgress(idx, loaded)),
       );
 
       const uploaded = await Promise.all(uploadPromises);
@@ -6307,9 +6307,10 @@ function DisplayTab(p: ToolsPanelProps) {
   return (
     <div className="flex flex-col gap-4">
       <GroupBox title="Filters & Units">
-        <Row label="RT unit">
+        <Row label="RT display unit">
           <select
             className="input"
+            title="How retention times are shown. The time unit stored in each mzML file is read automatically."
             value={p.rtUnit}
             onChange={(e) => p.setRtUnit(e.target.value as RtUnit)}
           >

@@ -957,12 +957,9 @@ export const api = {
   },
 
   lcms: {
-    upload: (
-      file: File,
-      rtUnit: "minutes" | "seconds" = "minutes",
-      onProgress?: UploadProgressCallback,
-    ) =>
-      uploadFileWithProgress("/api/lcms/sessions", file, { rt_unit: rtUnit }, onProgress).then((r) =>
+    // RT unit is read from the mzML itself; the Display-tab RT unit is presentation only.
+    upload: (file: File, onProgress?: UploadProgressCallback) =>
+      uploadFileWithProgress("/api/lcms/sessions", file, {}, onProgress).then((r) =>
         handle<LCMSSessionSummary>(r),
       ),
     loadFromPath: (path: string, displayName?: string, rtUnit?: "minutes" | "seconds") =>
