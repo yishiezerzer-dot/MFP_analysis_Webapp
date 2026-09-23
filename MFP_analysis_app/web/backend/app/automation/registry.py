@@ -80,12 +80,17 @@ class ConfirmationInvalid(ActionRegistryError):
 _ACTIONS: Dict[str, ActionSpec] = {}
 _LOG: Deque[ActionLogEntry] = deque(maxlen=_MAX_LOG_ENTRIES)
 _CONFIRMATION_TOKENS: Dict[str, Tuple[str, str, float]] = {}
-_LOG_DB_PATH = Path(
-    os.environ.get(
-        "MFP_AUTOMATION_LOG_DB",
-        str(Path(__file__).resolve().parents[2] / ".automation" / "action_log.sqlite3"),
-    )
-)
+def _default_log_db_path() -> Path:
+    # Lives in the persistent data directory (the code directory is replaced on each deploy).
+    override = os.environ.get("MFP_AUTOMATION_LOG_DB")
+    if override:
+        return Path(override)
+    from ..db import get_data_dir
+
+    return get_data_dir() / "automation" / "action_log.sqlite3"
+
+
+_LOG_DB_PATH = _default_log_db_path()
 _LOG_DB_LOCK = threading.Lock()
 _LOG_DB_INITIALIZED = False
 _LOG_DB_FAILED = False

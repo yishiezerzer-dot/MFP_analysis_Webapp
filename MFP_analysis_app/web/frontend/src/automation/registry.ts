@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { z } from "zod";
-import { useBrowserAutomation, type AutomationArgs } from "./BrowserBridge";
+import { browserId, useBrowserAutomation, type AutomationArgs } from "./BrowserBridge";
 import { automationActionSchemas, type AutomationActionId } from "./schemas";
 
 export type ActionScope = "backend" | "browser" | "both";
@@ -72,7 +72,8 @@ function parseActionArgs(actionId: string, args: unknown): AutomationArgs {
 async function executeBackendAction(actionId: string, args: AutomationArgs) {
   return fetch(`/api/automation/actions/${encodeURIComponent(actionId)}/execute`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    // Browser-scope actions are routed back to this tab, not whichever tab connected last.
+    headers: { "Content-Type": "application/json", "X-Browser-Id": browserId() },
     body: JSON.stringify(args),
   }).then((res) => handleJson<Record<string, unknown>>(res));
 }

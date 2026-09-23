@@ -1,15 +1,13 @@
 """WebSocket bridge for browser-scope automation actions.
 
-Security note: the bridge has NO authentication. This matches the
-single-user / localhost-only deployment model agreed in the AI automation
-roadmap (decision #7). The backend binds to 127.0.0.1 and the only handshake
-is a ``browser_id`` query string. Any process with access to the loopback
-interface can connect and intercept browser-scope actions; do not expose
-the backend port beyond localhost.
+Security note: the bridge has NO authentication (the app is open to the lab by
+design). The only handshake is a ``browser_id`` query string; anyone who can reach
+the server can connect a tab.
 """
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -42,9 +40,23 @@ class BrowserConnection:
     heartbeat_task: Optional[asyncio.Task[None]] = None
 
 
+# Browser id of the tab that issued the current HTTP request (X-Browser-Id), set by the
+# automation router so browser-scope actions reach the tab that asked for them.
+current_browser_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "current_browser_id", default=None
+)
+
+
 class BrowserConnectionRegistry:
+    """One connection per browser tab (keyed by browser_id).
+
+    Several people can have the app open at once, so tabs no longer supersede each other.
+    dispatch() goes to the requesting tab when its id is known, otherwise (e.g. MCP clients)
+    to the most recently connected tab.
+    """
+
     def __init__(self) -> None:
-        self._active: Optional[BrowserConnection] = None
+        self._connections: Dict[str, BrowserConnection] = {}
         self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket, browser_id: Optional[str]) -> BrowserConnection:
@@ -54,37 +66,17 @@ class BrowserConnectionRegistry:
         to_resend: Dict[str, _PendingRequest] = {}
 
         async with self._lock:
-            old = self._active
+            old = self._connections.pop(bid, None)
             if old is not None:
+                # Same tab reconnecting (reload, hot-reload, brief disconnect): take over its
+                # in-flight requests. Don't close the old socket - that would fire the frontend's
+                # onclose handler and schedule yet another reconnect.
                 if old.heartbeat_task and old.heartbeat_task is not asyncio.current_task():
                     old.heartbeat_task.cancel()
-
-                if old.browser_id == bid:
-                    # Same tab reconnecting (page reload, hot-reload, brief disconnect).
-                    # Transfer in-flight requests so they survive the reconnect.
-                    # Do NOT close the old WebSocket — closing it would fire the frontend
-                    # onclose handler, scheduling yet another reconnect and creating a loop.
-                    to_resend = {
-                        rid: req
-                        for rid, req in old.pending.items()
-                        if hasattr(req, "future") and not req.future.done()
-                    }
-                    old.pending.clear()
-                else:
-                    # Genuinely different browser tab: fail pending futures and close old socket.
-                    for req in old.pending.values():
-                        fut = req.future if hasattr(req, "future") else req
-                        if not fut.done():
-                            fut.set_exception(
-                                BrowserConnectionRequired("browser superseded by a newer tab")
-                            )
-                    old.pending.clear()
-                    try:
-                        await old.websocket.close(code=1000)
-                    except Exception:
-                        pass
-
-            self._active = connection
+                to_resend = {rid: req for rid, req in old.pending.items() if not req.future.done()}
+                old.pending.clear()
+            # Insertion order doubles as recency for the no-browser-id fallback.
+            self._connections[bid] = connection
             connection.heartbeat_task = asyncio.create_task(self._heartbeat(connection))
 
         # Re-send in-flight requests on the new connection (outside lock to avoid deadlock).
@@ -111,9 +103,20 @@ class BrowserConnectionRegistry:
 
     async def disconnect(self, connection: BrowserConnection) -> None:
         async with self._lock:
-            if self._active is connection:
-                self._active = None
+            if self._connections.get(connection.browser_id) is connection:
+                del self._connections[connection.browser_id]
         await self._finish_connection(connection, BrowserConnectionRequired("browser disconnected"))
+
+    async def _target(self, browser_id: Optional[str]) -> BrowserConnection:
+        bid = browser_id or current_browser_id.get()
+        async with self._lock:
+            if bid:
+                connection = self._connections.get(bid)
+            else:
+                connection = next(reversed(self._connections.values()), None)
+        if connection is None:
+            raise BrowserConnectionRequired("requires_open_app")
+        return connection
 
     async def receive(self, connection: BrowserConnection, message: dict[str, Any]) -> None:
         message_type = message.get("type")
@@ -128,11 +131,14 @@ class BrowserConnectionRegistry:
             return
         req.future.set_result(message)
 
-    async def dispatch(self, action_id: str, args: dict[str, Any]) -> dict[str, Any]:
-        async with self._lock:
-            connection = self._active
-        if connection is None:
-            raise BrowserConnectionRequired("requires_open_app")
+    async def dispatch(
+        self,
+        action_id: str,
+        args: dict[str, Any],
+        *,
+        browser_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        connection = await self._target(browser_id)
 
         request_id = uuid.uuid4().hex
         loop = asyncio.get_running_loop()

@@ -19,7 +19,7 @@ interface BrowserAutomationContextValue {
 
 const BrowserAutomationContext = createContext<BrowserAutomationContextValue | null>(null);
 
-function browserId() {
+export function browserId() {
   // sessionStorage (NOT localStorage) so each browser tab gets its own id.
   // With localStorage two tabs would share an id and continuously supersede
   // each other on the backend bridge — the "single-tab wins" policy would

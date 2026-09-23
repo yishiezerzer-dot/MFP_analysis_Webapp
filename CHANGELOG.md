@@ -29,6 +29,7 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 - **FTIR peak fits that failed to converge** were shown as results: the table then contained the initial guesses (with an R²) instead of fitted values. Failed fits are now flagged with a warning (plan 2.2). Asking for more components than detected peaks crashed the fit; it now works.
 - Saved sessions whose files are missing or unreadable after a restart no longer disappear silently: a banner lists them with the reason, and the server log records the error (plan 2.2).
+- AI-assistant automation with several people using the app: the last tab to open took over browser actions for everyone, so one person's request could be carried out in someone else's tab. Each tab now receives its own requests; MCP clients still use the most recently opened tab. The automation action log is kept in the persistent data directory, so it survives redeploys (plan 2.6).
 - Data Studio works with pandas 3: decimal-comma files kept text columns unconverted and the *fill forward* step failed (plan 2.3). The deployed version stays pinned to pandas 2.3 until an upgrade is tested.
 - Data Studio sheet, header-row and decimal-comma choices are kept after a server restart instead of resetting to defaults (plan 2.4).
 - Data Studio *baseline* step with a missing first value turned the whole column empty; it now leaves the column unchanged and shows a warning (plan 2.2).
