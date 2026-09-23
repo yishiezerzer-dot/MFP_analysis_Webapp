@@ -129,7 +129,7 @@ The original Tkinter + Matplotlib desktop GUI lives in `MFP_analysis_app/lab_gui
 | --- | --- |
 | **Python** | **3.10 or newer** (3.11+ recommended) |
 | **Node.js** | **18 or newer** (20 LTS recommended) |
-| **npm** or **pnpm** | For frontend dependencies. The combined `npm run dev` script invokes **pnpm** internally — see [Known setup notes](#known-setup-notes). |
+| **npm** | For frontend dependencies (`package-lock.json` is the lockfile; the Docker build uses it). |
 | **Git** | To clone the repository |
 | **OS** | Windows, macOS, or Linux. Paths in examples use Windows PowerShell; adapt for your shell. |
 
@@ -164,7 +164,7 @@ cd MFP_analysis_app\web\frontend
 npm install
 ```
 
-Dependencies are declared in `package.json` (React, Plotly, Tailwind toolchain, Vitest, etc.). Lockfiles present: `package-lock.json` and `pnpm-lock.yaml`.
+Dependencies are declared in `package.json` (React, Plotly, Tailwind toolchain, Vitest, etc.). Lockfile: `package-lock.json` (npm).
 
 ### Optional environment variables
 
@@ -240,17 +240,17 @@ Verified against actual imports in `web/backend/app/` and the `lab_gui` modules 
 
 ### Gaps and caveats (documented, not blockers)
 
-1. **`npm run dev` calls `pnpm`** — The frontend `package.json` `"dev"` script runs `pnpm run dev:frontend` and `pnpm run dev:backend`. If you only installed npm, either install pnpm (`npm install -g pnpm`) or start frontend and backend in **two terminals** (see below).
+1. **`npm run dev`** starts both frontend and backend (`npm run dev:frontend` + `npm run dev:backend`); you can also start them in **two terminals** (see below).
 2. **Python venv must be active** when the frontend starts the backend via `dev:backend` (`python -m uvicorn …`).
 3. **`lab_gui/` must be present** — documented in requirements comments; missing folder causes import errors at startup.
-4. **pytest not in requirements.txt** — only affects contributors running backend tests, not normal app use.
+4. **Test dependencies** are in `web/backend/requirements-dev.txt` (`pip install -r requirements-dev.txt`).
 5. **Ollama is external** — not a pip package; install the Ollama application separately if you want local LLM chat.
 6. **MCP server is a separate install** — intentional; not required to use the web UI.
 7. **No pinned upper bounds** — `>=` versions allow newer releases; if you hit a breakage, pin versions in a fresh venv and report an issue.
 
 ### Frontend `package.json`
 
-All runtime and build dependencies for the SPA are declared. **`npm install`** (or `pnpm install`) is required in addition to Python — there is no single file that installs both stacks.
+All runtime and build dependencies for the SPA are declared. **`npm install`** is required in addition to Python — there is no single file that installs both stacks.
 
 ---
 
@@ -291,11 +291,11 @@ cd MFP_analysis_app\web\frontend
 npm run dev:frontend
 ```
 
-**Option B — single command (requires pnpm on PATH)**
+**Option B — single command**
 
 ```powershell
 cd MFP_analysis_app\web\frontend
-pnpm install
+npm install
 npm run dev
 ```
 
@@ -347,7 +347,7 @@ Interactive OpenAPI documentation: http://127.0.0.1:8000/docs
 
 ## Known setup notes
 
-- **Combined dev script and pnpm:** Prefer two-terminal startup if you do not use pnpm.
+- **Combined dev script:** `npm run dev` runs both servers; two terminals work too.
 - **Windows paths with spaces:** Quote paths when `cd`-ing (as in examples above).
 - **Large mzML files:** First load can take time while the backend builds the MS1 index; subsequent operations use in-memory session state.
 - **AI demo mode:** Works offline; switch provider in the AI tab after setting API keys or starting Ollama.

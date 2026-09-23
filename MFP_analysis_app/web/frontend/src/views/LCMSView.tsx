@@ -53,6 +53,9 @@ import {
   buildSpectrumIndex,
   eicSourceFile,
   eicSourceSessionId,
+  loadPolymerUiSettings,
+  savePolymerMonomerPresets,
+  savePolymerUiSettingsDefault,
   EXPECTED_PRODUCT_MAX_DP,
   extractTopPeaks,
   featureMatrixValue,
@@ -73,10 +76,6 @@ import {
   type LCMSFeatureRow,
   type LCMSEICMetadata,
   type LCMSEICPlot,
-  type PolymerModeSettings,
-  type PolymerMonomerCategory,
-  type PolymerMonomerPreset,
-  type PolymerSharedSettings,
   type PolymerUiSettings,
 } from "../lcms/analysis";
 import {
@@ -377,7 +376,6 @@ interface LCMSProjectPersistenceEnvelope {
   activeProjectId: LCMSActiveProjectId;
 }
 
-const POLYMER_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.polymerSettings.default";
 
 // Dual-polarity requests: a file may contain only one polarity, in which case the backend
 // rejects the other request; show what exists and report the missing side.
@@ -394,7 +392,6 @@ function splitDualResults<T>(results: [PromiseSettledResult<T>, PromiseSettledRe
     bothFailed: failures.length === 2,
   };
 }
-const POLYMER_MONOMER_PRESETS_STORAGE_KEY = "mfp.lcms.polymerMonomerPresets";
 const LCMS_PROJECTS_STORAGE_KEY = "mfp.lcms.projects";
 const KENDRICK_SETTINGS_STORAGE_KEY = "mfp.lcms.kendrickSettings";
 const LCMS_STORAGE_PREFIX = "mfp.lcms";
@@ -414,164 +411,6 @@ const UV_PEAK_FETCH_LIMIT = 250;
 const UV_LABEL_STAIR_X_STEP_MIN = 0.5;
 const UV_LABEL_STAIR_Y_STEP_PX = 5;
 const UV_LABEL_STAIR_BASE_Y_PX = 24;
-
-const BUILT_IN_POLYMER_MONOMERS: PolymerMonomerPreset[] = [
-  { id: "hydroxy:glycolic-acid", category: "hydroxy", name: "Glycolic acid", abbr: "GA", mass: 76.016044, selected: false },
-  { id: "hydroxy:lactic-acid", category: "hydroxy", name: "Lactic acid", abbr: "LA", mass: 90.031694, selected: false },
-  { id: "hydroxy:phenyllactic-acid", category: "hydroxy", name: "Phenyllactic acid", abbr: "PLA", mass: 166.062994, selected: false },
-  { id: "hydroxy:mandelic-acid", category: "hydroxy", name: "Mandelic acid", abbr: "MA", mass: 152.047344, selected: false },
-  { id: "hydroxy:hydroxybutyric-acid", category: "hydroxy", name: "Hydroxybutyric acid", abbr: "HBA", mass: 104.047344, selected: false },
-  { id: "amino:alanine", category: "amino", name: "Alanine", abbr: "Ala", mass: 89.047678, selected: false },
-  { id: "amino:arginine", category: "amino", name: "Arginine", abbr: "Arg", mass: 174.111676, selected: false },
-  { id: "amino:asparagine", category: "amino", name: "Asparagine", abbr: "Asn", mass: 132.053492, selected: false },
-  { id: "amino:aspartic-acid", category: "amino", name: "Aspartic acid", abbr: "Asp", mass: 133.037508, selected: false },
-  { id: "amino:cysteine", category: "amino", name: "Cysteine", abbr: "Cys", mass: 121.019749, selected: false },
-  { id: "amino:glutamine", category: "amino", name: "Glutamine", abbr: "Gln", mass: 146.069142, selected: false },
-  { id: "amino:glutamic-acid", category: "amino", name: "Glutamic acid", abbr: "Glu", mass: 147.053158, selected: false },
-  { id: "amino:glycine", category: "amino", name: "Glycine", abbr: "Gly", mass: 75.032028, selected: false },
-  { id: "amino:histidine", category: "amino", name: "Histidine", abbr: "His", mass: 155.069477, selected: false },
-  { id: "amino:isoleucine", category: "amino", name: "Isoleucine", abbr: "Ile", mass: 131.094629, selected: false },
-  { id: "amino:leucine", category: "amino", name: "Leucine", abbr: "Leu", mass: 131.094629, selected: false },
-  { id: "amino:lysine", category: "amino", name: "Lysine", abbr: "Lys", mass: 146.105528, selected: false },
-  { id: "amino:methionine", category: "amino", name: "Methionine", abbr: "Met", mass: 149.051049, selected: false },
-  { id: "amino:phenylalanine", category: "amino", name: "Phenylalanine", abbr: "Phe", mass: 165.078979, selected: false },
-  { id: "amino:proline", category: "amino", name: "Proline", abbr: "Pro", mass: 115.063329, selected: false },
-  { id: "amino:serine", category: "amino", name: "Serine", abbr: "Ser", mass: 105.042593, selected: false },
-  { id: "amino:threonine", category: "amino", name: "Threonine", abbr: "Thr", mass: 119.058243, selected: false },
-  { id: "amino:tryptophan", category: "amino", name: "Tryptophan", abbr: "Trp", mass: 204.089878, selected: false },
-  { id: "amino:tyrosine", category: "amino", name: "Tyrosine", abbr: "Tyr", mass: 181.073893, selected: false },
-  { id: "amino:valine", category: "amino", name: "Valine", abbr: "Val", mass: 117.078979, selected: false },
-  { id: "amino:ornithine", category: "amino", name: "Ornithine", abbr: "Orn", mass: 132.089878, selected: false },
-  { id: "amino:dab", category: "amino", name: "2,4-Diaminobutyric acid", abbr: "DAB", mass: 118.074228, selected: false },
-  { id: "amino:dpr", category: "amino", name: "2,3-Diaminopropionic acid", abbr: "DPR", mass: 104.058578, selected: false },
-];
-
-const DEFAULT_POLYMER_SHARED_SETTINGS: PolymerSharedSettings = {
-  enabled: false,
-  monomers_text: "",
-  bond_delta: -18.010565,
-  extra_delta: 0,
-  charges: "1",
-  decarb: false,
-  oxid: false,
-  h2o_loss: false,
-  cluster: false,
-  max_dp: 12,
-  tol_value: 0.02,
-  tol_unit: "Da",
-  min_rel_int: 0.01,
-};
-
-const DEFAULT_POLYMER_UI_SETTINGS: PolymerUiSettings = {
-  shared: DEFAULT_POLYMER_SHARED_SETTINGS,
-  positive: {
-    adduct_mass: 1.007276,
-    cluster_adduct_mass: 1.007276,
-    adduct_na: false,
-    adduct_k: false,
-    adduct_cl: false,
-    adduct_formate: false,
-    adduct_acetate: false,
-    custom_adducts: [],
-  },
-  negative: {
-    adduct_mass: -1.007276,
-    cluster_adduct_mass: -1.007276,
-    adduct_na: false,
-    adduct_k: false,
-    adduct_cl: false,
-    adduct_formate: false,
-    adduct_acetate: false,
-    custom_adducts: [],
-  },
-  monomers: BUILT_IN_POLYMER_MONOMERS,
-};
-
-function clonePolymerMonomers(monomers: PolymerMonomerPreset[]): PolymerMonomerPreset[] {
-  return monomers.map((monomer) => ({ ...monomer }));
-}
-
-function mergePolymerMonomerPresets(saved: PolymerMonomerPreset[]): PolymerMonomerPreset[] {
-  const builtIns = clonePolymerMonomers(BUILT_IN_POLYMER_MONOMERS);
-  const savedById = new Map(saved.map((monomer) => [monomer.id, monomer]));
-  const merged = builtIns.map((monomer) => {
-    const savedMonomer = savedById.get(monomer.id);
-    return savedMonomer
-      ? {
-          ...monomer,
-          abbr: savedMonomer.abbr || monomer.abbr,
-          selected: Boolean(savedMonomer.selected),
-        }
-      : monomer;
-  });
-  for (const monomer of saved) {
-    if (monomer.custom && !merged.some((existing) => existing.id === monomer.id)) {
-      merged.push({
-        ...monomer,
-        selected: Boolean(monomer.selected),
-        custom: true,
-      });
-    }
-  }
-  return merged;
-}
-
-function loadPolymerMonomerPresets(): PolymerMonomerPreset[] {
-  const builtIns = clonePolymerMonomers(BUILT_IN_POLYMER_MONOMERS);
-  if (typeof window === "undefined") return builtIns;
-  try {
-    const stored = window.localStorage.getItem(POLYMER_MONOMER_PRESETS_STORAGE_KEY);
-    if (!stored) return builtIns;
-    const saved = JSON.parse(stored) as PolymerMonomerPreset[];
-    return mergePolymerMonomerPresets(saved);
-  } catch {
-    return builtIns;
-  }
-}
-
-function savePolymerMonomerPresets(monomers: PolymerMonomerPreset[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(POLYMER_MONOMER_PRESETS_STORAGE_KEY, JSON.stringify(monomers));
-}
-
-function defaultPolymerUiSettings(): PolymerUiSettings {
-  return {
-    ...DEFAULT_POLYMER_UI_SETTINGS,
-    shared: { ...DEFAULT_POLYMER_SHARED_SETTINGS },
-    positive: { ...DEFAULT_POLYMER_UI_SETTINGS.positive },
-    negative: { ...DEFAULT_POLYMER_UI_SETTINGS.negative },
-    monomers: loadPolymerMonomerPresets(),
-  };
-}
-
-function mergePolymerUiSettings(saved: Partial<PolymerUiSettings>): PolymerUiSettings {
-  const base = defaultPolymerUiSettings();
-  return {
-    ...base,
-    shared: { ...base.shared, ...(saved.shared ?? {}) },
-    positive: { ...base.positive, ...(saved.positive ?? {}) },
-    negative: { ...base.negative, ...(saved.negative ?? {}) },
-    monomers: Array.isArray(saved.monomers)
-      ? mergePolymerMonomerPresets(saved.monomers)
-      : base.monomers,
-  };
-}
-
-function loadPolymerUiSettings(): PolymerUiSettings {
-  if (typeof window === "undefined") return defaultPolymerUiSettings();
-  try {
-    const stored = window.localStorage.getItem(POLYMER_SETTINGS_DEFAULT_STORAGE_KEY);
-    if (!stored) return defaultPolymerUiSettings();
-    return mergePolymerUiSettings(JSON.parse(stored) as Partial<PolymerUiSettings>);
-  } catch {
-    return defaultPolymerUiSettings();
-  }
-}
-
-function savePolymerUiSettingsDefault(settings: PolymerUiSettings) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(POLYMER_SETTINGS_DEFAULT_STORAGE_KEY, JSON.stringify(settings));
-}
 
 function makeUvLabelId(sourceMsRt: number, uvRt: number, text: string, index: number): string {
   return `${sourceMsRt.toFixed(6)}:${uvRt.toFixed(6)}:${index}:${text}`;
