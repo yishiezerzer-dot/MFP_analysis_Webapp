@@ -27,6 +27,8 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Fixed
 
+- **Server hardening (plan 3.1–3.3):** the server no longer opens files by a path given in a request (removed `POST /api/lcms/sessions/from_path` and `/sessions/{id}/uv/from_path`, which could read any numeric file on the server), no longer returns server file paths in session summaries or automation outputs, and ignores a request-supplied Ollama URL (only `OLLAMA_BASE_URL` is used). Loading an LCMS workspace file now re-links sessions that still exist on the server and asks you to re-upload the rest.
+
 - **FTIR peak fits that failed to converge** were shown as results: the table then contained the initial guesses (with an R²) instead of fitted values. Failed fits are now flagged with a warning (plan 2.2). Asking for more components than detected peaks crashed the fit; it now works.
 - Saved sessions whose files are missing or unreadable after a restart no longer disappear silently: a banner lists them with the reason, and the server log records the error (plan 2.2).
 - AI-assistant automation with several people using the app: the last tab to open took over browser actions for everyone, so one person's request could be carried out in someone else's tab. Each tab now receives its own requests; MCP clients still use the most recently opened tab. The automation action log is kept in the persistent data directory, so it survives redeploys (plan 2.6).

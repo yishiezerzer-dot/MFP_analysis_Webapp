@@ -85,16 +85,6 @@ class OverlayRequest(BaseModel):
     polarity: Optional[str] = None
 
 
-class LoadFromPathRequest(BaseModel):
-    path: str
-    display_name: Optional[str] = None
-    rt_unit: str = "minutes"
-
-
-class AttachUVFromPathRequest(BaseModel):
-    path: str
-
-
 def _safe_upload_name(filename: str, default: str) -> str:
     name = Path(filename or default).name
     return name or default
@@ -132,7 +122,6 @@ def _uv_summary(state: LCMSSessionState) -> Dict[str, Any]:
     return {
         "available": True,
         "filename": uv.filename,
-        "path": str(uv.path),
         "n_points": int(uv.rt_min.size),
         "rt_min": float(uv.rt_range[0]),
         "rt_max": float(uv.rt_range[1]),
@@ -154,7 +143,6 @@ def _session_summary(state: LCMSSessionState) -> Dict[str, Any]:
         "session_id": state.session_id,
         "workspace_id": state.workspace_id,
         "display_name": state.display_name,
-        "path": str(state.path),
         "experiment_tag": rec.get("experiment_tag", "") if rec else "",
         "ms1_count": len(metas),
         "rt_min": float(min(rts)) if rts else None,
@@ -223,28 +211,6 @@ async def create_session(
                 "rt_unit": rt_unit,
             },
         )
-    return _session_summary(state)
-
-
-@router.post("/sessions/from_path")
-def load_session_from_path(
-    body: LoadFromPathRequest,
-    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
-) -> Dict[str, Any]:
-    p = Path(body.path)
-    if not p.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {body.path}")
-    try:
-        state = registry.add_from_path(
-            p,
-            workspace_id=x_workspace_id,
-            display_name=body.display_name or p.name,
-            rt_unit=body.rt_unit,
-        )
-    except LCMSLoadError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"mzML load failed: {exc}")
     return _session_summary(state)
 
 
@@ -550,21 +516,6 @@ async def attach_uv(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"UV CSV parse failed: {exc}")
-    return _session_summary(state)
-
-
-@router.post("/sessions/{sid}/uv/from_path")
-async def attach_uv_from_path_endpoint(sid: str, body: AttachUVFromPathRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
-    p = Path(body.path)
-    if not p.exists():
-        raise HTTPException(status_code=404, detail=f"UV file not found: {body.path}")
-    try:
-        attach_uv_from_csv(state, p, filename=p.name)
-    except UVLoadError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"UV CSV load failed: {exc}")
     return _session_summary(state)
 
 

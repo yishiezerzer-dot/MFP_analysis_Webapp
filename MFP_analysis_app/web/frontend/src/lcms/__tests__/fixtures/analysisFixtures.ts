@@ -106,7 +106,6 @@ export const sessionFixtures: LCMSSessionSummary[] = [
   {
     session_id: "s1",
     display_name: "Sample 1",
-    path: "a.mzML",
     ms1_count: 1,
     rt_min: 0,
     rt_max: 1,
@@ -116,7 +115,6 @@ export const sessionFixtures: LCMSSessionSummary[] = [
   {
     session_id: "s2",
     display_name: "Sample 2",
-    path: "b.mzML",
     ms1_count: 1,
     rt_min: 0,
     rt_max: 1,

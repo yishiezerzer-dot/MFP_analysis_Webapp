@@ -21,7 +21,6 @@ def uv_summary(state: LCMSSessionState) -> Dict[str, Any]:
     return {
         "available": True,
         "filename": uv.filename,
-        "path": str(uv.path),
         "n_points": int(uv.rt_min.size),
         "rt_min": float(uv.rt_range[0]),
         "rt_max": float(uv.rt_range[1]),
@@ -41,7 +40,6 @@ def session_summary(state: LCMSSessionState) -> Dict[str, Any]:
     return {
         "session_id": state.session_id,
         "display_name": state.display_name,
-        "path": str(state.path),
         "ms1_count": len(metas),
         "rt_min": float(min(rts)) if rts else None,
         "rt_max": float(max(rts)) if rts else None,

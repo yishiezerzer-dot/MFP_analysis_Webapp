@@ -732,7 +732,7 @@ function linkNameTokens(name: string): string[] {
 
 function scoreUvSessionMatch(file: File, session: LCMSSessionSummary): number {
   const fileName = normalizeLinkName(file.name);
-  const sessionName = normalizeLinkName(session.display_name || session.path || session.session_id);
+  const sessionName = normalizeLinkName(session.display_name || session.session_id);
   if (!fileName || !sessionName) return 0;
   if (fileName === sessionName) return 1;
 
@@ -744,10 +744,7 @@ function scoreUvSessionMatch(file: File, session: LCMSSessionSummary): number {
       : 0;
 
   const fileTokens = new Set(linkNameTokens(file.name));
-  const sessionTokens = new Set([
-    ...linkNameTokens(session.display_name),
-    ...linkNameTokens(session.path),
-  ]);
+  const sessionTokens = new Set(linkNameTokens(session.display_name));
   const shared = [...fileTokens].filter((token) => sessionTokens.has(token)).length;
   const union = new Set([...fileTokens, ...sessionTokens]).size || 1;
   return Math.max(contains, shared / union);
@@ -3490,10 +3487,7 @@ export function LCMSView() {
       sessions: sessions.map((session) => ({
         session_id: session.session_id,
         display_name: session.display_name,
-        path: session.path,
-        uv: session.uv
-          ? { available: Boolean(session.uv.available), filename: session.uv.filename, path: session.uv.path }
-          : { available: false },
+        uv: session.uv ? { available: Boolean(session.uv.available), filename: session.uv.filename } : { available: false },
       })),
       activeSessionId: activeSid,
       projects,
@@ -3555,32 +3549,16 @@ export function LCMSView() {
 
       const availableIds = new Set(sessions.map((s) => s.session_id));
 
-      // old session_id → new session_id mapping (for restored sessions)
+      // Sessions are kept on the server, so a workspace can only re-link sessions that still
+      // exist there; files that were removed must be re-uploaded (the server no longer opens
+      // arbitrary file paths).
       const idMap = new Map<string, string>();
-      let restored = 0;
       let failed = 0;
 
       for (const wsSession of workspace.sessions) {
         if (availableIds.has(wsSession.session_id)) {
           idMap.set(wsSession.session_id, wsSession.session_id);
-          continue;
-        }
-        if (!wsSession.path) {
-          failed++;
-          continue;
-        }
-        try {
-          const newSession = await api.lcms.loadFromPath(wsSession.path, wsSession.display_name, "minutes");
-          idMap.set(wsSession.session_id, newSession.session_id);
-          if (wsSession.uv?.available && wsSession.uv.path) {
-            try {
-              await api.lcms.attachUVFromPath(newSession.session_id, wsSession.uv.path);
-            } catch {
-              // UV file gone — mzML still loaded
-            }
-          }
-          restored++;
-        } catch {
+        } else {
           failed++;
         }
       }
@@ -3709,8 +3687,7 @@ export function LCMSView() {
       if (newActiveSid) setActiveSid(newActiveSid);
 
       let infoMsg = "Loaded LCMS workspace.";
-      if (restored > 0) infoMsg += ` Restored ${restored} session(s) from disk.`;
-      if (failed > 0) infoMsg += ` ${failed} session(s) could not be found on disk.`;
+      if (failed > 0) infoMsg += ` ${failed} session(s) are no longer on the server; re-upload those files.`;
       setInfo(infoMsg);
     } catch (err) {
       setError(String(err));

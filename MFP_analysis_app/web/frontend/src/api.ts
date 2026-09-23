@@ -111,7 +111,6 @@ export interface WorkspaceSummary {
 export interface LCMSUVMeta {
   available: boolean;
   filename?: string;
-  path?: string;
   n_points?: number;
   rt_min?: number;
   rt_max?: number;
@@ -126,7 +125,6 @@ export interface LCMSUVMeta {
 export interface LCMSSessionSummary {
   session_id: string;
   display_name: string;
-  path: string;
   experiment_tag?: string;
   ms1_count: number;
   rt_min: number | null;
@@ -357,7 +355,6 @@ async function handleBlob(res: Response): Promise<Blob> {
 export interface PlateSessionSummary {
   session_id: string;
   display_name: string;
-  path: string;
   experiment_tag?: string;
   sheets: string[];
 }
@@ -452,7 +449,6 @@ export type FTIRNormalize = "none" | "max" | "area" | "snv" | "vector" | "min-ma
 export interface FTIRSessionSummary {
   session_id: string;
   display_name: string;
-  path: string;
   experiment_tag?: string;
   n_points: number;
   wn_min: number | null;
@@ -674,7 +670,6 @@ export interface FTIRFitResponse {
 export interface DSSessionSummary {
   session_id: string;
   display_name: string;
-  path: string;
   experiment_tag?: string;
   sheets: string[];
   sheet_name: string | null;
@@ -984,12 +979,6 @@ export const api = {
       uploadFileWithProgress("/api/lcms/sessions", file, {}, onProgress).then((r) =>
         handle<LCMSSessionSummary>(r),
       ),
-    loadFromPath: (path: string, displayName?: string, rtUnit?: "minutes" | "seconds") =>
-      apiFetch("/api/lcms/sessions/from_path", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, display_name: displayName, rt_unit: rtUnit ?? "minutes" }),
-      }).then((r) => handle<LCMSSessionSummary>(r)),
     list: () => apiFetch("/api/lcms/sessions").then((r) => handle<LCMSSessionSummary[]>(r)),
     get: (sid: string) =>
       apiFetch(`/api/lcms/sessions/${sid}`).then((r) => handle<LCMSSessionSummary>(r)),
@@ -1103,12 +1092,6 @@ export const api = {
     },
     exportUV: (sid: string) =>
       apiFetch(`/api/lcms/sessions/${sid}/exports/uv.csv`).then(handleBlob),
-    attachUVFromPath: (sid: string, path: string) =>
-      apiFetch(`/api/lcms/sessions/${sid}/uv/from_path`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
-      }).then((r) => handle<LCMSSessionSummary>(r)),
     uploadUV: (sid: string, file: File, rtUnit: "auto" | "minutes" | "seconds" = "auto") =>
       postFileUpload(`/api/lcms/sessions/${sid}/uv`, file, { rt_unit: rtUnit }).then((r) =>
         handle<LCMSSessionSummary>(r),

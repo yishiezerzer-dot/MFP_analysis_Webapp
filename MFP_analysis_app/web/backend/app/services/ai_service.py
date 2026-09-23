@@ -96,7 +96,6 @@ def build_assistant(
     provider: str,
     model: Optional[str] = None,
     timeout_seconds: float = 30.0,
-    ollama_base_url: Optional[str] = None,
 ) -> AIAssistant:
     prov = (provider or "").strip().lower()
     chosen_model = str(model or DEFAULT_MODELS.get(prov, "gpt-4.1-mini"))
@@ -109,7 +108,9 @@ def build_assistant(
         )
     if prov == "ollama":
         return AIAssistant(
-            llm_client=OllamaChatClient(base_url=ollama_base_url),
+            # Server-side Ollama URL comes only from OLLAMA_BASE_URL; a URL supplied in the
+            # request would let any caller make the server send requests to arbitrary hosts.
+            llm_client=OllamaChatClient(),
             model=chosen_model,
             timeout_seconds=timeout_seconds,
         )
@@ -236,7 +237,6 @@ def run_chat(
     active_module: Optional[str],
     session_ids: List[str],
     include_context: bool,
-    ollama_base_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run one turn. Returns the AIAssistantResponse as a dict, plus echo of
     the context that was actually used (for transparency in the UI).
@@ -244,7 +244,6 @@ def run_chat(
     assistant = build_assistant(
         provider=provider,
         model=model,
-        ollama_base_url=ollama_base_url,
     )
 
     # The last user message is treated as the current question. Previous

@@ -31,7 +31,6 @@ def _summary(s) -> Dict[str, Any]:
         "session_id": s.session_id,
         "workspace_id": getattr(s, "workspace_id", "general"),
         "display_name": s.display_name,
-        "path": str(s.path),
         "experiment_tag": rec.get("experiment_tag", "") if rec else "",
         "sheets": list(s.sheets),
     }

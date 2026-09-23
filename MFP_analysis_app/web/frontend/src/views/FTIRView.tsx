@@ -971,7 +971,6 @@ export function FTIRView() {
       sessions: sessions.map((session) => ({
         session_id: session.session_id,
         display_name: session.display_name,
-        path: session.path,
       })),
       activeSessionId: activeSid,
       viewState: {

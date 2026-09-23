@@ -275,7 +275,6 @@ def session_summary(s: DataStudioSession) -> Dict[str, Any]:
         "session_id": s.session_id,
         "workspace_id": s.workspace_id,
         "display_name": s.display_name,
-        "path": str(s.path),
         "experiment_tag": rec.get("experiment_tag", "") if rec else "",
         "sheets": list(s.sheets),
         "sheet_name": s.sheet_name,
