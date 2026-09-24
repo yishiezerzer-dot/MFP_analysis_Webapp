@@ -8,3 +8,4 @@ MFP_analysis_app/web/backend/.automation/
 **/uploads/
 *.tsbuildinfo
 dist/
+node_modules/

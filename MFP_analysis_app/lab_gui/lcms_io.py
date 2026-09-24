@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -10,7 +11,7 @@ import numpy as np
 import pandas as pd
 from pyteomics import mzml
 
-from .lcms_model import SpectrumMeta, _extract_ms_level, _extract_polarity, _extract_rt_minutes, _spectrum_id
+from .lcms_model import SpectrumMeta, _declared_rt_unit, _extract_ms_level, _extract_polarity, _extract_rt_minutes, _spectrum_id
 
 
 def _get_index_cache_dir() -> Path:
@@ -57,7 +58,7 @@ class MzMLTICIndex:
             if not self.path.exists():
                 return None
             stat = self.path.stat()
-            key_raw = f"{self.path.resolve()}:{stat.st_size}:{stat.st_mtime}:{self.rt_unit}:v2"
+            key_raw = f"{self.path.resolve()}:{stat.st_size}:{stat.st_mtime}:{self.rt_unit}:v3"
             cache_name = hashlib.sha256(key_raw.encode("utf-8")).hexdigest() + ".json"
             return _get_index_cache_dir() / cache_name
         except Exception:
@@ -113,7 +114,8 @@ class MzMLTICIndex:
             tmp_file.write_text(json.dumps(payload), encoding="utf-8")
             tmp_file.replace(cache_file)
         except Exception:
-            pass
+            # The index still works without the cache; it just gets rebuilt on the next load.
+            logging.getLogger("mfp.lcms").warning("Could not write LCMS index cache %s", cache_file, exc_info=True)
 
     def build(self) -> None:
         """Build MS1 index, using fast disk cache if available."""
@@ -132,6 +134,8 @@ class MzMLTICIndex:
             "cached": False,
         }
 
+        declared_units: set = set()
+
         # Attempt 1: Fast header-only reading without full binary array decoding
         fast_success = False
         try:
@@ -148,6 +152,7 @@ class MzMLTICIndex:
                         if rt_min is None:
                             stats["skipped_no_rt"] += 1
                             continue
+                        declared_units.add(_declared_rt_unit(spectrum))
 
                         pol = _extract_polarity(spectrum)
                         tic_val = spectrum.get("total ion current")
@@ -190,6 +195,7 @@ class MzMLTICIndex:
         # Attempt 2: Fallback to full binary decoding if fast header parsing failed
         if not fast_success or (len(ms1) == 0 and stats["total_spectra"] > 0):
             ms1 = []
+            declared_units = set()
             stats = {
                 "total_spectra": 0,
                 "ms1_kept": 0,
@@ -214,6 +220,7 @@ class MzMLTICIndex:
                             if rt_min is None:
                                 stats["skipped_no_rt"] += 1
                                 continue
+                            declared_units.add(_declared_rt_unit(spectrum))
 
                             inten = spectrum.get("intensity array")
                             if inten is None:
@@ -243,6 +250,15 @@ class MzMLTICIndex:
                             continue
             except Exception as exc:
                 stats["fatal_error"] = f"mzML read failed: {exc!r}"
+
+        file_units = sorted(u for u in declared_units if u)
+        if not file_units:
+            stats["rt_unit_source"] = "fallback"
+        elif None in declared_units or len(file_units) > 1:
+            stats["rt_unit_source"] = "mixed"
+        else:
+            stats["rt_unit_source"] = "file"
+        stats["rt_unit"] = ",".join(file_units) or self.rt_unit
 
         ms1.sort(key=lambda m: float(m.rt_min))
         self.ms1 = ms1
@@ -334,14 +350,8 @@ def infer_uv_columns(df: pd.DataFrame) -> Dict[str, Any]:
         unit_guess = "seconds"
     elif ("min" in xname) or ("minute" in xname):
         unit_guess = "minutes"
-    elif _is_numeric_name(x_best):
-        # Infer from data range: if max x value > 60, likely seconds
-        try:
-            x_vals = pd.to_numeric(df[x_best], errors="coerce").dropna()
-            if len(x_vals) > 0 and float(x_vals.max()) > 60:
-                unit_guess = "seconds"
-        except Exception:
-            pass
+    # No header hint: assume minutes. Guessing seconds from the value range turned long runs
+    # (> 60 min) into seconds; users choose the unit explicitly on import instead.
 
     reason = ""
     if low_conf:
@@ -384,7 +394,7 @@ def parse_uv_arrays(df: pd.DataFrame, *, xcol: str, ycol: str, unit_guess: str) 
     else:
         try:
             if float(np.nanmax(x)) > 500.0:
-                import_warnings.append("Time values look large; if this CSV is in seconds, choose 'seconds' in UV import settings.")
+                import_warnings.append("Time values look large; if this CSV is in seconds, set 'UV CSV time unit' to seconds (LCMS Display tab) and re-attach it.")
         except Exception:
             pass
 

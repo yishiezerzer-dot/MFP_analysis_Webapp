@@ -88,7 +88,7 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
     [sessionId, onTagUpdated],
   );
 
-  const handleDownloadSI = useCallback(async () => {
+  const handleDownloadSI = async () => {
     if (!currentTag) return;
     setIsDownloadingSI(true);
     try {
@@ -106,7 +106,7 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
     } finally {
       setIsDownloadingSI(false);
     }
-  }, [currentTag]);
+  };
 
   if (!sessionId) return null;
 

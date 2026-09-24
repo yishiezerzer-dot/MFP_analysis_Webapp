@@ -56,19 +56,28 @@ def coerce_numeric_matrix(
 
     # Rows are selected by position in the UI (Row 1 == first displayed row),
     # so always interpret them as positional indices.
-    rows = [int(i) for i in (row_indices or []) if int(i) >= 0 and int(i) < int(df.shape[0])]
+    requested_rows = [int(i) for i in (row_indices or [])]
+    bad_rows = [i for i in requested_rows if not 0 <= i < int(df.shape[0])]
+    if bad_rows:
+        raise ValueError(f"Selected row(s) {[i + 1 for i in bad_rows]} are not in the table ({df.shape[0]} rows).")
+    rows = requested_rows
 
     # Columns may be strings in the UI even when df.columns are ints (e.g. header=None).
     # Build a robust lookup by stringifying the actual column labels.
     col_lookup = {str(c): c for c in df.columns}
     cols: List[object] = []
+    missing_cols: List[str] = []
     for c in (columns or []):
         if c in df.columns:
             cols.append(c)
+        elif str(c) in col_lookup:
+            cols.append(col_lookup[str(c)])
         else:
-            key = str(c)
-            if key in col_lookup:
-                cols.append(col_lookup[key])
+            missing_cols.append(str(c))
+    if missing_cols:
+        raise ValueError(
+            f"Selected column(s) {missing_cols} are not in the table; re-select the concentration columns."
+        )
 
     # De-duplicate while preserving order
     seen = set()

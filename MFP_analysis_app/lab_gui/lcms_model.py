@@ -157,25 +157,34 @@ def _extract_ms_level(spectrum: Dict[str, Any]) -> Optional[int]:
         return None
 
 
-def _extract_rt_minutes(spectrum: Dict[str, Any], rt_unit: str) -> Optional[float]:
-    """Implement the `_extract_rt_minutes` behavior for this module.
+_FILE_RT_UNITS = {"minute": "minutes", "min": "minutes", "second": "seconds", "s": "seconds", "sec": "seconds"}
 
-    Text-only documentation note: modify internal logic here to change behavior.
-    """
+
+def _scan_start_time(spectrum: Dict[str, Any]) -> Any:
     scan_list = spectrum.get("scanList") or {}
     scans = scan_list.get("scan") or []
     if not scans:
         return None
+    return scans[0].get("scan start time")
 
-    scan0 = scans[0]
-    scan_start_time = scan0.get("scan start time")
-    rt = _safe_float(scan_start_time)
+
+def _declared_rt_unit(spectrum: Dict[str, Any]) -> Optional[str]:
+    """'minutes' / 'seconds' as declared in the mzML (pyteomics unitfloat.unit_info), else None."""
+    unit = getattr(_scan_start_time(spectrum), "unit_info", None)
+    return _FILE_RT_UNITS.get(str(unit).strip().lower()) if unit else None
+
+
+def _extract_rt_minutes(spectrum: Dict[str, Any], rt_unit: str) -> Optional[float]:
+    """Retention time in minutes. The unit declared in the file wins; `rt_unit` is only the
+    fallback for files that don't declare one."""
+    rt = _safe_float(_scan_start_time(spectrum))
     if rt is None:
         return None
 
-    if rt_unit == "minutes":
+    unit = _declared_rt_unit(spectrum) or rt_unit
+    if unit == "minutes":
         return rt
-    if rt_unit == "seconds":
+    if unit == "seconds":
         return rt / 60.0
     return None
 

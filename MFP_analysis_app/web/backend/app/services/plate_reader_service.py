@@ -118,24 +118,37 @@ class PlateReaderRegistry:
         from ..db import get_session_record
         rec = get_session_record(sid)
         if rec and rec.get("module") == "plate_reader":
-            p = Path(rec["file_path"])
-            if p.exists():
-                try:
-                    return self.restore_from_path(
-                        sid,
-                        p,
-                        workspace_id=rec.get("workspace_id", "general"),
-                        display_name=rec.get("display_name"),
-                    )
-                except Exception:
-                    pass
+            return self._restore_record(rec)
         return None
 
+    def _restore_record(self, rec: Dict[str, Any]) -> Optional[PlateSession]:
+        from ..db import clear_restore_error, record_restore_error
+        p = Path(rec["file_path"])
+        if not p.exists():
+            record_restore_error(rec, f"File not found: {p.name}")
+            return None
+        try:
+            restored = self.restore_from_path(
+                rec["session_id"],
+                p,
+                workspace_id=rec.get("workspace_id", "general"),
+                display_name=rec.get("display_name"),
+            )
+        except Exception as exc:  # noqa: BLE001 - any parser failure is reported, not raised
+            record_restore_error(rec, f"Could not load {p.name}: {exc}", exc)
+            return None
+        clear_restore_error(rec["session_id"])
+        return restored
+
     def remove(self, sid: str) -> bool:
-        from ..db import delete_session_record
+        from ..db import delete_session_record, get_session_record, remove_unreferenced_files
+        rec = get_session_record(sid)
         delete_session_record(sid)
+        if rec:
+            remove_unreferenced_files(rec)
         with self._lock:
-            return self._sessions.pop(sid, None) is not None
+            in_memory = self._sessions.pop(sid, None) is not None
+        return in_memory or rec is not None
 
     def list(self, workspace_id: Optional[str] = None) -> List[PlateSession]:
         from ..db import list_session_records
@@ -145,17 +158,7 @@ class PlateReaderRegistry:
             with self._lock:
                 already = sid in self._sessions
             if not already:
-                p = Path(rec["file_path"])
-                if p.exists():
-                    try:
-                        self.restore_from_path(
-                            sid,
-                            p,
-                            workspace_id=rec.get("workspace_id", "general"),
-                            display_name=rec.get("display_name"),
-                        )
-                    except Exception:
-                        pass
+                self._restore_record(rec)
         with self._lock:
             if workspace_id:
                 return [s for s in self._sessions.values() if s.workspace_id == workspace_id]
@@ -163,31 +166,6 @@ class PlateReaderRegistry:
 
 
 registry = PlateReaderRegistry()
-
-
-async def get_or_restore(session_id: str) -> Optional[PlateSession]:
-    existing = registry.get(session_id)
-    if existing is not None:
-        return existing
-
-    import tempfile
-
-    from ..blob_store import download_bytes, get_json, manifest_key
-
-    manifest = await get_json(manifest_key("plate_reader", session_id))
-    if manifest is None:
-        return None
-
-    data = await download_bytes(str(manifest["blob_url"]))
-    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_plate_restore_"))
-    filename = str(manifest.get("filename") or "upload.xlsx")
-    dest = tmp_dir / filename
-    dest.write_bytes(data)
-    return registry.restore_from_path(
-        session_id,
-        dest,
-        display_name=str(manifest.get("display_name") or filename),
-    )
 
 
 def preview(df: pd.DataFrame, *, max_rows: int = 200) -> Dict[str, Any]:
@@ -273,4 +251,7 @@ def _result_to_dict(res: PlateReaderMICWizardResult) -> Dict[str, Any]:
         "blank_mean": list(getattr(res, "blank_mean", None)) if getattr(res, "blank_mean", None) is not None else None,
         "blank_std": list(getattr(res, "blank_std", None)) if getattr(res, "blank_std", None) is not None else None,
         "four_pl": getattr(res, "four_pl", None),
+        "four_pl_skipped_reason": res.four_pl_skipped_reason,
+        "x_positions": list(res.x_positions),
+        "sample_n": list(res.sample_n),
     }

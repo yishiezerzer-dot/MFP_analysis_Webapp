@@ -107,7 +107,7 @@ export function FeatureTableDialog({
                     Height{sortIndicator("height")}
                   </th>
                   <th className="cursor-pointer select-none px-2 py-2 font-medium hover:text-ink-900" onClick={() => toggleSort("area")}>
-                    Area{sortIndicator("area")}
+                    <span title="Trapezoidal area of the EIC above baseline: intensity (counts) × retention time (min)">Area (counts·min)</span>{sortIndicator("area")}
                   </th>
                   <th className="px-2 py-2 font-medium">Baseline</th>
                   <th className="cursor-pointer select-none px-2 py-2 font-medium hover:text-ink-900" onClick={() => toggleSort("sn")}>

@@ -57,7 +57,7 @@ interface PeakPickOptions {
 }
 
 const DEFAULT_PRE: FTIRPreprocessOptions = {
-  mode: "transmittance",
+  mode: "absorbance",
   smoothing_window: 0,
   poly_order: 2,
   baseline: "airpls",
@@ -70,10 +70,10 @@ const DEFAULT_PRE: FTIRPreprocessOptions = {
 };
 
 const FTIR_PRESETS: Record<string, Partial<FTIRPreprocessOptions>> = {
-  "KBr disc": { mode: "transmittance", smoothing_window: 5, poly_order: 2, baseline: "asls", normalize: "max", baseline_lambda: 100000, baseline_p: 0.01, mask_atmospheric: true },
-  "ATR sample": { mode: "absorbance", smoothing_window: 5, poly_order: 2, baseline: "rubberband", normalize: "vector", atr_correction: true, atr_n_crystal: 1.5 },
-  "Polymer thin film": { mode: "absorbance", smoothing_window: 5, poly_order: 2, baseline: "airpls", normalize: "snv", mask_atmospheric: true },
-  "Raw film": { mode: "absorbance", smoothing_window: 0, poly_order: 2, baseline: "none", normalize: "none" },
+  "KBr disc": { smoothing_window: 5, poly_order: 2, baseline: "asls", normalize: "max", baseline_lambda: 100000, baseline_p: 0.01 },
+  "ATR sample": { smoothing_window: 5, poly_order: 2, baseline: "rubberband", normalize: "vector", atr_correction: true, atr_n_crystal: 1.5 },
+  "Polymer thin film": { smoothing_window: 5, poly_order: 2, baseline: "airpls", normalize: "snv" },
+  "Raw film": { smoothing_window: 0, poly_order: 2, baseline: "none", normalize: "none" },
 };
 
 const DEFAULT_PEAK: PeakPickOptions = {
@@ -443,7 +443,10 @@ export function FTIRView() {
   const [storedPre, setStoredPre] = useStoredState<FTIRPreprocessOptions>(
     `${FTIR_STORAGE_PREFIX}.preprocess`,
     DEFAULT_PRE,
-    (value) => ({ ...DEFAULT_PRE, ...value }),
+    (value) => {
+      const merged = { ...DEFAULT_PRE, ...value };
+      return (merged.normalize as string) === "msc" ? { ...merged, normalize: "none" } : merged;
+    },
   );
   const {
     state: pre,
@@ -552,6 +555,15 @@ export function FTIRView() {
     () => sessions.find((s) => s.session_id === activeSid) ?? null,
     [sessions, activeSid],
   );
+
+  // The y-mode is a property of the file (detected on upload); apply it once when a session
+  // becomes active, leaving the user free to override it afterwards.
+  const modeSyncedForSidRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active || modeSyncedForSidRef.current === active.session_id) return;
+    modeSyncedForSidRef.current = active.session_id;
+    if (active.y_mode && active.y_mode !== pre.mode) setPre({ ...pre, mode: active.y_mode });
+  }, [active, pre, setPre]);
 
   useEffect(() => {
     let cancelled = false;
@@ -723,7 +735,7 @@ export function FTIRView() {
     try {
       const uploaded: FTIRSessionSummary[] = [];
       for (const file of files) {
-        const s = await api.ftir.upload(file, pre.mode);
+        const s = await api.ftir.upload(file);
         uploaded.push(s);
       }
       if (uploaded.length > 0) {
@@ -959,7 +971,6 @@ export function FTIRView() {
       sessions: sessions.map((session) => ({
         session_id: session.session_id,
         display_name: session.display_name,
-        path: session.path,
       })),
       activeSessionId: activeSid,
       viewState: {
@@ -994,7 +1005,8 @@ export function FTIRView() {
       }
       const availableIds = new Set(sessions.map((session) => session.session_id));
       const missing = workspace.sessions.filter((session) => !availableIds.has(session.session_id));
-      setPre({ ...DEFAULT_PRE, ...(workspace.viewState.preprocess ?? {}) });
+      const loadedPre = { ...DEFAULT_PRE, ...(workspace.viewState.preprocess ?? {}) };
+      setPre((loadedPre.normalize as string) === "msc" ? { ...loadedPre, normalize: "none" } : loadedPre);
       setPk({ ...DEFAULT_PEAK, ...(workspace.viewState.peakPick ?? {}) });
       setAssignmentConstraints({
         ...DEFAULT_ASSIGNMENT_CONSTRAINTS,
@@ -1092,7 +1104,8 @@ export function FTIRView() {
       "##DATA TYPE=INFRARED SPECTRUM",
       "##ORIGIN=MFP Analysis App",
       "##XUNITS=1/CM",
-      `##YUNITS=${pre.mode === "absorbance" ? "ABSORBANCE" : "TRANSMITTANCE"}`,
+      // Processed spectra are always absorbance (transmittance input is converted server-side).
+      "##YUNITS=ABSORBANCE",
       `##FIRSTX=${spectrum.wn[0] ?? ""}`,
       `##LASTX=${spectrum.wn[spectrum.wn.length - 1] ?? ""}`,
       `##NPOINTS=${spectrum.wn.length}`,
@@ -1678,7 +1691,6 @@ function PreprocessCard(props: {
             <option value="snv">SNV</option>
             <option value="vector">vector</option>
             <option value="min-max">min-max</option>
-            <option value="msc">MSC fallback</option>
           </select>
         </Field>
         <Field label="Baseline lambda">
@@ -1710,26 +1722,26 @@ function PreprocessCard(props: {
           />
         </Field>
         <Field label="Atmospheric mask">
-          <Tooltip content="Exclude CO2 and H2O atmospheric regions from peak picking and shade them on the chart">
+          <Tooltip content="Exclude the CO₂ doublet (2310–2390 cm⁻¹) from peak picking and shade it. Water-vapour lines overlap sample bands and can't be masked; use background subtraction.">
             <label className="flex h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 text-sm">
               <input
                 type="checkbox"
                 checked={pre.mask_atmospheric}
                 onChange={(e) => setPre({ ...pre, mask_atmospheric: e.target.checked })}
               />
-              Mask CO2/H2O
+              Mask CO₂
             </label>
           </Tooltip>
         </Field>
         <Field label="ATR correction">
-          <Tooltip content="Apply a gentle wavenumber-dependent ATR penetration-depth correction">
+          <Tooltip content="Approximate ATR correction: scales intensity by ν/ν_ref (penetration depth ∝ 1/ν). Not a full optical correction.">
             <label className="flex h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 text-sm">
               <input
                 type="checkbox"
                 checked={pre.atr_correction}
                 onChange={(e) => setPre({ ...pre, atr_correction: e.target.checked })}
               />
-              Correct ATR
+              Correct ATR (approx.)
             </label>
           </Tooltip>
         </Field>
@@ -2453,6 +2465,12 @@ function QuantToolsCard(props: {
         </div>
         {props.fitResult && (
           <div className="mt-3">
+            {props.fitResult.converged === false && (
+              <div className="mb-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                ⚠ The fit did not converge ({props.fitResult.fit_error}). The components below are only the starting
+                guesses, not fitted values — try fewer components, another profile or a narrower region.
+              </div>
+            )}
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-600">
               <div className="flex flex-wrap gap-2">
                 <Metric label="R²" value={props.fitResult.r2 == null ? "-" : props.fitResult.r2.toFixed(4)} />
@@ -3005,7 +3023,7 @@ function SpectrumChart(props: {
         titlefont: { size: props.graphSettings.axisTitleSize },
         tickfont: { size: props.graphSettings.axisTickSize },
         title: {
-          text: mode === "absorbance" ? "Absorbance" : "Transmittance",
+          text: mode === "absorbance" ? "Absorbance" : "Absorbance (converted from transmittance)",
           font: { size: axisTitleSize },
           standoff: axisTitleStandoff,
         },

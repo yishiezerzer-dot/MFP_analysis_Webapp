@@ -29,7 +29,6 @@ class ChatRequest(BaseModel):
     active_module: Optional[str] = None
     session_ids: List[str] = Field(default_factory=list)
     include_context: bool = True
-    ollama_base_url: Optional[str] = None
 
 
 @router.get("/status")
@@ -55,7 +54,6 @@ def chat(body: ChatRequest) -> dict:
             active_module=body.active_module,
             session_ids=body.session_ids,
             include_context=body.include_context,
-            ollama_base_url=body.ollama_base_url,
         )
     except HTTPException:
         raise

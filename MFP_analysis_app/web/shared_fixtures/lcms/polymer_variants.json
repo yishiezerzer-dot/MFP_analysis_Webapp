@@ -1,0 +1,95 @@
+{
+  "description": "Polymer variants and anion adducts. Consumed by backend tests/test_cross_language_fixtures.py and frontend src/lcms/__tests__/cross_language_fixtures.test.ts.",
+  "cases": [
+    {
+      "name": "[M+Cl]- includes the electron mass",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "negative",
+        "charges": "1",
+        "adduct_mass": -1.007276,
+        "enable_na": false,
+        "tol_da": 0.0002,
+        "peak_mz": 773.191257,
+        "enable_cl": true
+      },
+      "expected": {
+        "matched": true,
+        "composition": "10-LA",
+        "variant": "",
+        "ion": "[M+Cl]⁻"
+      }
+    },
+    {
+      "name": "[M+HCOO]- includes the electron mass",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "negative",
+        "charges": "1",
+        "adduct_mass": -1.007276,
+        "enable_na": false,
+        "tol_da": 0.0002,
+        "peak_mz": 783.220059,
+        "enable_formate": true
+      },
+      "expected": {
+        "matched": true,
+        "composition": "10-LA",
+        "variant": "",
+        "ion": "[M+HCOO]⁻"
+      }
+    },
+    {
+      "name": "combined +O-CO2 variant",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "positive",
+        "charges": "1",
+        "adduct_mass": 1.007276,
+        "enable_na": false,
+        "tol_da": 0.005,
+        "peak_mz": 711.234217,
+        "oxid": true,
+        "decarb": true
+      },
+      "expected": {
+        "matched": true,
+        "composition": "10-LA",
+        "variant": "+O-CO2",
+        "ion": "[M+H]⁺"
+      }
+    },
+    {
+      "name": "combined -CO2-H2O variant",
+      "input": {
+        "monomer_name": "LA",
+        "monomer_mass": 90.031694,
+        "bond_delta": -18.010565,
+        "max_dp": 10,
+        "polarity": "positive",
+        "charges": "1",
+        "adduct_mass": 1.007276,
+        "enable_na": false,
+        "tol_da": 0.005,
+        "peak_mz": 677.228737,
+        "decarb": true,
+        "h2o_loss": true
+      },
+      "expected": {
+        "matched": true,
+        "composition": "10-LA",
+        "variant": "-CO2-H2O",
+        "ion": "[M+H]⁺"
+      }
+    }
+  ]
+}

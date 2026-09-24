@@ -99,11 +99,12 @@ export const lcmsHelpModule: HelpModule = {
           <DocUl>
             <DocLi>
               <strong>Polarity</strong> filters which MS1 scans contribute to TIC and spectrum (positive / negative /
-              all).
+              all). If the file has no scans of the chosen polarity you get a message instead of the other polarity's
+              data; in dual mode the polarity that exists is still shown.
             </DocLi>
             <DocLi>
-              <strong>RT units</strong> switch the chromatogram X axis between minutes and seconds (stored RT is still
-              interpreted consistently when loading spectra).
+              <strong>RT display unit</strong> switches how retention times are shown (minutes or seconds). The time
+              unit stored in each mzML file is read automatically; this setting never rescales the data.
             </DocLi>
             <DocLi>
               <strong>Show TIC / spectrum / UV</strong> toggles entire chart cards for a cleaner layout when you only
@@ -437,10 +438,12 @@ export const lcmsHelpModule: HelpModule = {
           </DocP>
           <DocH4>5) Charge and adducts</DocH4>
           <DocP>
-            For each charge state <DocCode>z</DocCode> in the configured list (defaults to positive integers), and each
-            polymer adduct mass delta from <DocCode>build_default_adduct_deltas</DocCode>, the predicted m/z is{" "}
-            <DocCode>mz_pred = (neutral_variant + adduct_mass) / z</DocCode>. Cluster mode uses a parallel adduct table
-            built from the cluster base mass.
+            Proton adducts scale with charge: for each charge state <DocCode>z</DocCode> in the configured list the
+            predicted m/z is <DocCode>mz_pred = (neutral_variant + z × 1.007276) / z</DocCode>, labelled{" "}
+            <DocCode>[M+zH]^z+</DocCode> (or <DocCode>[M−zH]^z−</DocCode> in negative mode). Other adducts (Na, K, Cl,
+            formate, acetate) are matched as singly charged ions only. A custom adduct with an explicit charge uses
+            its mass as the total adduct mass for that charge: <DocCode>(neutral_variant + mass) / charge</DocCode>.
+            Cluster mode applies the same rules to the 2M mass.
           </DocP>
           <DocH4>6) Tolerance test</DocH4>
           <DocP>

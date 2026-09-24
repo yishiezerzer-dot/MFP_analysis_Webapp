@@ -28,10 +28,9 @@ def _coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     for col in out.columns:
         try:
-            # Pandas supports errors="ignore" at runtime, but some type stubs only allow "raise"/"coerce".
-            out[col] = pd.to_numeric(out[col], errors="ignore")  # type: ignore[arg-type]
-        except Exception:
-            continue
+            out[col] = pd.to_numeric(out[col])
+        except (ValueError, TypeError):
+            continue  # genuinely non-numeric column: keep as text
     return out
 
 
@@ -42,7 +41,8 @@ def _replace_decimal_commas(df: pd.DataFrame) -> pd.DataFrame:
     """
     out = df.copy()
     for col in out.columns:
-        if out[col].dtype == object:
+        # pandas 3 reads text as the "str" dtype rather than object
+        if pd.api.types.is_object_dtype(out[col]) or pd.api.types.is_string_dtype(out[col]):
             try:
                 out[col] = out[col].astype(str).str.replace(",", ".", regex=False)
             except Exception:
@@ -209,7 +209,7 @@ def apply_transform_steps(df: pd.DataFrame, steps: List[Dict[str, Any]]) -> pd.D
                     if str(val).lower() == "mean":
                         out[c] = out[c].fillna(pd.to_numeric(out[c], errors="coerce").mean())
                     elif str(val).lower() == "ffill":
-                        out[c] = out[c].fillna(method="ffill")
+                        out[c] = out[c].ffill()
                     else:
                         out[c] = out[c].fillna(val)
 
@@ -246,7 +246,10 @@ def apply_transform_steps(df: pd.DataFrame, steps: List[Dict[str, Any]]) -> pd.D
                             baseline_val = float(series.iloc[0])
                         except Exception:
                             baseline_val = series.mean()
-                    out[c] = series - float(baseline_val or 0.0)
+                    if baseline_val is None or not np.isfinite(float(baseline_val)):
+                        _warn(f"baseline: no numeric baseline value for column {c}; column left unchanged")
+                        continue
+                    out[c] = series - float(baseline_val)
 
             elif stype == "log":
                 base = float(step.get("base") or 10.0)

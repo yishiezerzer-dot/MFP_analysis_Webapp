@@ -72,7 +72,9 @@ def _parse_ftir_xy_only(path_str: str) -> Tuple[List[float], List[float], Dict[s
                         k, v = line.split(",", 1)
                         k = str(k).strip().upper()
                         v = str(v).strip()
-                        if k:
+                        # Skip data rows (numeric first field) so plain CSVs don't turn into
+                        # thousands of "metadata" entries.
+                        if k and len(meta) < 100 and _try_parse_float_pair(line) is None:
                             meta[k] = v
                     except Exception:
                         pass
@@ -132,7 +134,14 @@ def _parse_ftir_xy_numpy(path_str: str) -> Tuple[np.ndarray, np.ndarray, Dict[st
                         k, v = s.split(",", 1)
                         k = str(k).strip().upper()
                         v = str(v).strip()
-                        if k:
+                        try:
+                            float(k)
+                            # Numeric first field: this is data, not a KEY,VALUE header line.
+                            # Plain CSVs have no XYDATA marker, so stop scanning here.
+                            break
+                        except ValueError:
+                            pass
+                        if k and len(meta) < 100:
                             meta[k] = v
                     except Exception:
                         pass
@@ -203,13 +212,17 @@ def _parse_ftir_xy_numpy(path_str: str) -> Tuple[np.ndarray, np.ndarray, Dict[st
         y = np.asarray(ys, dtype=float)
         return x, y, (meta2 or meta)
 
-    if arr.shape[1] < 2:
-        raise FTIRLoadError("File must contain at least two numeric columns")
-    x = np.asarray(arr[:, 0], dtype=float)
-    y = np.asarray(arr[:, 1], dtype=float)
+    x = np.asarray(arr[:, 0], dtype=float) if arr.shape[1] >= 2 else np.array([])
+    y = np.asarray(arr[:, 1], dtype=float) if arr.shape[1] >= 2 else np.array([])
     mask = np.isfinite(x) & np.isfinite(y)
     x = x[mask]
     y = y[mask]
+    if x.size == 0:
+        # Without an XYDATA marker the fast path splits on whitespace only, so comma- and
+        # semicolon-delimited exports come back as a single column; the pure-Python parser
+        # detects those delimiters.
+        xs, ys, meta2 = _parse_ftir_xy_only(path_str)
+        return np.asarray(xs, dtype=float), np.asarray(ys, dtype=float), (meta2 or meta)
     return x, y, meta
 
 

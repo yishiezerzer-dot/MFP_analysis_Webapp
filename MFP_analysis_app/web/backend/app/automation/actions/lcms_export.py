@@ -9,6 +9,7 @@ from ..models import (
     LCMSExportComparisonMatrixCSVInput,
     LCMSExportFeatureTableCSVInput,
 )
+from ...provenance import record
 from ..registry import ActionSpec, register
 from .lcms_common import get_lcms_session
 from .lcms_features import feature_value, group_feature_rows_for_matrix
@@ -49,7 +50,7 @@ async def export_feature_table_csv(args: LCMSExportFeatureTableCSVInput) -> LCMS
             "RTStartMin",
             "RTEndMin",
             "Height",
-            "Area",
+            "AreaCountsMin",
             "Baseline",
             "NPoints",
             "Source",
@@ -78,6 +79,14 @@ async def export_feature_table_csv(args: LCMSExportFeatureTableCSVInput) -> LCMS
                 row.annotation,
                 row.created_at,
             ])
+        # The exported table is the lab's record of integrated peaks: keep the latest one per
+        # session with provenance, for the SI package.
+        by_session: dict = {}
+        for row in args.rows:
+            if row.session_id:
+                by_session.setdefault(row.session_id, []).append(row.model_dump(mode="json"))
+        for session_id, session_rows in by_session.items():
+            record(session_id, "feature_table", {}, {"rows": session_rows})
         return LCMSExportCSVOutput(filename="lcms_feature_table.csv", csv=rows_to_csv(rows))
 
     return await asyncio.to_thread(work)

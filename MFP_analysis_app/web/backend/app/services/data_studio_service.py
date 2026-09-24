@@ -78,6 +78,19 @@ class DataStudioSession:
                 self.decimal_comma = bool(decimal_comma)
                 self._raw = None
                 self._transformed = None
+        if changed:
+            from ..db import get_session_record, save_session_record
+            rec = get_session_record(self.session_id)
+            if rec:
+                extra = rec.get("extra") or {}
+                extra["load_options"] = {
+                    "sheet_name": self.sheet_name,
+                    "header_row": self.header_row,
+                    "decimal_comma": self.decimal_comma,
+                }
+                save_session_record(
+                    self.session_id, self.workspace_id, "data_studio", self.display_name, str(self.path), extra=extra
+                )
 
     def apply_transforms(self, steps: List[Dict[str, Any]]) -> pd.DataFrame:
         with self._lock:
@@ -169,24 +182,44 @@ class DataStudioRegistry:
         from ..db import get_session_record
         rec = get_session_record(sid)
         if rec and rec.get("module") == "data_studio":
-            p = Path(rec["file_path"])
-            if p.exists():
-                try:
-                    return self.restore_from_path(
-                        sid,
-                        p,
-                        workspace_id=rec.get("workspace_id", "general"),
-                        display_name=rec.get("display_name"),
-                    )
-                except Exception:
-                    pass
+            return self._restore_record(rec)
         return None
 
+    def _restore_record(self, rec: Dict[str, Any]) -> Optional[DataStudioSession]:
+        from ..db import clear_restore_error, record_restore_error
+        p = Path(rec["file_path"])
+        if not p.exists():
+            record_restore_error(rec, f"File not found: {p.name}")
+            return None
+        try:
+            restored = self.restore_from_path(
+                rec["session_id"],
+                p,
+                workspace_id=rec.get("workspace_id", "general"),
+                display_name=rec.get("display_name"),
+            )
+        except Exception as exc:  # noqa: BLE001 - any parser failure is reported, not raised
+            record_restore_error(rec, f"Could not load {p.name}: {exc}", exc)
+            return None
+        opts = (rec.get("extra") or {}).get("load_options")
+        if opts:
+            restored.set_load_options(
+                sheet_name=opts.get("sheet_name"),
+                header_row=int(opts.get("header_row") or 0),
+                decimal_comma=bool(opts.get("decimal_comma")),
+            )
+        clear_restore_error(rec["session_id"])
+        return restored
+
     def remove(self, sid: str) -> bool:
-        from ..db import delete_session_record
+        from ..db import delete_session_record, get_session_record, remove_unreferenced_files
+        rec = get_session_record(sid)
         delete_session_record(sid)
+        if rec:
+            remove_unreferenced_files(rec)
         with self._lock:
-            return self._sessions.pop(sid, None) is not None
+            in_memory = self._sessions.pop(sid, None) is not None
+        return in_memory or rec is not None
 
     def list(self, workspace_id: Optional[str] = None) -> List[DataStudioSession]:
         from ..db import list_session_records
@@ -196,17 +229,7 @@ class DataStudioRegistry:
             with self._lock:
                 already = sid in self._sessions
             if not already:
-                p = Path(rec["file_path"])
-                if p.exists():
-                    try:
-                        self.restore_from_path(
-                            sid,
-                            p,
-                            workspace_id=rec.get("workspace_id", "general"),
-                            display_name=rec.get("display_name"),
-                        )
-                    except Exception:
-                        pass
+                self._restore_record(rec)
         with self._lock:
             if workspace_id:
                 return [s for s in self._sessions.values() if s.workspace_id == workspace_id]
@@ -214,31 +237,6 @@ class DataStudioRegistry:
 
 
 registry = DataStudioRegistry()
-
-
-async def get_or_restore(session_id: str) -> Optional[DataStudioSession]:
-    existing = registry.get(session_id)
-    if existing is not None:
-        return existing
-
-    import tempfile
-
-    from ..blob_store import download_bytes, get_json, manifest_key
-
-    manifest = await get_json(manifest_key("data_studio", session_id))
-    if manifest is None:
-        return None
-
-    data = await download_bytes(str(manifest["blob_url"]))
-    tmp_dir = Path(tempfile.mkdtemp(prefix="mfp_ds_restore_"))
-    filename = str(manifest.get("filename") or "upload.csv")
-    dest = tmp_dir / filename
-    dest.write_bytes(data)
-    return registry.restore_from_path(
-        session_id,
-        dest,
-        display_name=str(manifest.get("display_name") or filename),
-    )
 
 
 # ------------------------------ helpers ------------------------------
@@ -256,7 +254,6 @@ def session_summary(s: DataStudioSession) -> Dict[str, Any]:
         "session_id": s.session_id,
         "workspace_id": s.workspace_id,
         "display_name": s.display_name,
-        "path": str(s.path),
         "experiment_tag": rec.get("experiment_tag", "") if rec else "",
         "sheets": list(s.sheets),
         "sheet_name": s.sheet_name,

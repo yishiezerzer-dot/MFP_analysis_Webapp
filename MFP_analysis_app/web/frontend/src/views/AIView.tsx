@@ -1164,6 +1164,7 @@ function ContextCard(props: {
         <label className="label mb-1 block">Focus module</label>
         <select
           className="input mb-2 w-full"
+          aria-label="Focus module"
           value={activeModule}
           onChange={(e) => onActiveModuleChange(e.target.value as AIModuleName | "")}
           disabled={!includeContext}
@@ -1318,7 +1319,7 @@ function SavedPromptsCard({
             <div className="flex items-start justify-between gap-2">
               <button
                 type="button"
-                className="min-w-0 text-left font-medium text-ink-700 hover:text-brand-600"
+                className="min-h-6 min-w-0 text-left font-medium text-ink-700 hover:text-brand-600"
                 onClick={() => onUse(prompt.text)}
                 title={prompt.text}
               >
@@ -1331,7 +1332,7 @@ function SavedPromptsCard({
               )}
             </div>
             <p className="mt-1 line-clamp-2 text-[11px] text-ink-500">{prompt.text}</p>
-            <button type="button" className="mt-1 text-[11px] font-medium text-brand-600 hover:text-brand-700" onClick={() => onRun(prompt.text)}>
+            <button type="button" aria-label={`Run prompt: ${prompt.title ?? prompt.text.slice(0, 40)}`} className="mt-1 min-h-6 min-w-6 text-[11px] font-medium text-brand-600 hover:text-brand-700" onClick={() => onRun(prompt.text)}>
               Run
             </button>
           </div>
@@ -1870,16 +1871,16 @@ function ActionLogDialog({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="grid shrink-0 grid-cols-1 gap-2 border-b border-ink-200 p-3 md:grid-cols-4">
-          <input className="input text-xs" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} placeholder="Filter action id" />
-          <select className="input text-xs" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <input className="input text-xs" aria-label="Filter by action id" value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} placeholder="Filter action id" />
+          <select className="input text-xs" aria-label="Filter by status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">Any status</option>
             {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
-          <select className="input text-xs" value={actorFilter} onChange={(e) => setActorFilter(e.target.value)}>
+          <select className="input text-xs" aria-label="Filter by actor" value={actorFilter} onChange={(e) => setActorFilter(e.target.value)}>
             <option value="">Any actor</option>
             {actors.map((actor) => <option key={actor} value={actor}>{actor}</option>)}
           </select>
-          <select className="input text-xs" value={timeFilter} onChange={(e) => setTimeFilter(e.target.value as "all" | "hour" | "day")}>
+          <select className="input text-xs" aria-label="Filter by time" value={timeFilter} onChange={(e) => setTimeFilter(e.target.value as "all" | "hour" | "day")}>
             <option value="all">All time</option>
             <option value="hour">Last hour</option>
             <option value="day">Last 24 hours</option>
@@ -1975,6 +1976,7 @@ function Composer(props: {
         <textarea
           ref={ref}
           className="input min-h-[40px] flex-1 resize-none"
+          aria-label="Message the assistant"
           placeholder="Message the assistant… (Shift+Enter for newline)"
           value={value}
           onChange={(e) => onChange(e.target.value)}

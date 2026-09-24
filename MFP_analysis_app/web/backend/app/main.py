@@ -5,12 +5,16 @@ lockstep with the desktop application.
 """
 from __future__ import annotations
 
+import logging
+import os
 import sys
+import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 # Ensure the project root is on sys.path so we can import `lab_gui.*`
@@ -19,12 +23,25 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from .automation import router as automation  # noqa: E402
+from .backup import start_nightly_backups  # noqa: E402
 from .db import init_db  # noqa: E402
 from .routers import ai, data_studio, experiments, ftir, lcms, plate_reader, publication, workspaces  # noqa: E402
 
 init_db()
 
+# One timestamped line per record on stdout, which Railway collects; uvicorn keeps its own access log.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    stop = start_nightly_backups()
+    yield
+    stop.set()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="MFP Analysis Web API",
     version="0.1.0",
     description=(
@@ -33,13 +50,30 @@ app = FastAPI(
     ),
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# The SPA is served same-origin (by this app in production, via the Vite proxy in dev), so no
+# CORS is needed by default; a wildcard would let any website read lab data from a visitor's
+# browser. MFP_CORS_ORIGINS (comma-separated) opts specific origins in.
+_cors_origins = [o.strip() for o in os.environ.get("MFP_CORS_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    # Full traceback to the server log; the browser gets a short message with a reference to
+    # find it, not internal details (paths, library messages).
+    ref = uuid.uuid4().hex[:8]
+    logging.getLogger("mfp.errors").error("Unhandled error %s on %s %s", ref, request.method, request.url.path, exc_info=exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Unexpected server error (reference {ref}). The details are in the server log."},
+    )
 
 
 @app.get("/api/health")

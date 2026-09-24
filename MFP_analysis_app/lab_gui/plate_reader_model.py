@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -185,6 +186,11 @@ class PlateReaderMICWizardResult:
     blank_mean: Optional[List[float]] = None
     blank_std: Optional[List[float]] = None
     four_pl: Optional[Dict[str, Any]] = None
+    # Plot x positions shared by the data and the fitted curve: log2(concentration) when real
+    # concentrations were entered (zero control one dilution step below), else column indices.
+    x_positions: List[float] = field(default_factory=list)
+    sample_n: List[int] = field(default_factory=list)
+    four_pl_skipped_reason: Optional[str] = None
 
     def render(self, ax, *, config: Optional[PlateReaderMICWizardConfig]) -> None:
         """Render data into UI elements.
@@ -424,7 +430,7 @@ def fit_4pl_curve(x_vals: Sequence[float], y_vals: Sequence[float]) -> Optional[
             denom = 1.0 + np.power(ratio, hill)
             return bottom + (top - bottom) / np.maximum(denom, 1e-12)
 
-        popt, _ = curve_fit(
+        popt, pcov = curve_fit(
             sigmoidal_4pl,
             x,
             y,
@@ -437,7 +443,19 @@ def fit_4pl_curve(x_vals: Sequence[float], y_vals: Sequence[float]) -> Optional[
         ss_res = float(np.sum((y - y_pred) ** 2))
         r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
 
-        smooth_x = np.linspace(float(np.min(x)), float(np.max(x)), 80)
+        with np.errstate(invalid="ignore"):
+            se = np.sqrt(np.diag(pcov)) if pcov is not None else np.full(4, np.nan)
+        se_or_none = [float(v) if np.isfinite(v) else None for v in se]
+
+        # Dilution series are plotted on a log axis, so sample the curve log-uniformly over the
+        # tested (positive) concentrations; the zero-concentration control has no log position.
+        x_pos = x[x > 0]
+        if x_pos.size >= 2:
+            smooth_x = np.geomspace(float(np.min(x_pos)), float(np.max(x_pos)), 80)
+            ic50_in_range = bool(float(np.min(x_pos)) <= float(ic) <= float(np.max(x_pos)))
+        else:
+            smooth_x = np.linspace(float(np.min(x)), float(np.max(x)), 80)
+            ic50_in_range = bool(float(np.min(x)) <= float(ic) <= float(np.max(x)))
         smooth_y = sigmoidal_4pl(smooth_x, b, t, ic, h)
 
         return {
@@ -445,6 +463,11 @@ def fit_4pl_curve(x_vals: Sequence[float], y_vals: Sequence[float]) -> Optional[
             "top": float(t),
             "ic50": float(ic),
             "hill_slope": float(h),
+            "bottom_se": se_or_none[0],
+            "top_se": se_or_none[1],
+            "ic50_se": se_or_none[2],
+            "hill_slope_se": se_or_none[3],
+            "ic50_in_range": ic50_in_range,
             "r_squared": float(max(0.0, r2)),
             "curve_x": [float(v) for v in smooth_x],
             "curve_y": [float(v) for v in smooth_y],
@@ -489,6 +512,14 @@ def build_mic_wizard_config_and_result(
                 f"Tick labels count ({len(tick_labels)}) must match selected columns ({len(concentration_columns)})."
             )
 
+    # Only concentrations the user typed are real; auto labels (1024, 512, ..., 0) are placeholders.
+    user_concentrations: Optional[List[float]] = None
+    if tick_labels:
+        try:
+            user_concentrations = [float(t) for t in tick_labels]
+        except ValueError:
+            user_concentrations = None
+
     auto_power2 = bool(auto_tick_labels_power2)
     if auto_power2 and (not tick_labels) and concentration_columns:
         if len(concentration_columns) == 1:
@@ -500,11 +531,14 @@ def build_mic_wizard_config_and_result(
     blank_rows = list(blank_rows or [])
     blank_mean = None
     blank_std = None
+    blank_sem = None
     if blank_rows:
         blank_mat, _blank_nan = coerce_numeric_matrix(df, row_indices=blank_rows, columns=concentration_columns)
         if blank_mat.size:
             blank_mean = np.nanmean(blank_mat, axis=0)
             blank_std = np.nanstd(blank_mat, axis=0, ddof=1) if blank_mat.shape[0] > 1 else np.zeros(blank_mat.shape[1])
+            # Subtracting the blank *mean* adds the uncertainty of that mean (SEM), not the blank SD.
+            blank_sem = blank_std / np.sqrt(np.maximum(1, np.sum(np.isfinite(blank_mat), axis=0)))
 
     sample_mat, sample_nan = coerce_numeric_matrix(df, row_indices=sample_rows, columns=concentration_columns)
     if sample_mat.size == 0:
@@ -512,9 +546,10 @@ def build_mic_wizard_config_and_result(
     if bool(subtract_blank) and blank_mean is not None:
         sample_mat = sample_mat - blank_mean
     sample_mean = np.nanmean(sample_mat, axis=0)
+    sample_n = [int(v) for v in np.sum(np.isfinite(sample_mat), axis=0)]
     raw_sample_std = np.nanstd(sample_mat, axis=0, ddof=1) if sample_mat.shape[0] > 1 else np.zeros(sample_mat.shape[1])
-    if bool(subtract_blank) and blank_std is not None:
-        sample_std = np.sqrt(np.square(raw_sample_std) + np.square(blank_std))
+    if bool(subtract_blank) and blank_sem is not None:
+        sample_std = np.sqrt(np.square(raw_sample_std) + np.square(blank_sem))
     else:
         sample_std = raw_sample_std
 
@@ -527,8 +562,8 @@ def build_mic_wizard_config_and_result(
                 ctrl_mat = ctrl_mat - blank_mean
             control_mean = np.nanmean(ctrl_mat, axis=0)
             raw_ctrl_std = np.nanstd(ctrl_mat, axis=0, ddof=1) if ctrl_mat.shape[0] > 1 else np.zeros(ctrl_mat.shape[1])
-            if bool(subtract_blank) and blank_std is not None:
-                control_std = np.sqrt(np.square(raw_ctrl_std) + np.square(blank_std))
+            if bool(subtract_blank) and blank_sem is not None:
+                control_std = np.sqrt(np.square(raw_ctrl_std) + np.square(blank_sem))
             else:
                 control_std = raw_ctrl_std
 
@@ -576,17 +611,26 @@ def build_mic_wizard_config_and_result(
             except Exception:
                 pass
 
-    # 4-Parameter Logistic (4PL) sigmoidal curve fitting
-    numeric_concs: List[float] = []
-    labels_to_check = tick_labels if tick_labels else [str(c) for c in concentration_columns]
-    for lbl in labels_to_check:
-        try:
-            numeric_concs.append(float(str(lbl).strip()))
-        except Exception:
-            numeric_concs = []
-            break
-    x_for_fit = numeric_concs if (numeric_concs and len(numeric_concs) == len(sample_mean)) else [float(i) for i in range(len(sample_mean))]
-    four_pl = fit_4pl_curve(x_for_fit, sample_mean)
+    # 4-Parameter Logistic (4PL) fit: only on concentrations the user entered, never on
+    # placeholder tick labels or column headers (that reports IC50 in meaningless units).
+    four_pl: Optional[Dict[str, Any]] = None
+    four_pl_skipped_reason: Optional[str] = None
+    x_positions = [float(i) for i in range(len(concentration_columns))]
+    if user_concentrations is None:
+        four_pl_skipped_reason = (
+            "No dose-response fit: enter the actual concentrations in 'Tick labels' "
+            "(auto labels 1024, 512, ... are placeholders)."
+        )
+    else:
+        positive = [c for c in user_concentrations if c > 0]
+        if positive:
+            below_lowest = math.log2(min(positive)) - 1.0
+            x_positions = [math.log2(c) if c > 0 else below_lowest for c in user_concentrations]
+        four_pl = fit_4pl_curve(user_concentrations, sample_mean)
+        if four_pl is None:
+            four_pl_skipped_reason = "4PL fit did not converge (or fewer than 4 usable concentrations)."
+        elif positive:
+            four_pl["curve_x_positions"] = [math.log2(x) for x in four_pl["curve_x"]]
 
     result = PlateReaderMICWizardResult(
         concentrations=[float(i) for i in range(len(concentration_columns))],
@@ -606,6 +650,9 @@ def build_mic_wizard_config_and_result(
             float(x) if np.isfinite(x) else float("nan") for x in blank_std.tolist()
         ] if blank_std is not None else None),
         four_pl=four_pl,
+        x_positions=x_positions,
+        sample_n=sample_n,
+        four_pl_skipped_reason=four_pl_skipped_reason,
     )
 
     return cfg, result, float(sample_nan)

@@ -1,13 +1,13 @@
 """FastAPI routes for the automation action registry."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
 
 from . import actions as _actions  # noqa: F401 - imports register action modules
-from .browser_bridge import browser_connections
+from .browser_bridge import browser_connections, current_browser_id
 from .registry import (
     ActionInputError,
     BrowserActionFailed,
@@ -73,9 +73,12 @@ async def preview_action(
 async def execute_action(
     action_id: str,
     body: Dict[str, Any] = Body(default={}),
+    x_browser_id: Optional[str] = Header(default=None, alias="X-Browser-Id"),
 ) -> Dict[str, Any]:
     args = dict(body or {})
     confirmation_token = args.pop("confirmation_token", None)
+    # Browser-scope actions go to the tab that sent the request (MCP clients send no header).
+    browser_token = current_browser_id.set(x_browser_id)
     try:
         return _dump_model(await execute(action_id, args, confirmation_token=confirmation_token))
     except ActionNotFound:
@@ -96,6 +99,8 @@ async def execute_action(
         raise HTTPException(status_code=422, detail={"error": "browser_action_failed", "message": str(exc)})
     except HTTPException:
         raise
+    finally:
+        current_browser_id.reset(browser_token)
 
 
 @router.get("/logs")

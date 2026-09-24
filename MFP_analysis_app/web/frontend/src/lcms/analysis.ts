@@ -320,9 +320,11 @@ export type CsvCell = string | number | boolean | null | undefined;
 export const PROTON_MASS = 1.007276;
 export const NA_MASS = 22.989218;
 export const K_MASS = 38.963158;
-export const CL_MASS = 34.968853;
-export const FORMATE_MASS = 44.997655;
-export const ACETATE_MASS = 59.013851;
+// Anion adducts are anion masses (neutral radical + electron); keep in sync with lcms_polymer_match.py.
+export const ELECTRON_MASS = 0.00054858;
+export const CL_MASS = 34.968853 + ELECTRON_MASS;
+export const FORMATE_MASS = 44.997655 + ELECTRON_MASS;
+export const ACETATE_MASS = 59.013851 + ELECTRON_MASS;
 export const H2O_LOSS_MASS = 18.010565;
 export const CO2_LOSS_MASS = 43.989829;
 export const OXIDATION_MASS = 15.994915;
@@ -403,6 +405,19 @@ export function autoSignedProtonLike(value: number, polarity: Exclude<LCMSPolari
   return value;
 }
 
+function isProtonLike(mass: number): boolean {
+  return Math.abs(Math.abs(mass) - PROTON_MASS) <= 0.01;
+}
+
+// (z, total adduct mass) pairs; predicted m/z is (M + total) / z. Proton-like adducts scale with
+// charge ([M+zH]^z+); other adducts are singly charged unless a custom adduct gives an explicit charge,
+// in which case its mass is already the total for that charge. Mirrors lcms_polymer_match._charge_states.
+function chargeStates(mass: number, explicitCharge: number | undefined, charges: number[]): Array<{ z: number; total: number }> {
+  if (explicitCharge != null && explicitCharge > 1) return [{ z: explicitCharge, total: mass }];
+  if (isProtonLike(mass)) return charges.map((z) => ({ z, total: z * mass }));
+  return [{ z: 1, total: mass }];
+}
+
 export function ionLabel(
   core: "M" | "2M",
   adductLabel: string,
@@ -414,11 +429,12 @@ export function ionLabel(
   const suffix = charge > 1 ? `${toSuperscript(charge)}${sign}` : sign;
   const label = adductLabel.replace(/-/g, "\u2212");
   if (label) return `[${core}${label}]${suffix}`;
+  const nH = charge > 1 ? `${charge}H` : "H";
   const proton =
     Math.abs(adductMass - PROTON_MASS) <= 0.002
-      ? "+H"
+      ? `+${nH}`
       : Math.abs(adductMass + PROTON_MASS) <= 0.002
-        ? "\u2212H"
+        ? `\u2212${nH}`
         : `${adductMass >= 0 ? "+" : "\u2212"}${Math.abs(adductMass).toFixed(4)}`;
   return `[${core}${proton}]${suffix}`;
 }
@@ -525,20 +541,32 @@ export function integrateEICPeak(
 
   let apexIndex = 0;
   if (referenceRt != null && Number.isFinite(referenceRt)) {
+    // Candidate apexes come from a 3-point moving average and must reach 5% of its maximum, so a
+    // single noisy point near the reference RT can't be chosen. Mirrors lcms_eic.integrate_eic_peak.
+    const n = points.length;
+    const smooth = points.map((_, i) => {
+      const window = points.slice(Math.max(0, i - 1), i + 2);
+      return window.reduce((sum, p) => sum + p.intensity, 0) / window.length;
+    });
+    const floor = 0.05 * Math.max(...smooth);
     const localMaxes: number[] = [];
-    for (let i = 0; i < points.length; i += 1) {
-      const cur = points[i].intensity;
-      if (cur <= 0) continue;
-      const prev = i > 0 ? points[i - 1].intensity : -Infinity;
-      const next = i < points.length - 1 ? points[i + 1].intensity : -Infinity;
+    for (let i = 0; i < n; i += 1) {
+      const cur = smooth[i];
+      if (cur <= 0 || cur < floor) continue;
+      const prev = i > 0 ? smooth[i - 1] : -Infinity;
+      const next = i < n - 1 ? smooth[i + 1] : -Infinity;
       if (cur >= prev && cur >= next) localMaxes.push(i);
     }
     if (localMaxes.length > 0) {
-      apexIndex = localMaxes.reduce(
+      const nearest = localMaxes.reduce(
         (best, idx) =>
           Math.abs(points[idx].rt - referenceRt) < Math.abs(points[best].rt - referenceRt) ? idx : best,
         localMaxes[0],
       );
+      apexIndex = nearest;
+      for (let i = Math.max(0, nearest - 1); i <= Math.min(n - 1, nearest + 1); i += 1) {
+        if (points[i].intensity > points[apexIndex].intensity) apexIndex = i;
+      }
     } else {
       for (let i = 1; i < points.length; i += 1) {
         if (points[i].intensity > points[apexIndex].intensity) apexIndex = i;
@@ -793,10 +821,20 @@ export function buildExpectedProductHits(
       }
     }
   }
-  const variants: Array<{ label: string; delta: number }> = [{ label: "", delta: 0 }];
-  if (shared.h2o_loss) variants.push({ label: "-H2O", delta: -H2O_LOSS_MASS });
-  if (shared.decarb) variants.push({ label: "-CO2", delta: -CO2_LOSS_MASS });
-  if (shared.oxid) variants.push({ label: "+O", delta: OXIDATION_MASS });
+  // All combinations of the enabled modifications, in the same order and tag format as
+  // lcms_polymer_match.generate_variants (e.g. "+O-CO2").
+  const modifications: Array<{ label: string; delta: number }> = [];
+  if (shared.oxid) modifications.push({ label: "+O", delta: OXIDATION_MASS });
+  if (shared.decarb) modifications.push({ label: "-CO2", delta: -CO2_LOSS_MASS });
+  if (shared.h2o_loss) modifications.push({ label: "-H2O", delta: -H2O_LOSS_MASS });
+  const variants: Array<{ label: string; delta: number }> = [];
+  for (let mask = 0; mask < 1 << modifications.length; mask += 1) {
+    const picked = modifications.filter((_, i) => mask & (1 << i));
+    variants.push({
+      label: picked.map((m) => m.label).join(""),
+      delta: picked.reduce((sum, m) => sum + m.delta, 0),
+    });
+  }
   const tolDaFor = (mz: number) => {
     const configuredTolerance =
       shared.tol_unit === "ppm" ? (Math.abs(mz) * Math.max(0, shared.tol_value)) / 1e6 : Math.max(0, shared.tol_value);
@@ -838,9 +876,8 @@ export function buildExpectedProductHits(
     for (const variant of variants) {
       const neutralMass = neutralBase + variant.delta;
       for (const adduct of adducts) {
-        const effectiveCharges = adduct.charge && adduct.charge > 1 ? [adduct.charge] : charges;
-        for (const charge of effectiveCharges) {
-          const expectedMz = (neutralMass + adduct.mass) / charge;
+        for (const { z: charge, total } of chargeStates(adduct.mass, adduct.charge, charges)) {
+          const expectedMz = (neutralMass + total) / charge;
           addHit(
             composition.label,
             neutralMass,
@@ -852,8 +889,8 @@ export function buildExpectedProductHits(
       }
     }
     if (shared.cluster) {
-      for (const charge of charges) {
-        const expectedMz = (2 * neutralBase + clusterAdduct) / charge;
+      for (const { z: charge, total } of chargeStates(clusterAdduct, undefined, charges)) {
+        const expectedMz = (2 * neutralBase + total) / charge;
         const clusterMatch = findMostIntenseSpectrumPeak(index, expectedMz, tolDaFor(expectedMz));
         if (clusterMatch == null) continue;
         const monomerMz = neutralBase + clusterAdduct;

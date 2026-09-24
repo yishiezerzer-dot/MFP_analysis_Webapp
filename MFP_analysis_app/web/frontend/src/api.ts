@@ -92,6 +92,14 @@ export function uploadFileWithProgress(
   });
 }
 
+export interface RestoreError {
+  session_id: string;
+  workspace_id: string;
+  module: string;
+  display_name: string;
+  reason: string;
+}
+
 export interface WorkspaceSummary {
   id: string;
   name: string;
@@ -103,7 +111,6 @@ export interface WorkspaceSummary {
 export interface LCMSUVMeta {
   available: boolean;
   filename?: string;
-  path?: string;
   n_points?: number;
   rt_min?: number;
   rt_max?: number;
@@ -118,7 +125,9 @@ export interface LCMSUVMeta {
 export interface LCMSSessionSummary {
   session_id: string;
   display_name: string;
-  path: string;
+  uploaded_at?: string | null;
+  // First 12 hex digits of the file's SHA-256: identical uploads share it.
+  file_id?: string | null;
   experiment_tag?: string;
   ms1_count: number;
   rt_min: number | null;
@@ -349,7 +358,6 @@ async function handleBlob(res: Response): Promise<Blob> {
 export interface PlateSessionSummary {
   session_id: string;
   display_name: string;
-  path: string;
   experiment_tag?: string;
   sheets: string[];
 }
@@ -390,6 +398,13 @@ export interface FourPLFit {
   r_squared: number;
   curve_x: number[];
   curve_y: number[];
+  // Absent in results saved by older versions.
+  bottom_se?: number | null;
+  top_se?: number | null;
+  ic50_se?: number | null;
+  hill_slope_se?: number | null;
+  ic50_in_range?: boolean;
+  curve_x_positions?: number[];
 }
 
 export interface MICResult {
@@ -421,6 +436,9 @@ export interface MICResult {
     blank_mean?: number[] | null;
     blank_std?: number[] | null;
     four_pl?: FourPLFit | null;
+    four_pl_skipped_reason?: string | null;
+    x_positions?: number[];
+    sample_n?: number[];
   };
   sample_nan_ratio: number;
 }
@@ -429,12 +447,11 @@ export interface MICResult {
 
 export type FTIRYMode = "absorbance" | "transmittance";
 export type FTIRBaseline = "none" | "polyfit" | "rubberband" | "asls" | "airpls";
-export type FTIRNormalize = "none" | "max" | "area" | "snv" | "vector" | "min-max" | "msc";
+export type FTIRNormalize = "none" | "max" | "area" | "snv" | "vector" | "min-max";
 
 export interface FTIRSessionSummary {
   session_id: string;
   display_name: string;
-  path: string;
   experiment_tag?: string;
   n_points: number;
   wn_min: number | null;
@@ -646,6 +663,9 @@ export interface FTIRFitResponse {
   };
   r2: number | null;
   residual_rms: number;
+  // False when the optimiser failed: components are then only the starting guesses.
+  converged?: boolean;
+  fit_error?: string | null;
 }
 
 // --- Data Studio types ---
@@ -653,7 +673,6 @@ export interface FTIRFitResponse {
 export interface DSSessionSummary {
   session_id: string;
   display_name: string;
-  path: string;
   experiment_tag?: string;
   sheets: string[];
   sheet_name: string | null;
@@ -868,8 +887,9 @@ export const api = {
   },
 
   ftir: {
-    upload: (file: File, yMode: FTIRYMode = "transmittance") =>
-      postFileUpload("/api/ftir/sessions", file, { y_mode: yMode }).then((r) =>
+    // Without yMode the backend detects absorbance/transmittance from the file.
+    upload: (file: File, yMode?: FTIRYMode) =>
+      postFileUpload("/api/ftir/sessions", file, yMode ? { y_mode: yMode } : {}).then((r) =>
         handle<FTIRSessionSummary>(r),
       ),
     list: () => apiFetch("/api/ftir/sessions").then((r) => handle<FTIRSessionSummary[]>(r)),
@@ -957,20 +977,11 @@ export const api = {
   },
 
   lcms: {
-    upload: (
-      file: File,
-      rtUnit: "minutes" | "seconds" = "minutes",
-      onProgress?: UploadProgressCallback,
-    ) =>
-      uploadFileWithProgress("/api/lcms/sessions", file, { rt_unit: rtUnit }, onProgress).then((r) =>
+    // RT unit is read from the mzML itself; the Display-tab RT unit is presentation only.
+    upload: (file: File, onProgress?: UploadProgressCallback) =>
+      uploadFileWithProgress("/api/lcms/sessions", file, {}, onProgress).then((r) =>
         handle<LCMSSessionSummary>(r),
       ),
-    loadFromPath: (path: string, displayName?: string, rtUnit?: "minutes" | "seconds") =>
-      apiFetch("/api/lcms/sessions/from_path", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, display_name: displayName, rt_unit: rtUnit ?? "minutes" }),
-      }).then((r) => handle<LCMSSessionSummary>(r)),
     list: () => apiFetch("/api/lcms/sessions").then((r) => handle<LCMSSessionSummary[]>(r)),
     get: (sid: string) =>
       apiFetch(`/api/lcms/sessions/${sid}`).then((r) => handle<LCMSSessionSummary>(r)),
@@ -1084,14 +1095,8 @@ export const api = {
     },
     exportUV: (sid: string) =>
       apiFetch(`/api/lcms/sessions/${sid}/exports/uv.csv`).then(handleBlob),
-    attachUVFromPath: (sid: string, path: string) =>
-      apiFetch(`/api/lcms/sessions/${sid}/uv/from_path`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path }),
-      }).then((r) => handle<LCMSSessionSummary>(r)),
-    uploadUV: (sid: string, file: File) =>
-      postFileUpload(`/api/lcms/sessions/${sid}/uv`, file).then((r) =>
+    uploadUV: (sid: string, file: File, rtUnit: "auto" | "minutes" | "seconds" = "auto") =>
+      postFileUpload(`/api/lcms/sessions/${sid}/uv`, file, { rt_unit: rtUnit }).then((r) =>
         handle<LCMSSessionSummary>(r),
       ),
     uv: (
@@ -1120,6 +1125,8 @@ export const api = {
 
   workspaces: {
     list: () => apiFetch("/api/workspaces").then((r) => handle<WorkspaceSummary[]>(r)),
+    restoreErrors: (id: string) =>
+      apiFetch(`/api/workspaces/${id}/restore-errors`).then((r) => handle<RestoreError[]>(r)),
     get: (id: string) => apiFetch(`/api/workspaces/${id}`).then((r) => handle<WorkspaceSummary>(r)),
     create: (name: string, id?: string) =>
       apiFetch("/api/workspaces", {
@@ -1210,8 +1217,7 @@ export interface FigureRenderRequest {
 export interface SIPackageRequest {
   experiment_tag?: string;
   session_ids?: string[];
-  include_tables?: boolean;
-  include_methodology?: boolean;
+  include_raw_files?: boolean;
   figures?: FigurePanelSpec[];
 }
 

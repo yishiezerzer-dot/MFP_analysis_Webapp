@@ -17,13 +17,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from lab_gui.ftir_io import FTIRLoadError
 
-from ..blob_store import manifest_key, put_json
 from ..db import get_upload_dir, save_session_record
-from ..upload_utils import read_upload_bytes, stream_upload_to_file
+from ..provenance import record
+from ..upload_utils import stream_upload_to_file
 from ..services.ftir_service import (
     FTIRSession,
     assign_peaks_with_library,
@@ -31,7 +32,6 @@ from ..services.ftir_service import (
     compute_preprocessed,
     decimate,
     fit_peak_region,
-    get_or_restore,
     integrate_region,
     library_categories,
     library_meta,
@@ -57,7 +57,7 @@ router = APIRouter()
 
 YMode = Literal["absorbance", "transmittance"]
 Baseline = Literal["none", "polyfit", "rubberband", "asls", "airpls"]
-Normalize = Literal["none", "max", "area", "snv", "vector", "min-max", "msc"]
+Normalize = Literal["none", "max", "area", "snv", "vector", "min-max"]
 IntegrationBaseline = Literal["linear", "horizontal", "tangent"]
 FitProfile = Literal["gauss", "lorentz", "voigt"]
 
@@ -141,31 +141,25 @@ class FitRequest(SpectrumRequest):
 
 @router.post("/sessions")
 async def create_session(
-    file: UploadFile | None = File(None),
-    blob_url: str | None = Form(None),
-    blob_filename: str | None = Form(None),
-    y_mode: YMode = Form("absorbance"),
+    file: UploadFile = File(...),
+    y_mode: Literal["auto", "absorbance", "transmittance"] = Form("auto"),
     x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
     upload_dir = get_upload_dir("ftir")
-    dest, name = await stream_upload_to_file(file, blob_url, blob_filename, upload_dir)
+    dest, name = await stream_upload_to_file(file, upload_dir)
     try:
-        state = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name, y_mode=y_mode)
+        state = await run_in_threadpool(
+            registry.add_from_path,
+            dest,
+            workspace_id=x_workspace_id,
+            display_name=name,
+            y_mode=None if y_mode == "auto" else y_mode,
+        )
     except FTIRLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"FTIR parse failed: {exc}")
     save_session_record(state.session_id, state.workspace_id, "ftir", state.display_name, str(state.path))
-    if blob_url:
-        await put_json(
-            manifest_key("ftir", state.session_id),
-            {
-                "blob_url": blob_url,
-                "filename": name,
-                "display_name": state.display_name,
-                "y_mode": y_mode,
-            },
-        )
     return session_summary(state)
 
 
@@ -177,8 +171,8 @@ def list_sessions(
 
 
 @router.get("/sessions/{sid}")
-async def get_session(sid: str) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_session(sid: str) -> Dict[str, Any]:
+    state = _require_session(sid)
     return session_summary(state)
 
 
@@ -191,8 +185,8 @@ def delete_session(sid: str) -> Dict[str, bool]:
 
 
 @router.post("/sessions/{sid}/spectrum")
-async def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     res = compute_preprocessed(
         state,
         mode=body.mode,
@@ -238,7 +232,7 @@ async def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
             y_proc,
             smoothing_window=max(5, body.smoothing_window or 15),
             poly_order=max(2, body.poly_order or 3),
-            mode=body.mode,
+            mode="absorbance",
         )
         _xd, d2y_d = decimate(x, d2y, max_points=body.max_points)
         _xd, neg_d2y_d = decimate(x, neg_d2y, max_points=body.max_points)
@@ -253,8 +247,8 @@ async def get_spectrum(sid: str, body: SpectrumRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/peaks")
-async def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     # Peaks are always picked on the full-resolution preprocessed array.
     x, y_proc = compute_preprocessed(
         state,
@@ -273,7 +267,7 @@ async def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
         picked = pick_peaks_second_derivative(
             x_pick,
             y_pick,
-            mode=body.mode,
+            mode="absorbance",
             min_distance_cm1=float(body.min_distance_cm1),
             top_n=int(body.top_n or 0),
             smoothing_window=body.smoothing_window or 9,
@@ -283,7 +277,7 @@ async def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
         picked = pick_peaks(
             x_pick,
             y_pick,
-            mode=body.mode,
+            mode="absorbance",
             min_prominence=float(body.min_prominence),
             min_height=(None if body.min_height is None else float(body.min_height)),
             min_distance_cm1=float(body.min_distance_cm1),
@@ -303,14 +297,16 @@ async def get_peaks(sid: str, body: PeaksRequest) -> Dict[str, Any]:
             label_overrides=state.peak_label_overrides,
         )
 
-    return {"peaks": peaks, "assignments": assignments}
+    out = {"peaks": peaks, "assignments": assignments}
+    record(sid, "peaks", body.model_dump(), out)
+    return out
 
 
 @router.post("/sessions/{sid}/integrate")
-async def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     try:
-        return integrate_region(
+        out = integrate_region(
             state,
             region=(body.region[0], body.region[1]),
             baseline_mode=body.baseline_mode,
@@ -318,12 +314,14 @@ async def integrate_band(sid: str, body: IntegrateRequest) -> Dict[str, Any]:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    record(sid, "integration", body.model_dump(), out)
+    return out
 
 
 @router.post("/sessions/{sid}/subtract")
-async def subtract_spectrum(sid: str, body: SubtractRequest) -> Dict[str, Any]:
-    state_a = await _require_session(sid)
-    state_b = await _require_session(body.sid_b)
+def subtract_spectrum(sid: str, body: SubtractRequest) -> Dict[str, Any]:
+    state_a = _require_session(sid)
+    state_b = _require_session(body.sid_b)
     try:
         return subtract_sessions(
             state_a,
@@ -342,8 +340,8 @@ async def subtract_spectrum(sid: str, body: SubtractRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/match")
-async def match_references(sid: str, body: MatchRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def match_references(sid: str, body: MatchRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     return match_session_references(
         state,
         region=None if body.region is None else (body.region[0], body.region[1]),
@@ -354,10 +352,10 @@ async def match_references(sid: str, body: MatchRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/fit")
-async def fit_region(sid: str, body: FitRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def fit_region(sid: str, body: FitRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     try:
-        return fit_peak_region(
+        out = fit_peak_region(
             state,
             region=(body.region[0], body.region[1]),
             n_components=body.n_components,
@@ -366,6 +364,10 @@ async def fit_region(sid: str, body: FitRequest) -> Dict[str, Any]:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    summary = {k: v for k, v in out.items() if k not in ("fit", "second_derivative", "components")}
+    summary["components"] = [{k: v for k, v in c.items() if k not in ("wn", "y")} for c in out["components"]]
+    record(sid, "fit", body.model_dump(), summary)
+    return out
 
 
 @router.get("/library")
@@ -379,8 +381,8 @@ def get_library_categories() -> Dict[str, Any]:
 
 
 @router.put("/sessions/{sid}/peak-labels")
-async def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     override = body.override.model_dump() if body.override is not None else None
     return set_peak_label_override(state, body.wn, override)
 
@@ -388,8 +390,8 @@ async def put_peak_label_override(sid: str, body: PeakLabelOverrideRequest) -> D
 # ------------------------------ util ------------------------------
 
 
-async def _require_session(sid: str) -> FTIRSession:
-    state = await get_or_restore(sid)
+def _require_session(sid: str) -> FTIRSession:
+    state = registry.get(sid)
     if state is None:
         raise HTTPException(status_code=404, detail="session not found")
     return state

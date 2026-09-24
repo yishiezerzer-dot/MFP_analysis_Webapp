@@ -8,6 +8,7 @@ Provides storage for:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import threading
@@ -85,6 +86,25 @@ def _init_db_locked(conn: sqlite3.Connection) -> None:
                 FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
             )
         """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS analysis_results (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                workspace_id TEXT NOT NULL,
+                module TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                params_hash TEXT NOT NULL,
+                params_json TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                input_name TEXT,
+                input_sha256 TEXT,
+                app_version TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE (session_id, kind, params_hash)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_results_session ON analysis_results(session_id)")
 
         # Ensure experiment_tag column exists in sessions
         cols = [r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()]
@@ -225,13 +245,44 @@ def save_session_record(
 
 
 def delete_session_record(session_id: str) -> None:
+    clear_restore_error(session_id)
     with _DB_LOCK:
         conn = get_db_connection()
         try:
             with conn:
                 conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+                conn.execute("DELETE FROM analysis_results WHERE session_id = ?", (session_id,))
         finally:
             conn.close()
+
+
+def _session_file_paths(record: Dict[str, Any]) -> List[Path]:
+    extra = record.get("extra") or {}
+    paths = [record.get("file_path"), extra.get("uv_path")]
+    return [Path(p) for p in paths if p]
+
+
+def remove_unreferenced_files(record: Dict[str, Any]) -> List[Path]:
+    """Delete a removed session's uploaded files unless another session still uses them.
+
+    Identical uploads share one content-hashed file, so a file is only deleted once no session
+    record refers to it. Only files inside the data directory are ever touched.
+    """
+    data_dir = get_data_dir().resolve()
+    still_used = {
+        p.resolve() for rec in list_session_records() for p in _session_file_paths(rec)
+    }
+    removed: List[Path] = []
+    for path in _session_file_paths(record):
+        resolved = path.resolve()
+        if resolved in still_used or not resolved.is_relative_to(data_dir) or not resolved.is_file():
+            continue
+        try:
+            resolved.unlink()
+            removed.append(resolved)
+        except OSError:
+            _restore_log.warning("Could not delete %s", resolved, exc_info=True)
+    return removed
 
 
 def get_session_record(session_id: str) -> Optional[Dict[str, Any]]:
@@ -351,6 +402,114 @@ def get_experiment_bundle(tag: str, workspace_id: Optional[str] = None) -> Dict[
         finally:
             conn.close()
 
+
+
+# --- Session restore failures ------------------------------------------------
+# Sessions are rebuilt from their files after a restart. When that fails (file deleted,
+# unreadable, parser error) the session used to vanish silently; failures are now logged and
+# kept here so the UI can say which sessions couldn't be loaded and why.
+
+_restore_log = logging.getLogger("mfp.restore")
+_RESTORE_ERRORS: Dict[str, Dict[str, Any]] = {}
+_RESTORE_ERRORS_LOCK = threading.Lock()
+
+
+def record_restore_error(record: Dict[str, Any], reason: str, exc: Optional[BaseException] = None) -> None:
+    _restore_log.warning(
+        "Could not restore %s session %s (%s): %s",
+        record.get("module"), record.get("session_id"), record.get("display_name"), reason,
+        exc_info=exc,
+    )
+    with _RESTORE_ERRORS_LOCK:
+        _RESTORE_ERRORS[str(record.get("session_id"))] = {
+            "session_id": record.get("session_id"),
+            "workspace_id": record.get("workspace_id"),
+            "module": record.get("module"),
+            "display_name": record.get("display_name"),
+            "reason": reason,
+        }
+
+
+def clear_restore_error(session_id: str) -> None:
+    with _RESTORE_ERRORS_LOCK:
+        _RESTORE_ERRORS.pop(str(session_id), None)
+
+
+def list_restore_errors(workspace_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    with _RESTORE_ERRORS_LOCK:
+        return [e for e in _RESTORE_ERRORS.values() if workspace_id is None or e["workspace_id"] == workspace_id]
+
+
+# --- Analysis results (provenance) ------------------------------------------
+# Every server-side analysis stores its parameters, results, the input file's SHA-256 and the
+# app version, so exports (e.g. the SI package) report what was actually computed. Re-running
+# with identical parameters replaces the earlier row instead of adding a duplicate.
+
+
+def save_result(
+    *,
+    session_id: str,
+    workspace_id: str,
+    module: str,
+    kind: str,
+    params_hash: str,
+    params: Dict[str, Any],
+    result: Dict[str, Any],
+    input_name: Optional[str],
+    input_sha256: Optional[str],
+    app_version: str,
+) -> None:
+    import uuid
+
+    now = datetime.now(timezone.utc).isoformat()
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO analysis_results (id, session_id, workspace_id, module, kind, params_hash,
+                        params_json, result_json, input_name, input_sha256, app_version, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(session_id, kind, params_hash) DO UPDATE SET
+                        result_json = excluded.result_json,
+                        input_name = excluded.input_name,
+                        input_sha256 = excluded.input_sha256,
+                        app_version = excluded.app_version,
+                        created_at = excluded.created_at
+                    """,
+                    (
+                        uuid.uuid4().hex, session_id, workspace_id, module, kind, params_hash,
+                        json.dumps(params, default=str), json.dumps(result, default=str),
+                        input_name, input_sha256, app_version, now,
+                    ),
+                )
+        finally:
+            conn.close()
+
+
+def list_results(session_ids: Optional[List[str]] = None, kind: Optional[str] = None) -> List[Dict[str, Any]]:
+    query = "SELECT * FROM analysis_results WHERE 1=1"
+    params: List[Any] = []
+    if session_ids is not None:
+        if not session_ids:
+            return []
+        query += f" AND session_id IN ({','.join('?' * len(session_ids))})"
+        params.extend(session_ids)
+    if kind:
+        query += " AND kind = ?"
+        params.append(kind)
+    query += " ORDER BY created_at ASC"
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            rows = [dict(r) for r in conn.execute(query, params).fetchall()]
+        finally:
+            conn.close()
+    for r in rows:
+        r["params"] = json.loads(r.pop("params_json"))
+        r["result"] = json.loads(r.pop("result_json"))
+    return rows
 
 
 # --- Workspace Module State (Auto-save / Restore) -----------------------------

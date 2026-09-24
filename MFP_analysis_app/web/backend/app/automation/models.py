@@ -50,7 +50,6 @@ class ActionLogEntry(BaseModel):
 class LCMSUVSummary(BaseModel):
     available: bool
     filename: Optional[str] = None
-    path: Optional[str] = None
     n_points: Optional[int] = None
     rt_min: Optional[float] = None
     rt_max: Optional[float] = None
@@ -65,7 +64,6 @@ class LCMSUVSummary(BaseModel):
 class LCMSSessionSummary(BaseModel):
     session_id: str
     display_name: str
-    path: str
     ms1_count: int
     rt_min: Optional[float] = None
     rt_max: Optional[float] = None

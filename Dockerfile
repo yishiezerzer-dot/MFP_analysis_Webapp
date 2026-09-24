@@ -19,8 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxslt1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY MFP_analysis_app/web/backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY MFP_analysis_app/web/backend/requirements.lock ./requirements.lock
+RUN pip install --no-cache-dir -r requirements.lock
 
 COPY MFP_analysis_app ./MFP_analysis_app
 COPY --from=frontend /frontend/dist ./MFP_analysis_app/web/frontend/dist
@@ -28,5 +28,7 @@ COPY --from=frontend /frontend/dist ./MFP_analysis_app/web/frontend/dist
 WORKDIR /app/MFP_analysis_app/web/backend
 
 ENV PYTHONUNBUFFERED=1
+# Railway volume mount point: database, uploads, index caches, automation log and backups.
+ENV MFP_DATA_DIR=/data
 
 CMD ["sh", "-c", "python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

@@ -186,7 +186,21 @@ export function PlateReaderView() {
     [],
     (value) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []),
   );
-  const [tickText, setTickText] = useStoredState(`${PLATE_STORAGE_PREFIX}.tickText`, "");
+  // Concentrations belong to a specific plate; keep them per session so they don't carry over.
+  const [tickTextBySession, setTickTextBySession] = useStoredState<Record<string, string>>(
+    `${PLATE_STORAGE_PREFIX}.tickTextBySession`,
+    {},
+    (value) => (value && typeof value === "object" ? (value as Record<string, string>) : {}),
+  );
+  const tickText = (activeSid && tickTextBySession[activeSid]) || "";
+  const setTickTextFor = useCallback(
+    (sid: string | null, text: string) => {
+      if (!sid) return;
+      setTickTextBySession((prev) => ({ ...prev, [sid]: text }));
+    },
+    [setTickTextBySession],
+  );
+  const setTickText = useCallback((text: string) => setTickTextFor(activeSid, text), [activeSid, setTickTextFor]);
   const [autoPow2, setAutoPow2] = useStoredState(`${PLATE_STORAGE_PREFIX}.autoPow2`, true);
   const [subtractBlank, setSubtractBlank] = useStoredState(`${PLATE_STORAGE_PREFIX}.subtractBlank`, false);
   const [title, setTitle] = useStoredState(`${PLATE_STORAGE_PREFIX}.title`, "MIC");
@@ -481,7 +495,7 @@ export function PlateReaderView() {
       setUseHeader(workspace.viewState.useHeader ?? true);
       setRowRoles(workspace.viewState.rowRoles ?? {});
       setConcCols(workspace.viewState.concCols ?? []);
-      setTickText(workspace.viewState.tickText ?? "");
+      setTickTextFor(workspace.activeSessionId, workspace.viewState.tickText ?? "");
       setAutoPow2(workspace.viewState.autoPow2 ?? true);
       setSubtractBlank(workspace.viewState.subtractBlank ?? false);
       setTitle(workspace.viewState.title ?? "MIC");
@@ -679,7 +693,7 @@ export function PlateReaderView() {
                   Rename
                 </button>
                 <button
-                  className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 group-hover:visible"
+                  className="inline-flex min-h-6 min-w-6 items-center justify-center invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 group-hover:visible"
                   onClick={(e) => {
                     e.stopPropagation();
                     onRemove(s.session_id);
@@ -777,19 +791,15 @@ export function PlateReaderView() {
                     {blankRows.length > 0 && subtractBlank && (
                       <span className="text-amber-700">Blank-subtracted</span>
                     )}
-                    {mic.result.concentrations.length > 0 && (
+                    {mic.result.x_tick_labels.length > 0 && (
                       <span>
                         <span className="font-medium text-ink-600">Range:</span>{" "}
                         <span className="font-mono text-brand-700">
-                          {mic.result.concentrations[0]} – {mic.result.concentrations[mic.result.concentrations.length - 1]}
+                          {mic.result.x_tick_labels[0]} – {mic.result.x_tick_labels[mic.result.x_tick_labels.length - 1]}
                         </span>
                       </span>
                     )}
-                    {mic.result.four_pl && (
-                      <span className="rounded bg-brand-50 px-2 py-0.5 text-brand-800 border border-brand-200">
-                        <span className="font-semibold">4PL Sigmoidal Fit:</span> IC₅₀ = <span className="font-mono font-bold">{mic.result.four_pl.ic50.toFixed(3)}</span> | R² = <span className="font-mono font-bold">{mic.result.four_pl.r_squared.toFixed(3)}</span> (Slope = {mic.result.four_pl.hill_slope.toFixed(2)})
-                      </span>
-                    )}
+                    <FitSummary mic={mic} xLabel={mic.config.x_label} />
                     {mic.sample_nan_ratio > 0 && (
                       <span className="text-amber-700">
                         ⚠ {(mic.sample_nan_ratio * 100).toFixed(1)}% non-numeric cells ignored
@@ -884,6 +894,10 @@ function LoadControls(props: {
       </label>
     </div>
   );
+}
+
+function roleName(role: RowRole): string {
+  return role === "none" ? "unassigned" : role;
 }
 
 function roleLabel(role: RowRole) {
@@ -981,7 +995,7 @@ function PreviewTable(props: {
                 title="Move right"
               >↓</button>
               <button
-                className="ml-1 text-ink-300 hover:text-red-500"
+                className="inline-flex min-h-6 min-w-6 items-center justify-center ml-1 text-ink-300 hover:text-red-500"
                 onClick={() => props.onToggleCol(c)}
                 title="Remove"
               >✕</button>
@@ -1003,6 +1017,14 @@ function PreviewTable(props: {
                   <th
                     key={c}
                     onClick={() => props.onToggleCol(c)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        props.onToggleCol(c);
+                      }
+                    }}
+                    tabIndex={0}
+                    aria-pressed={active}
                     className={clsx(
                       "cursor-pointer select-none border-b border-ink-200 px-2 py-1.5 text-left font-medium",
                       active ? "bg-brand-500 text-white" : "bg-ink-50 text-ink-700 hover:bg-ink-100",
@@ -1026,9 +1048,13 @@ function PreviewTable(props: {
                       {(["none", "sample", "control", "blank"] as RowRole[]).map((r) => (
                         <button
                           key={r}
+                          type="button"
                           onClick={() => props.onSetRole(i, r)}
+                          aria-label={`Mark row ${i + 1} as ${roleName(r)}`}
+                          aria-pressed={role === r}
+                          title={`Mark row ${i + 1} as ${roleName(r)}`}
                           className={clsx(
-                            "rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
+                            "min-h-6 min-w-6 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
                             role === r ? activeRoleClass(r) : "border border-ink-200 bg-surface text-ink-400 hover:bg-ink-100",
                           )}
                         >
@@ -1380,8 +1406,11 @@ function MICChart({
 }) {
   const pt = usePlotlyTheme();
   const { config, result, sample_nan_ratio } = mic;
-  const xs = result.concentrations;
+  // x_positions puts bars and the fitted curve on one axis (log2 concentration); older saved
+  // results only have column indices.
+  const xs = result.x_positions ?? result.concentrations;
   const labels = result.x_tick_labels;
+  const nHover = result.sample_n?.map((n) => `n = ${n}`);
   const hasControl =
     result.control_mean !== null &&
     Array.isArray(result.control_mean) &&
@@ -1405,6 +1434,7 @@ function MICChart({
         name: "Sample",
         x: xs,
         y: result.sample_mean,
+        hovertext: nHover,
         error_y: errBars(result.sample_std),
         marker: { color: settings.sampleColor },
         width: settings.barWidth,
@@ -1426,6 +1456,7 @@ function MICChart({
         name: "Sample",
         x: xs,
         y: result.sample_mean,
+        hovertext: nHover,
         error_y: errBars(result.sample_std),
         marker: { color: settings.sampleColor },
         width: settings.barWidth,
@@ -1451,6 +1482,7 @@ function MICChart({
       name: "Sample",
       x: xs,
       y: result.sample_mean,
+      hovertext: nHover,
       error_y: errBars(result.sample_std),
       line: { color: settings.sampleColor, width: settings.lineWidth },
       marker: { color: settings.sampleColor, size: settings.markerSize },
@@ -1481,12 +1513,12 @@ function MICChart({
     });
   }
 
-  if (result.four_pl) {
+  if (result.four_pl?.curve_x_positions) {
     data.push({
       type: "scatter",
       mode: "lines",
-      name: `4PL Fit (IC₅₀: ${result.four_pl.ic50.toFixed(2)}, R²: ${result.four_pl.r_squared.toFixed(3)})`,
-      x: result.four_pl.curve_x,
+      name: `4PL fit (IC₅₀ ${result.four_pl.ic50.toPrecision(3)}, R² ${result.four_pl.r_squared.toFixed(3)})`,
+      x: result.four_pl.curve_x_positions,
       y: result.four_pl.curve_y,
       line: { color: settings.sampleColor, width: Math.max(1.8, settings.lineWidth), dash: "dash" },
       hoverinfo: "y+name",
@@ -1541,6 +1573,37 @@ function MICChart({
         onUpdate={(_, graphDiv) => onReady(graphDiv as PlotlyHTMLElement)}
       />
     </div>
+  );
+}
+
+function unitFromAxisLabel(label: string): string {
+  const match = /\(([^()]+)\)\s*$/.exec(label ?? "");
+  return match ? match[1] : "";
+}
+
+function FitSummary({ mic, xLabel }: { mic: MICResult; xLabel: string }) {
+  const fit = mic.result.four_pl;
+  // Fits saved by older versions were computed on placeholder x values and can't be trusted.
+  if (fit && !fit.curve_x_positions) {
+    return <span className="text-amber-700">⚠ Saved fit is from an older version — re-run MIC.</span>;
+  }
+  if (!fit) {
+    return mic.result.four_pl_skipped_reason ? (
+      <span className="text-ink-500">{mic.result.four_pl_skipped_reason}</span>
+    ) : null;
+  }
+  const unit = unitFromAxisLabel(xLabel);
+  return (
+    <span className="rounded border border-brand-200 bg-brand-50 px-2 py-0.5 text-brand-800">
+      <span className="font-semibold">4PL fit:</span> IC₅₀ ={" "}
+      <span className="font-mono font-bold">{fit.ic50.toPrecision(3)}</span>
+      {fit.ic50_se != null && <span className="font-mono"> ± {fit.ic50_se.toPrecision(2)}</span>}
+      {unit && ` ${unit}`} | R² = <span className="font-mono font-bold">{fit.r_squared.toFixed(3)}</span> (Hill ={" "}
+      {fit.hill_slope.toFixed(2)})
+      {fit.ic50_in_range === false && (
+        <span className="ml-1 text-amber-700">⚠ IC₅₀ is outside the tested concentration range</span>
+      )}
+    </span>
   );
 }
 

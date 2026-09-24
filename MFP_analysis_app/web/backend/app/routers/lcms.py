@@ -13,18 +13,20 @@ Endpoints:
 """
 from __future__ import annotations
 
-import json
 import hashlib
+import json
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 import numpy as np
 from pydantic import BaseModel, Field
 
-from ..blob_store import manifest_key, put_json
 from ..db import get_session_record, get_upload_dir, save_session_record
-from ..upload_utils import read_upload_bytes, stream_upload_to_file
+from ..provenance import record
+from ..upload_utils import limit_bytes, stream_upload_to_file
 from ..services.lcms_service import (
     LCMSSessionState,
     attach_uv_from_csv,
@@ -33,7 +35,6 @@ from ..services.lcms_service import (
     extracted_ion_chromatogram,
     fetch_spectrum_at_rt,
     find_mz_across_scans,
-    get_or_restore,
     iter_ms1_spectra,
     polymer_match_labels,
     registry,
@@ -85,16 +86,6 @@ class OverlayRequest(BaseModel):
     polarity: Optional[str] = None
 
 
-class LoadFromPathRequest(BaseModel):
-    path: str
-    display_name: Optional[str] = None
-    rt_unit: str = "minutes"
-
-
-class AttachUVFromPathRequest(BaseModel):
-    path: str
-
-
 def _safe_upload_name(filename: str, default: str) -> str:
     name = Path(filename or default).name
     return name or default
@@ -132,7 +123,6 @@ def _uv_summary(state: LCMSSessionState) -> Dict[str, Any]:
     return {
         "available": True,
         "filename": uv.filename,
-        "path": str(uv.path),
         "n_points": int(uv.rt_min.size),
         "rt_min": float(uv.rt_range[0]),
         "rt_max": float(uv.rt_range[1]),
@@ -145,6 +135,11 @@ def _uv_summary(state: LCMSSessionState) -> Dict[str, Any]:
     }
 
 
+def _file_id(path: Path) -> Optional[str]:
+    match = re.search(r"\.([0-9a-f]{12})\.", path.name)
+    return match.group(1) if match else None
+
+
 def _session_summary(state: LCMSSessionState) -> Dict[str, Any]:
     metas = state.index.ms1
     rts = [float(m.rt_min) for m in metas]
@@ -154,8 +149,10 @@ def _session_summary(state: LCMSSessionState) -> Dict[str, Any]:
         "session_id": state.session_id,
         "workspace_id": state.workspace_id,
         "display_name": state.display_name,
-        "path": str(state.path),
         "experiment_tag": rec.get("experiment_tag", "") if rec else "",
+        # Upload time and the content hash in the stored file name tell same-named uploads apart.
+        "uploaded_at": rec.get("created_at") if rec else None,
+        "file_id": _file_id(state.path),
         "ms1_count": len(metas),
         "rt_min": float(min(rts)) if rts else None,
         "rt_max": float(max(rts)) if rts else None,
@@ -180,71 +177,54 @@ def _tic_payload(state: LCMSSessionState, polarity: Optional[str] = None) -> Dic
 
 @router.post("/sessions")
 async def create_session(
-    file: UploadFile | None = File(None),
-    blob_url: str | None = Form(None),
-    blob_filename: str | None = Form(None),
+    file: UploadFile = File(...),
     rt_unit: str = Form("minutes"),
     x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
     dest, name = await stream_upload_to_file(
         file,
-        blob_url,
-        blob_filename,
         _MZML_UPLOAD_DIR,
         allowed_extensions={".mzml", ".mzml.gz"},
     )
+    # Decompression and parsing are CPU/disk-bound: run them in a worker thread so other
+    # users' requests keep being served.
+    return await run_in_threadpool(_ingest_mzml, dest, name, rt_unit, x_workspace_id)
+
+
+def _ingest_mzml(dest: Path, name: str, rt_unit: str, workspace_id: str) -> Dict[str, Any]:
     if dest.name.lower().endswith(".gz"):
         import gzip
-        import shutil
         uncompressed_dest = dest.with_name(dest.name[:-3])
-        with gzip.open(dest, "rb") as f_in, open(uncompressed_dest, "wb") as f_out:
-            shutil.copyfileobj(f_in, f_out)
+        # Bound the decompressed size: a small .gz can expand to fill the disk.
+        max_bytes = limit_bytes("MFP_MAX_DECOMPRESSED_MB", 8192)
+        written = 0
         try:
-            dest.unlink()
-        except Exception:
-            pass
+            with gzip.open(dest, "rb") as f_in, open(uncompressed_dest, "wb") as f_out:
+                while chunk := f_in.read(1024 * 1024):
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"Decompressed file is larger than the {max_bytes / 1024 / 1024:g} MB limit.",
+                        )
+                    f_out.write(chunk)
+        except (HTTPException, OSError, EOFError) as exc:
+            uncompressed_dest.unlink(missing_ok=True)
+            if isinstance(exc, HTTPException):
+                raise
+            raise HTTPException(status_code=400, detail=f"Could not decompress {name}: {exc}") from exc
+        finally:
+            dest.unlink(missing_ok=True)
         dest = uncompressed_dest
         if name.lower().endswith(".gz"):
             name = name[:-3]
     try:
-        state = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name, rt_unit=rt_unit)
+        state = registry.add_from_path(dest, workspace_id=workspace_id, display_name=name, rt_unit=rt_unit)
     except LCMSLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"mzML parse failed: {exc}")
     save_session_record(state.session_id, state.workspace_id, "lcms", state.display_name, str(state.path))
-    if blob_url:
-        await put_json(
-            manifest_key("lcms", state.session_id),
-            {
-                "blob_url": blob_url,
-                "filename": name,
-                "display_name": state.display_name,
-                "rt_unit": rt_unit,
-            },
-        )
-    return _session_summary(state)
-
-
-@router.post("/sessions/from_path")
-def load_session_from_path(
-    body: LoadFromPathRequest,
-    x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
-) -> Dict[str, Any]:
-    p = Path(body.path)
-    if not p.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {body.path}")
-    try:
-        state = registry.add_from_path(
-            p,
-            workspace_id=x_workspace_id,
-            display_name=body.display_name or p.name,
-            rt_unit=body.rt_unit,
-        )
-    except LCMSLoadError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"mzML load failed: {exc}")
     return _session_summary(state)
 
 
@@ -255,21 +235,21 @@ def list_sessions(
     return [_session_summary(s) for s in registry.list(workspace_id=x_workspace_id)]
 
 
-async def _require_session(sid: str) -> LCMSSessionState:
-    state = await get_or_restore(sid)
+def _require_session(sid: str) -> LCMSSessionState:
+    state = registry.get(sid)
     if state is None:
         raise HTTPException(status_code=404, detail="session not found")
     return state
 
 
 @router.get("/sessions/{sid}")
-async def get_session(sid: str) -> Dict[str, Any]:
-    return _session_summary(await _require_session(sid))
+def get_session(sid: str) -> Dict[str, Any]:
+    return _session_summary(_require_session(sid))
 
 
 @router.get("/sessions/{sid}/tic")
-async def get_tic(sid: str, polarity: Optional[str] = None) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_tic(sid: str, polarity: Optional[str] = None) -> Dict[str, Any]:
+    state = _require_session(sid)
     payload = _tic_payload(state, polarity)
     return {
         "rt_min": payload["rt_min"],
@@ -279,7 +259,7 @@ async def get_tic(sid: str, polarity: Optional[str] = None) -> Dict[str, Any]:
 
 
 @router.get("/sessions/{sid}/spectrum")
-async def get_spectrum(
+def get_spectrum(
     sid: str,
     rt_min: float,
     polarity: Optional[str] = None,
@@ -287,7 +267,7 @@ async def get_spectrum(
     min_rel: float = 0.01,
     polymer_settings: Optional[str] = None,
 ) -> Dict[str, Any]:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     try:
         meta, mz, intensity = fetch_spectrum_at_rt(
             state, float(rt_min), polarity=polarity
@@ -325,14 +305,14 @@ async def get_spectrum(
 
 
 @router.get("/sessions/{sid}/find-mz")
-async def find_mz(
+def find_mz(
     sid: str,
     mz: float,
     tolerance: float = 0.01,
     tolerance_unit: str = "da",
     polarity: Optional[str] = None,
 ) -> Dict[str, Any]:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     try:
         return find_mz_across_scans(
             state,
@@ -346,8 +326,8 @@ async def find_mz(
 
 
 @router.post("/sessions/{sid}/eic")
-async def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     try:
         return extracted_ion_chromatogram(
             state,
@@ -361,8 +341,8 @@ async def get_eic(sid: str, body: EICRequest) -> Dict[str, Any]:
 
 
 @router.post("/sessions/{sid}/region-spectrum")
-async def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
+def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]:
+    state = _require_session(sid)
     try:
         payload = summed_spectrum_in_rt_range(
             state,
@@ -392,10 +372,10 @@ async def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str
 
 
 @router.post("/sessions/{sid}/deconvolute")
-async def deconvolute_session_spectrum(
+def deconvolute_session_spectrum(
     sid: str, body: DeconvoluteRequest
 ) -> Dict[str, Any]:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     try:
         if body.rt_min is not None and body.rt_max is not None:
             region = summed_spectrum_in_rt_range(
@@ -409,21 +389,20 @@ async def deconvolute_session_spectrum(
         elif body.rt_min is not None:
             meta, mzs_arr, ints_arr = fetch_spectrum_at_rt(
                 state,
-                rt_min=float(body.rt_min),
+                float(body.rt_min),
                 polarity=body.polarity,
             )
             mzs = mzs_arr.tolist()
             ints = ints_arr.tolist()
         else:
-            if len(state.tic_index.rt_min) == 0:
+            if not state.index.ms1:
                 raise HTTPException(status_code=400, detail="Empty TIC index")
-            highest_idx = int(np.argmax(state.tic_index.tic))
-            rt = float(state.tic_index.rt_min[highest_idx])
-            meta, mzs_arr, ints_arr = fetch_spectrum_at_rt(state, rt_min=rt)
+            apex = max(state.index.ms1, key=lambda m: float(m.tic))
+            meta, mzs_arr, ints_arr = fetch_spectrum_at_rt(state, float(apex.rt_min), polarity=body.polarity)
             mzs = mzs_arr.tolist()
             ints = ints_arr.tolist()
 
-        return deconvolute_spectrum(
+        out = deconvolute_spectrum(
             mz_array=mzs,
             intensity_array=ints,
             min_charge=body.min_charge,
@@ -437,14 +416,16 @@ async def deconvolute_session_spectrum(
         )
     except LCMSLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    record(sid, "deconvolution", body.model_dump(), {"components": out["components"][:100], "summary": out["summary"]})
+    return out
 
 
 @router.post("/overlays/tic")
-async def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
+def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
     traces = []
     missing = []
     for sid in body.session_ids:
-        state = await get_or_restore(sid)
+        state = registry.get(sid)
         if state is None:
             missing.append(sid)
             continue
@@ -453,10 +434,10 @@ async def get_tic_overlay(body: OverlayRequest) -> Dict[str, Any]:
 
 
 @router.post("/exports/tic-overlay.csv")
-async def export_tic_overlay(body: OverlayRequest) -> Response:
+def export_tic_overlay(body: OverlayRequest) -> Response:
     rows: List[List[Any]] = [["session_id", "display_name", "rt_min", "tic", "polarity"]]
     for sid in body.session_ids:
-        state = await get_or_restore(sid)
+        state = registry.get(sid)
         if state is None:
             continue
         payload = _tic_payload(state, body.polarity)
@@ -466,12 +447,12 @@ async def export_tic_overlay(body: OverlayRequest) -> Response:
 
 
 @router.get("/sessions/{sid}/exports/spectrum.csv")
-async def export_spectrum_csv(
+def export_spectrum_csv(
     sid: str,
     rt_min: float,
     polarity: Optional[str] = None,
 ) -> Response:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     try:
         meta, mz, intensity = fetch_spectrum_at_rt(
             state,
@@ -487,13 +468,13 @@ async def export_spectrum_csv(
 
 
 @router.get("/sessions/{sid}/exports/labels.csv")
-async def export_labels_csv(
+def export_labels_csv(
     sid: str,
     polarity: Optional[str] = None,
     top_n: int = 10,
     min_rel: float = 0.01,
 ) -> Response:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     rows: List[List[Any]] = [
         ["spectrum_id", "rt_min", "polarity", "label_source", "mz", "intensity", "text"]
     ]
@@ -520,8 +501,8 @@ async def export_labels_csv(
 
 
 @router.get("/sessions/{sid}/exports/uv.csv")
-async def export_uv_csv(sid: str) -> Response:
-    state = await _require_session(sid)
+def export_uv_csv(sid: str) -> Response:
+    state = _require_session(sid)
     uv = state.uv
     if uv is None:
         raise HTTPException(status_code=400, detail="No UV chromatogram attached.")
@@ -532,17 +513,19 @@ async def export_uv_csv(sid: str) -> Response:
 
 
 @router.post("/sessions/{sid}/uv")
-async def attach_uv(sid: str, file: UploadFile = File(...)) -> Dict[str, Any]:
-    state = await _require_session(sid)
+async def attach_uv(
+    sid: str,
+    file: UploadFile = File(...),
+    rt_unit: Literal["auto", "minutes", "seconds"] = Form("auto"),
+) -> Dict[str, Any]:
+    state = _require_session(sid)
     dest, name = await stream_upload_to_file(
         file,
-        None,
-        None,
         _UV_UPLOAD_DIR,
         allowed_extensions={".csv", ".tsv", ".txt"},
     )
     try:
-        attach_uv_from_csv(state, dest, filename=name)
+        await run_in_threadpool(attach_uv_from_csv, state, dest, filename=name, rt_unit=rt_unit)
     except UVLoadError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -550,29 +533,14 @@ async def attach_uv(sid: str, file: UploadFile = File(...)) -> Dict[str, Any]:
     return _session_summary(state)
 
 
-@router.post("/sessions/{sid}/uv/from_path")
-async def attach_uv_from_path_endpoint(sid: str, body: AttachUVFromPathRequest) -> Dict[str, Any]:
-    state = await _require_session(sid)
-    p = Path(body.path)
-    if not p.exists():
-        raise HTTPException(status_code=404, detail=f"UV file not found: {body.path}")
-    try:
-        attach_uv_from_csv(state, p, filename=p.name)
-    except UVLoadError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"UV CSV load failed: {exc}")
-    return _session_summary(state)
-
-
 @router.get("/sessions/{sid}/uv")
-async def get_uv(
+def get_uv(
     sid: str,
     top_n: int = 8,
     min_rel: float = 0.05,
     min_distance_min: Optional[float] = None,
 ) -> Dict[str, Any]:
-    state = await _require_session(sid)
+    state = _require_session(sid)
     uv = state.uv
     if uv is None:
         return {
@@ -596,8 +564,8 @@ async def get_uv(
 
 
 @router.delete("/sessions/{sid}/uv")
-async def delete_uv(sid: str) -> Dict[str, bool]:
-    state = await _require_session(sid)
+def delete_uv(sid: str) -> Dict[str, bool]:
+    state = _require_session(sid)
     had = clear_uv(state)
     return {"deleted": bool(had)}
 

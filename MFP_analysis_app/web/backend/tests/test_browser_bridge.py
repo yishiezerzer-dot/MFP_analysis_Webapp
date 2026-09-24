@@ -1,8 +1,8 @@
 """Tests for the browser-bridge WebSocket + registry + browser-scope actions.
 
 Covers:
-- single-tab-wins (a second connect supersedes the first; pending futures on
-  the superseded connection resolve with ``BrowserConnectionRequired``)
+- one connection per browser tab; dispatch routes by browser_id (X-Browser-Id)
+  and falls back to the most recently connected tab
 - ``dispatch`` timeout → ``BrowserActionFailed``
 - ``dispatch`` with no browser → ``BrowserConnectionRequired``
 - end-to-end via FastAPI ``TestClient``: a browser-scope action returns 409
@@ -45,30 +45,69 @@ def _fake_websocket() -> WebSocket:
 
 
 @pytest.mark.asyncio
-async def test_registry_single_tab_wins_supersedes_old_connection():
+async def test_tabs_coexist_and_dispatch_routes_by_browser_id():
+    # Several lab members can have the app open; one opening a tab must not take over
+    # another's automation requests.
     registry = BrowserConnectionRegistry()
-    ws1 = _fake_websocket()
-    ws2 = _fake_websocket()
-
+    ws1, ws2 = _fake_websocket(), _fake_websocket()
     conn1 = await registry.connect(ws1, browser_id="tab-1")
-    # Plant a pending future on conn1 to confirm it's resolved on supersede.
-    pending_future: asyncio.Future = asyncio.get_running_loop().create_future()
-    conn1.pending["fake-request-id"] = pending_future
+    conn2 = await registry.connect(ws2, browser_id="tab-2")
+    assert ws1.close.await_count == 0
 
+    task = asyncio.create_task(registry.dispatch("lcms.push_eic_to_ui", {}, browser_id="tab-1"))
+    await asyncio.sleep(0.05)
+    assert ws1.send_json.await_count == 1 and ws2.send_json.await_count == 0
+    request_id = ws1.send_json.await_args.args[0]["request_id"]
+    await registry.receive(conn1, {"type": "automation_response", "request_id": request_id, "result": {"ok": 1}})
+    assert await asyncio.wait_for(task, timeout=1.0) == {"ok": 1}
+
+    await registry.disconnect(conn1)
+    await registry.disconnect(conn2)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_without_browser_id_uses_most_recent_tab():
+    registry = BrowserConnectionRegistry()
+    ws1, ws2 = _fake_websocket(), _fake_websocket()
+    conn1 = await registry.connect(ws1, browser_id="tab-1")
     conn2 = await registry.connect(ws2, browser_id="tab-2")
 
-    # Old connection is closed and its pending futures fail with
-    # BrowserConnectionRequired.
-    assert ws1.close.await_count == 1
-    assert pending_future.done()
-    with pytest.raises(BrowserConnectionRequired):
-        pending_future.result()
-    # The new connection is the active one.
-    async with registry._lock:
-        assert registry._active is conn2
+    task = asyncio.create_task(registry.dispatch("lcms.push_eic_to_ui", {}))
+    await asyncio.sleep(0.05)
+    assert ws2.send_json.await_count == 1 and ws1.send_json.await_count == 0
+    task.cancel()
 
-    # Cleanup
+    # When the most recent tab closes, the previous one becomes the fallback.
     await registry.disconnect(conn2)
+    task = asyncio.create_task(registry.dispatch("lcms.push_eic_to_ui", {}))
+    await asyncio.sleep(0.05)
+    assert ws1.send_json.await_count == 1
+    task.cancel()
+    await registry.disconnect(conn1)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_to_unknown_browser_id_requires_open_app():
+    registry = BrowserConnectionRegistry()
+    conn = await registry.connect(_fake_websocket(), browser_id="tab-1")
+    with pytest.raises(BrowserConnectionRequired):
+        await registry.dispatch("lcms.push_eic_to_ui", {}, browser_id="closed-tab")
+    await registry.disconnect(conn)
+
+
+@pytest.mark.asyncio
+async def test_same_tab_reconnect_takes_over_pending_requests():
+    registry = BrowserConnectionRegistry()
+    ws_old, ws_new = _fake_websocket(), _fake_websocket()
+    await registry.connect(ws_old, browser_id="tab-1")
+    task = asyncio.create_task(registry.dispatch("lcms.push_eic_to_ui", {}, browser_id="tab-1"))
+    await asyncio.sleep(0.05)
+
+    conn_new = await registry.connect(ws_new, browser_id="tab-1")
+    resent = ws_new.send_json.await_args.args[0]
+    await registry.receive(conn_new, {"type": "automation_response", "request_id": resent["request_id"], "result": {"r": 2}})
+    assert await asyncio.wait_for(task, timeout=1.0) == {"r": 2}
+    await registry.disconnect(conn_new)
 
 
 @pytest.mark.asyncio
@@ -92,9 +131,7 @@ async def test_dispatch_timeout_raises_browser_action_failed(monkeypatch):
     assert "timed out" in str(excinfo.value)
 
     # The pending entry should be cleaned up on timeout.
-    async with registry._lock:
-        conn = registry._active
-    assert conn is not None
+    conn = registry._connections["tab"]
     assert conn.pending == {}
 
     await registry.disconnect(conn)
@@ -216,3 +253,23 @@ def test_browser_action_round_trips_through_connected_websocket():
     payload = http_response["json"]
     assert payload["ok"] is True
     assert payload["result"]["echo"] == {"polarity": "positive"}
+
+
+def test_execute_routes_by_x_browser_id_header():
+    client = TestClient(app)
+    with client.websocket_connect("/api/automation/browser-bridge?browser_id=tab-A"):
+        r = client.post(
+            "/api/automation/actions/lcms.set_polarity/execute",
+            json={"polarity": "positive"},
+            headers={"X-Browser-Id": "tab-B"},
+        )
+    assert r.status_code == 409
+    assert r.json()["detail"]["error"] == "requires_open_app"
+
+
+def test_action_log_defaults_to_persistent_data_dir(monkeypatch, tmp_path):
+    from app.automation import registry as automation_registry
+
+    monkeypatch.delenv("MFP_AUTOMATION_LOG_DB", raising=False)
+    monkeypatch.setenv("MFP_DATA_DIR", str(tmp_path))
+    assert automation_registry._default_log_db_path() == tmp_path / "automation" / "action_log.sqlite3"

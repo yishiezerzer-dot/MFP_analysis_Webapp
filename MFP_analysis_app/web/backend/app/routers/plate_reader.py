@@ -14,13 +14,14 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
-from ..blob_store import manifest_key, put_json
 from ..db import get_session_record, get_upload_dir, save_session_record
-from ..upload_utils import read_upload_bytes, stream_upload_to_file
-from ..services.plate_reader_service import get_or_restore, preview, registry, run_mic_wizard
+from ..provenance import record
+from ..upload_utils import stream_upload_to_file
+from ..services.plate_reader_service import preview, registry, run_mic_wizard
 
 router = APIRouter()
 
@@ -31,7 +32,6 @@ def _summary(s) -> Dict[str, Any]:
         "session_id": s.session_id,
         "workspace_id": getattr(s, "workspace_id", "general"),
         "display_name": s.display_name,
-        "path": str(s.path),
         "experiment_tag": rec.get("experiment_tag", "") if rec else "",
         "sheets": list(s.sheets),
     }
@@ -47,30 +47,19 @@ _ALLOWED = {".xlsx", ".xlsm", ".xls", ".csv", ".txt", ".tsv"}
 
 @router.post("/sessions")
 async def create_session(
-    file: UploadFile | None = File(None),
-    blob_url: str | None = Form(None),
-    blob_filename: str | None = Form(None),
+    file: UploadFile = File(...),
     x_workspace_id: str = Header(default="general", alias="X-Workspace-Id"),
 ) -> Dict[str, Any]:
     upload_dir = get_upload_dir("plate_reader")
     dest, name = await stream_upload_to_file(
-        file, blob_url, blob_filename, upload_dir,
+        file, upload_dir,
         allowed_extensions=_ALLOWED,
     )
     try:
-        session = registry.add_from_path(dest, workspace_id=x_workspace_id, display_name=name)
+        session = await run_in_threadpool(registry.add_from_path, dest, workspace_id=x_workspace_id, display_name=name)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to register file: {exc}")
     save_session_record(session.session_id, getattr(session, "workspace_id", x_workspace_id), "plate_reader", session.display_name, str(session.path))
-    if blob_url:
-        await put_json(
-            manifest_key("plate_reader", session.session_id),
-            {
-                "blob_url": blob_url,
-                "filename": name,
-                "display_name": session.display_name,
-            },
-        )
     return _summary(session)
 
 
@@ -81,16 +70,16 @@ def list_sessions(
     return [_summary(s) for s in registry.list(workspace_id=x_workspace_id)]
 
 
-async def _require_session(sid: str):
-    s = await get_or_restore(sid)
+def _require_session(sid: str):
+    s = registry.get(sid)
     if s is None:
         raise HTTPException(status_code=404, detail="session not found")
     return s
 
 
 @router.get("/sessions/{sid}")
-async def get_session(sid: str) -> Dict[str, Any]:
-    return _summary(await _require_session(sid))
+def get_session(sid: str) -> Dict[str, Any]:
+    return _summary(_require_session(sid))
 
 
 class LoadRequest(BaseModel):
@@ -100,8 +89,8 @@ class LoadRequest(BaseModel):
 
 
 @router.post("/sessions/{sid}/load")
-async def load_sheet(sid: str, req: LoadRequest) -> Dict[str, Any]:
-    s = await _require_session(sid)
+def load_sheet(sid: str, req: LoadRequest) -> Dict[str, Any]:
+    s = _require_session(sid)
     try:
         df = s.load_dataframe(
             sheet_name=req.sheet_name,
@@ -130,8 +119,8 @@ class MICRequest(BaseModel):
 
 
 @router.post("/sessions/{sid}/mic")
-async def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
-    s = await _require_session(sid)
+def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
+    s = _require_session(sid)
     try:
         df = s.load_dataframe(
             sheet_name=req.sheet_name,
@@ -140,7 +129,7 @@ async def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to load sheet: {exc}")
     try:
-        return run_mic_wizard(
+        out = run_mic_wizard(
             df,
             use_first_row_as_header=req.use_first_row_as_header,
             sample_rows=req.sample_rows,
@@ -160,6 +149,11 @@ async def run_mic(sid: str, req: MICRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"MIC wizard failed: {exc}")
+    stored = dict(out["result"])
+    if stored.get("four_pl"):
+        stored["four_pl"] = {k: v for k, v in stored["four_pl"].items() if not k.startswith("curve_")}
+    record(sid, "mic", req.model_dump(), {**stored, "sample_nan_ratio": out["sample_nan_ratio"], "config": out["config"]})
+    return out
 
 
 @router.delete("/sessions/{sid}")
