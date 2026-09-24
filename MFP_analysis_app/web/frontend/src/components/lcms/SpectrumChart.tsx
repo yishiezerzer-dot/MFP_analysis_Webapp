@@ -10,7 +10,7 @@ import { extractTopPeaks } from "../../lcms/analysis";
 import { DEFAULT_POLYMER_LABEL_SETTINGS, DEFAULT_OVERLAY_LABEL_SETTINGS, OVERLAY_PALETTE, type ChartSettings, type SpectrumOverlayMode } from "../../lcms/settings";
 import { Atom, Hand, Hexagon, Palette, RotateCcw, RotateCw, ZoomIn } from "lucide-react";
 import { SegmentedControl } from "../common/SegmentedControl";
-import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, LCMSSpectrumOverlayTrace, cleanLabelText, formatRt, axisRange, axisTitle, axisFrame, ChartCardTitle, ICON_PROPS, ToolbarButton } from "../../lcms/viewShared";
+import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, LCMSSpectrumOverlayTrace, cleanLabelText, formatRt, axisRange, axisTitle, axisFrame, ChartCardTitle, ICON_PROPS, ToolbarButton, spectrumDefaultRange, visibleLabelMask } from "../../lcms/viewShared";
 
 export function hexToRgba(hex: string, alpha: number): string {
   const clean = (hex || "#7c3aed").replace("#", "").trim();
@@ -27,6 +27,11 @@ export function hexToRgba(hex: string, alpha: number): string {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
   return hex;
+}
+
+// Default vertical offset (px, negative = up) of a spectrum peak label above its peak.
+function defaultLabelAy(isPoly: boolean, vertical: boolean): number {
+  return isPoly ? (vertical ? -46 : -34) : vertical ? -36 : -18;
 }
 
 export function pruneCentroidsForDisplay(
@@ -153,10 +158,14 @@ export function SpectrumChart(props: {
   };
 
   const [labelOffsets, setLabelOffsets] = useState<Record<number, { ax?: number; ay?: number; x?: number; y?: number }>>({});
+  // Visible m/z window after the user zooms or pans; null = the default (fitted) window.
+  const [viewXRange, setViewXRange] = useState<[number, number] | null>(null);
+  const spectrumKey = `${props.selectedRt ?? ""}|${s?.meta.spectrum_id ?? ""}`;
 
   useEffect(() => {
     setLabelOffsets({});
-  }, [props.selectedRt, s?.meta.spectrum_id]);
+    setViewXRange(null);
+  }, [spectrumKey]);
 
   const overlayMode: SpectrumOverlayMode = props.settings.overlaySettings?.spectrumMode ?? "overlay";
   const traceOpacity = props.settings.overlaySettings?.traceOpacity ?? 0.38;
@@ -199,6 +208,17 @@ export function SpectrumChart(props: {
   const visibleLabels = s
     ? s.labels.filter((label) => props.settings.labels.enabled || label.source === "polymer")
     : [];
+  const defaultXRange = useMemo(
+    () =>
+      s
+        ? spectrumDefaultRange(
+            s.mz,
+            s.intensity,
+            s.labels.filter((label) => props.settings.labels.enabled || label.source === "polymer").map((l) => l.mz),
+          )
+        : undefined,
+    [s, props.settings.labels.enabled],
+  );
 
   const handleSpectrumClick = (event: Readonly<PlotMouseEvent>) => {
     if (Date.now() - lastPeakClickTimeRef.current < 250) return;
@@ -486,6 +506,13 @@ export function SpectrumChart(props: {
         }
       }
 
+      const x0 = event["xaxis.range[0]"];
+      const x1 = event["xaxis.range[1]"];
+      const xr = event["xaxis.range"];
+      if (typeof x0 === "number" && typeof x1 === "number") setViewXRange([x0, x1]);
+      else if (Array.isArray(xr) && typeof xr[0] === "number" && typeof xr[1] === "number") setViewXRange([xr[0], xr[1]]);
+      else if (event["xaxis.autorange"] === true) setViewXRange(null);
+
       if (Object.keys(updates).length > 0) {
         setLabelOffsets((prev) => {
           const next = { ...prev };
@@ -501,6 +528,42 @@ export function SpectrumChart(props: {
   );
 
   const movedLabelCount = Object.keys(labelOffsets).length;
+
+  // Hide labels that would overlap at the current zoom (taller peaks and polymer matches win;
+  // dragged labels always stay). Hidden labels reappear when zooming in.
+  const userXRange = axisRange(props.settings.axis.xMin, props.settings.axis.xMax);
+  const xRangeNow = viewXRange ?? userXRange ?? defaultXRange;
+  const polyCfg = props.settings.polymerLabels ?? DEFAULT_POLYMER_LABEL_SETTINGS;
+  const labelMask = (() => {
+    if (!props.annotate || !xRangeNow || visibleLabels.length < 2 || !specPlotSize.width || !specPlotSize.height) return null;
+    const plotW = Math.max(1, specPlotSize.width - 85);
+    const plotH = Math.max(1, specPlotSize.height - ((props.settings.title ? 28 : 20) + 45));
+    const yTop = (isNorm ? 100 : activeBasePeak) * 1.05;
+    const [r0, r1] = xRangeNow;
+    return visibleLabelMask(
+      visibleLabels.map((lbl, i) => {
+        const isPoly = lbl.source === "polymer";
+        const vertical = isPoly && polyCfg.orientation === "vertical";
+        const fontSize = isPoly ? polyCfg.fontSize || 10 : props.settings.labels.fontSize;
+        const text = lbl.text ? cleanLabelText(lbl.text) : lbl.mz.toFixed(4);
+        const offset = labelOffsets[i];
+        const ay = offset?.ay ?? defaultLabelAy(isPoly, vertical);
+        const w = text.length * fontSize * 0.6 + 4;
+        const h = fontSize + 4;
+        const x = (((offset?.x ?? lbl.mz) - r0) / (r1 - r0)) * plotW + (offset?.ax ?? 0);
+        const yVal = offset?.y ?? (isNorm ? (lbl.intensity / activeBasePeak) * 100 : lbl.intensity);
+        const onScreen = x >= 0 && x <= plotW;
+        return {
+          x,
+          y: (yVal / yTop) * plotH - ay,
+          width: vertical ? h : w,
+          height: vertical ? w : h,
+          priority: onScreen ? (isPoly ? 1e15 : 0) + lbl.intensity : -Infinity,
+          pinned: offset != null,
+        };
+      }),
+    );
+  })();
 
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
@@ -757,10 +820,12 @@ export function SpectrumChart(props: {
                 title: axisTitle(props.settings.xTitle, props.settings.axisTitleSize),
                 zeroline: false,
                 showgrid: props.settings.showGrid,
-                range: axisRange(props.settings.axis.xMin, props.settings.axis.xMax),
+                range: userXRange ?? defaultXRange,
                 tickfont: { size: props.settings.tickSize },
                 ...axisFrame(props.settings),
               },
+              // Keeps the user's zoom across re-renders; a new spectrum resets to the fitted window.
+              uirevision: `${spectrumKey}|${userXRange?.join(",") ?? ""}`,
               yaxis: {
                 title: axisTitle(
                   props.settings.yTitle ||
@@ -800,7 +865,7 @@ export function SpectrumChart(props: {
 
                       const labelY = isNorm ? (lbl.intensity / activeBasePeak) * 100 : lbl.intensity;
                       const defaultAx = 0;
-                      const defaultAy = isPoly ? (isVertical ? -46 : -34) : (isVertical ? -36 : -18);
+                      const defaultAy = defaultLabelAy(isPoly, isVertical);
                       const offset = labelOffsets[lblIdx];
                       const isDragged = offset != null && (
                         (offset.ax != null && Math.abs(offset.ax - defaultAx) > 2) ||
@@ -810,6 +875,7 @@ export function SpectrumChart(props: {
                       );
 
                       return {
+                        visible: labelMask?.[lblIdx] ?? true,
                         x: offset?.x ?? lbl.mz,
                         y: offset?.y ?? labelY,
                         text: lbl.text ? cleanLabelText(lbl.text) : lbl.mz.toFixed(4),
