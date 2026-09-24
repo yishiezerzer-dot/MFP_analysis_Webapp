@@ -460,9 +460,8 @@ function ThemeSubmenu() {
  */
 function ThemeSwatch({ theme }: { theme: ThemeName }) {
   const palette: Record<ThemeName, { bg: string; fg: string; accent: string }> = {
-    day: { bg: "#ffffff", fg: "#0f1420", accent: "#5573b9" },
+    day: { bg: "#ffffff", fg: "#18181b", accent: "#405a9c" },
     night: { bg: "#001a37", fg: "#d9e6ff", accent: "#7694ce" },
-    "night-vision": { bg: "#120606", fg: "#ffafaa", accent: "#d23c3c" },
   };
   const p = palette[theme];
   return (
