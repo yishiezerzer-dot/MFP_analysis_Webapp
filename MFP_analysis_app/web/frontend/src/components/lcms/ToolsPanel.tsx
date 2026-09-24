@@ -6,7 +6,8 @@ import { ExperimentTagEditor } from "../ExperimentTagEditor";
 import { type PolymerUiSettings } from "../../lcms/analysis";
 import { ChevronLeft, ChevronRight, Columns2, PanelRightClose, PanelRightOpen, Rows2 } from "lucide-react";
 import { SegmentedControl } from "../common/SegmentedControl";
-import { Polarity, RtUnit, UvTimeUnit, TabId, UVLabelOrientation, formatRange, ICON_PROPS } from "../../lcms/viewShared";
+import { Polarity, RtUnit, UvTimeUnit, TabId, UVLabelOrientation, formatRange } from "../../lcms/viewShared";
+import { ICON_PROPS } from "../common/ChartCardParts";
 
 export function DatasetRibbon(props: {
   active: LCMSSessionSummary | null;

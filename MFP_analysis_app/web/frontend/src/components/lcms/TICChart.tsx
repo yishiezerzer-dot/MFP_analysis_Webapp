@@ -11,7 +11,8 @@ import { type IntegratedTraceRegion } from "../../lcms/analysis";
 import { OVERLAY_PALETTE, type ChartSettings, type ChromatogramOverlayMode } from "../../lcms/settings";
 import { SegmentedControl } from "../common/SegmentedControl";
 import { Crosshair, Keyboard, Link2, Palette, Redo2, RotateCw, Scissors, Undo2 } from "lucide-react";
-import { schedulePlotResize, useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, formatRt, formatScanId, axisRange, maxFinite, axisTitle, axisFrame, ChartCardTitle, ICON_PROPS, ToolbarButton } from "../../lcms/viewShared";
+import { schedulePlotResize, useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, formatRt, formatScanId, axisRange, maxFinite, axisTitle, axisFrame } from "../../lcms/viewShared";
+import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../common/ChartCardParts";
 
 export function TICChart(props: {
   tic: TICData | null;

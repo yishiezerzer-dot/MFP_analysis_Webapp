@@ -9,7 +9,8 @@ import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExpor
 import { DEFAULT_OVERLAY_LABEL_SETTINGS, OVERLAY_PALETTE, type ChartSettings, type ChromatogramOverlayMode } from "../../lcms/settings";
 import { ArrowDownWideNarrow, FileUp, Link2, MapPin, Palette, Plus, RotateCw, Sparkles, Tags, Unlink } from "lucide-react";
 import { SegmentedControl } from "../common/SegmentedControl";
-import { schedulePlotResize, useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, UVLabelOrientation, UVTextLabel, LCMSUVOverlayChartTrace, cleanLabelText, UvPlotShape, buildBunchedAnnotations, withAlpha, formatRt, formatScanId, axisRange, maxFinite, axisTitle, axisFrame, ChartCardTitle, ICON_PROPS, ToolbarButton } from "../../lcms/viewShared";
+import { schedulePlotResize, useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, UVLabelOrientation, UVTextLabel, LCMSUVOverlayChartTrace, cleanLabelText, UvPlotShape, buildBunchedAnnotations, withAlpha, formatRt, formatScanId, axisRange, maxFinite, axisTitle, axisFrame } from "../../lcms/viewShared";
+import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../common/ChartCardParts";
 import { hexToRgba } from "./SpectrumChart";
 
 export function UVChromatogramChart(props: {
