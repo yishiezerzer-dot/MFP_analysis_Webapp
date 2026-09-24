@@ -250,7 +250,7 @@ function Sidebar() {
           )}
         >
           <div className="truncate text-[13px] font-semibold tracking-tight text-ink-900">MFP Analysis</div>
-          <div className="truncate text-[11px] text-ink-500 leading-tight">Lab Platform</div>
+          <div className="truncate text-[12px] text-ink-500 leading-tight">Lab Platform</div>
         </div>
         <Tooltip content={pinned ? "Unpin sidebar" : "Pin sidebar"} placement="bottom">
           <button
@@ -259,7 +259,7 @@ function Sidebar() {
             aria-label={pinned ? "Unpin sidebar" : "Pin sidebar"}
             aria-pressed={pinned}
             className={clsx(
-              "flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] text-ink-400 transition-colors hover:bg-ink-100 hover:text-ink-700",
+              "flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-700",
               !expanded && "hidden",
             )}
           >
@@ -297,12 +297,12 @@ function Sidebar() {
                 )}
               >
                 <div className="truncate text-[13px]">{t.label}</div>
-                <div className="truncate text-[11px] opacity-60 leading-tight">
+                <div className="truncate text-[12px] opacity-60 leading-tight">
                   {t.hint}
                 </div>
               </div>
               {expanded && t.status === "stub" && (
-                <span className="rounded-full bg-ink-200/60 px-1.5 py-0.5 text-[10px] font-medium text-ink-500">
+                <span className="rounded-full bg-ink-200/60 px-1.5 py-0.5 text-[12px] font-medium text-ink-500">
                   soon
                 </span>
               )}

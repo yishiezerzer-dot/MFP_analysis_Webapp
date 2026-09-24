@@ -70,7 +70,7 @@ export function MonomerPresetBox({
   return (
     <div className="rounded-md border border-ink-200 bg-surface p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+        <div className="text-section">
           {title}
         </div>
         <div className="text-xs text-ink-500">
@@ -81,7 +81,7 @@ export function MonomerPresetBox({
         {rows.map((monomer) => (
           <div
             key={monomer.id}
-            className="grid grid-cols-[minmax(0,1fr)_5rem_6rem_auto] items-center gap-2 border-b border-ink-100 px-2 py-1.5 last:border-b-0"
+            className="grid grid-cols-[minmax(10rem,1fr)_4.5rem_5.5rem_auto] items-center gap-2 border-b border-ink-100 px-2 py-1.5 last:border-b-0"
           >
             <label className="flex min-w-0 items-center gap-2">
               <input
@@ -104,7 +104,7 @@ export function MonomerPresetBox({
             </span>
             {monomer.custom ? (
               <button
-                className="rounded px-1.5 py-0.5 text-xs text-ink-400 hover:bg-red-50 hover:text-red-600"
+                className="rounded px-1.5 py-0.5 text-xs text-ink-500 hover:bg-danger-surface hover:text-danger-fg"
                 onClick={() => onChange(monomers.filter((item) => item.id !== monomer.id))}
                 title="Delete custom monomer"
               >
@@ -116,7 +116,7 @@ export function MonomerPresetBox({
           </div>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_5rem_6rem_auto] gap-2">
+      <div className="mt-3 grid grid-cols-[minmax(10rem,1fr)_4.5rem_5.5rem_auto] gap-2">
         <input
           className="input h-8 px-2 text-xs"
           placeholder="Custom name"
@@ -209,7 +209,7 @@ export function PolymerTargetFileBanner({
             {sessions.find((s) => s.session_id === activeSessionId)?.display_name ?? "Default File"}
           </span>
         )}
-        <span className="text-[11px] font-medium text-brand-700">(Settings apply to this mzML)</span>
+        <span className="text-[12px] font-medium text-brand-700">(Settings apply to this mzML)</span>
       </div>
       {sessions.length > 1 && (
         <div className="flex items-center gap-2">
@@ -348,7 +348,7 @@ export function PolymerPresetButton(props: PolymerSectionProps) {
   );
 }
 
-export function PolymerMonomerSettings({ wide, ...props }: PolymerSectionProps & { wide?: boolean }) {
+export function PolymerMonomerSettings(props: PolymerSectionProps) {
   const { shared, patchShared } = polymerPatchers(props);
   const patchMonomers = (monomers: PolymerMonomerPreset[]) => props.onChange({ ...props.settings, monomers });
   const selectedSummary = polymerMonomerText(props.settings)
@@ -363,12 +363,12 @@ export function PolymerMonomerSettings({ wide, ...props }: PolymerSectionProps &
           <span className="font-semibold">Using:</span> {selectedSummary}
         </div>
       ) : (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="rounded-md border border-warning/40 bg-warning-surface px-3 py-2 text-xs text-warning-fg">
           Select at least one monomer below — adduct annotations are computed for compositions of the selected
           monomers.
         </div>
       )}
-      <div className={clsx("grid grid-cols-1 gap-3", wide && "lg:grid-cols-2")}>
+      <div className="grid grid-cols-1 gap-3">
         <MonomerPresetBox title="Known hydroxy acids" category="hydroxy" monomers={props.settings.monomers} onChange={patchMonomers} />
         <MonomerPresetBox title="Amino acids" category="amino" monomers={props.settings.monomers} onChange={patchMonomers} />
       </div>
@@ -483,12 +483,12 @@ export function PolymerAdductSettings(props: PolymerSectionProps) {
                   <span className="font-mono text-xs">
                     {adduct.mass >= 0 ? `+${adduct.mass.toFixed(4)}` : adduct.mass.toFixed(4)} Da
                   </span>
-                  <span className="rounded bg-ink-200/80 px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-800">
+                  <span className="rounded bg-ink-200/80 px-1.5 py-0.5 font-mono text-[12px] font-medium text-ink-800">
                     z = {adduct.charge}
                   </span>
                   <button
                     type="button"
-                    className="flex min-h-6 min-w-6 items-center justify-center rounded font-bold text-ink-400 transition-colors hover:bg-rose-100 hover:text-rose-600"
+                    className="flex min-h-6 min-w-6 items-center justify-center rounded font-bold text-ink-500 transition-colors hover:bg-danger-surface hover:text-danger-fg"
                     title="Remove custom adduct"
                     aria-label={`Remove custom adduct ${adduct.name}`}
                     onClick={() => patchProfile({ custom_adducts: customAdducts.filter((a) => a.id !== adduct.id) })}
@@ -502,13 +502,13 @@ export function PolymerAdductSettings(props: PolymerSectionProps) {
         ) : (
           <p className="text-xs italic text-ink-500">No custom adducts yet. Add one below or pick a preset.</p>
         )}
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink-500">
+        <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-ink-500">
           <span className="font-medium text-ink-600">Presets:</span>
           {CUSTOM_ADDUCT_PRESETS[mode].map((p) => (
             <button
               key={p.name}
               type="button"
-              className="min-h-6 rounded border border-ink-200 bg-surface px-2 py-0.5 text-[11px] text-ink-700 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+              className="min-h-6 rounded border border-ink-200 bg-surface px-2 py-0.5 text-[12px] text-ink-700 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
               onClick={() => {
                 setCustomName(p.name);
                 setCustomMass(p.mass.toString());
@@ -521,7 +521,7 @@ export function PolymerAdductSettings(props: PolymerSectionProps) {
           ))}
         </div>
         <div className="grid grid-cols-1 items-end gap-2 rounded-md border border-ink-200 bg-surface p-2.5 sm:grid-cols-4">
-          <label className="block text-[11px] font-medium text-ink-600">
+          <label className="block text-[12px] font-medium text-ink-600">
             Adduct name
             <input
               type="text"
@@ -532,7 +532,7 @@ export function PolymerAdductSettings(props: PolymerSectionProps) {
               onKeyDown={onEnter}
             />
           </label>
-          <label className="block text-[11px] font-medium text-ink-600">
+          <label className="block text-[12px] font-medium text-ink-600">
             Mass delta (Da)
             <input
               type="number"
@@ -544,7 +544,7 @@ export function PolymerAdductSettings(props: PolymerSectionProps) {
               onKeyDown={onEnter}
             />
           </label>
-          <label className="block text-[11px] font-medium text-ink-600">
+          <label className="block text-[12px] font-medium text-ink-600">
             Charge state (z)
             <input
               type="number"
@@ -658,7 +658,7 @@ export function PolymerDialog({
       <div className="flex flex-col gap-4 text-sm">
         <PolymerTargetFileBanner {...sessionProps} />
         {disabled && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+          <div className="rounded-md border border-warning/40 bg-warning-surface px-3 py-2 text-warning-fg">
             Choose Positive or Negative polarity before enabling polymer matching.
           </div>
         )}

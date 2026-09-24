@@ -63,7 +63,7 @@ export function FeatureTableDialog({
       footer={
         <div className="flex w-full items-center justify-between gap-2">
           <button
-            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
             disabled={rows.length === 0}
             onClick={onClear}
           >
@@ -71,7 +71,7 @@ export function FeatureTableDialog({
           </button>
           <div className="flex items-center gap-2">
             <button
-              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
               disabled={rows.length === 0}
               onClick={onExportCsv}
             >
@@ -127,7 +127,7 @@ export function FeatureTableDialog({
                         <div className="font-medium text-ink-800">F{index + 1}</div>
                         <input
                           type="text"
-                          className="mt-0.5 w-full rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-[11px] text-ink-700 focus:border-brand-500 focus:outline-none"
+                          className="mt-0.5 w-full rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-[12px] text-ink-700 focus:border-brand-500 focus:outline-none"
                           placeholder="Label…"
                           value={row.label ?? ""}
                           onChange={(e) => onUpdate(row.id, { label: e.target.value || undefined })}
@@ -135,7 +135,7 @@ export function FeatureTableDialog({
                       </td>
                       <td className="px-2 py-1.5 font-mono">
                         {row.mz.toFixed(4)}
-                        <div className="text-[11px] text-ink-400">+/- {row.tolerance.toFixed(4)}</div>
+                        <div className="text-[12px] text-ink-500">+/- {row.tolerance.toFixed(4)}</div>
                       </td>
                       <td className="px-2 py-1.5 font-mono">{row.rtApex.toFixed(3)}</td>
                       <td className="px-2 py-1.5 font-mono">
@@ -149,7 +149,7 @@ export function FeatureTableDialog({
                         <div className="truncate">{row.expectedProduct || row.source}</div>
                         <input
                           type="text"
-                          className="mt-0.5 w-full rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-[11px] text-ink-700 focus:border-brand-500 focus:outline-none"
+                          className="mt-0.5 w-full rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-[12px] text-ink-700 focus:border-brand-500 focus:outline-none"
                           placeholder="Annotation…"
                           value={row.annotation ?? ""}
                           onChange={(e) => onUpdate(row.id, { annotation: e.target.value || undefined })}
@@ -157,7 +157,7 @@ export function FeatureTableDialog({
                       </td>
                       <td className="max-w-[180px] px-2 py-1.5">
                         <div className="truncate">{row.sourceFile}</div>
-                        <div className="text-[11px] text-ink-500">{row.polarity ?? "unknown"}</div>
+                        <div className="text-[12px] text-ink-500">{row.polarity ?? "unknown"}</div>
                       </td>
                       <td className="px-2 py-1.5 text-right">
                         <div className="flex flex-col items-end gap-1">

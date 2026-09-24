@@ -213,7 +213,7 @@ export function GraphSettingsDialog({
               onChange={(value) => updateAxis(id, { yMax: value })}
             />
           </div>
-          <p className="mt-1 text-[11px] text-ink-500">
+          <p className="mt-1 text-[12px] text-ink-500">
             Leave min/max blank to keep Plotly auto-scaling that axis.
           </p>
         </div>

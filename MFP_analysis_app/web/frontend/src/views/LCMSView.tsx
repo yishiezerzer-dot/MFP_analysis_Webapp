@@ -3054,7 +3054,7 @@ export function LCMSView() {
           <Tooltip content={sessions.length === 0 ? "Open a file first" : "Save current workspace"}>
             <span>
               <button
-                className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+                className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-500"
                 disabled={busy || sessions.length === 0}
                 onClick={saveWorkspace}
               >

@@ -607,7 +607,7 @@ export function UVChromatogramChart(props: {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {/* Peak Detection */}
             <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+              <div className="text-section">
                 Peak Detection
               </div>
               <div className="flex items-center justify-between gap-2">
@@ -648,7 +648,7 @@ export function UVChromatogramChart(props: {
 
             {/* Placement & Alignment */}
             <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+              <div className="text-section">
                 Placement & Angle
               </div>
               <div className="flex items-center justify-between gap-2">
@@ -675,7 +675,7 @@ export function UVChromatogramChart(props: {
 
             {/* MS Spectrum Transfer */}
             <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+              <div className="text-section">
                 Transfer from MS
               </div>
               <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
@@ -703,7 +703,7 @@ export function UVChromatogramChart(props: {
 
             {/* Grouping & Stairs */}
             <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+              <div className="text-section">
                 Grouping & Stairs
               </div>
               <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
@@ -746,7 +746,7 @@ export function UVChromatogramChart(props: {
 
             {/* UV↔MS Alignment */}
             <div className="space-y-2 rounded-md border border-ink-200 bg-surface p-2.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+              <div className="text-section">
                 UV↔MS Alignment
               </div>
               <div className="flex items-center justify-between gap-2">
@@ -925,7 +925,7 @@ export function UVChromatogramChart(props: {
                     {cleanLabelText(label.text)}
                   </button>
                   <button
-                    className="rounded-full px-1 font-semibold text-ink-400 hover:bg-red-50 hover:text-red-600"
+                    className="rounded-full px-1 font-semibold text-ink-500 hover:bg-danger-surface hover:text-danger-fg"
                     onClick={() => onDeleteLabel(label.id)}
                     title="Delete this UV label"
                   >
@@ -936,7 +936,7 @@ export function UVChromatogramChart(props: {
             </div>
           )}
           {meta?.warnings && meta.warnings.length > 0 && (
-            <div className="mt-1 px-1 text-[11px] text-amber-700">
+            <div className="mt-1 px-1 text-[12px] text-warning-fg">
               {meta.warnings.map((w, i) => (
                 <div key={i}>• {w}</div>
               ))}

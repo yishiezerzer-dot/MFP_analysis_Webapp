@@ -60,7 +60,7 @@ export function PolymerStudioModal({
       <div className="flex items-center gap-2">
         <button
           type="button"
-          className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
+          className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
           onClick={onSaveDefaults}
           title="Save current configuration as default"
         >
@@ -118,8 +118,8 @@ export function PolymerStudioModal({
             <PolymerEnableToggle {...section} />
             <span
               className={clsx(
-                "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                live ? "bg-emerald-100 text-emerald-800" : "bg-ink-200 text-ink-600",
+                "rounded-full px-2 py-0.5 text-[12px] font-semibold",
+                live ? "bg-success-surface text-success-fg" : "bg-ink-200 text-ink-600",
               )}
             >
               {live ? "● Live On Spectrum" : "○ Off"}
@@ -129,12 +129,8 @@ export function PolymerStudioModal({
             <span className="text-xs text-ink-500">Active Polarity:</span>
             <span
               className={clsx(
-                "rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider",
-                polarity === "positive"
-                  ? "bg-sky-100 text-sky-800"
-                  : polarity === "negative"
-                    ? "bg-rose-100 text-rose-800"
-                    : "bg-amber-100 text-amber-800",
+                "rounded-full px-2.5 py-0.5 text-[12px] font-semibold uppercase tracking-wider",
+                polarity === "all" ? "bg-warning-surface text-warning-fg" : "bg-ink-100 text-ink-700",
               )}
             >
               {polarity}
@@ -143,7 +139,7 @@ export function PolymerStudioModal({
         </div>
 
         {disabled && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <div className="rounded-md border border-warning/40 bg-warning-surface p-3 text-xs text-warning-fg">
             Set polarity to Positive or Negative in LCMS settings to enable polymer matching.
           </div>
         )}
@@ -173,7 +169,7 @@ export function PolymerStudioModal({
             ))}
           </div>
 
-          {activeSubTab === "monomers" && <PolymerMonomerSettings {...section} wide />}
+          {activeSubTab === "monomers" && <PolymerMonomerSettings {...section} />}
           {activeSubTab === "adducts" && <PolymerAdductSettings {...section} />}
           {activeSubTab === "masses" && (
             <div className="flex flex-col gap-4">

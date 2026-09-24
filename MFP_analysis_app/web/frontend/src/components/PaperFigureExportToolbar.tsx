@@ -329,7 +329,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
             </div>
             <button
               type="button"
-              className="text-ink-400 hover:text-ink-700 text-sm p-1 rounded transition-colors"
+              className="text-ink-500 hover:text-ink-700 text-sm p-1 rounded transition-colors"
               onClick={() => setIsOpen(false)}
               title="Close export panel"
             >
@@ -391,17 +391,17 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                   <span className="font-semibold text-brand-900 text-xs flex items-center gap-1.5 whitespace-nowrap">
                     <span>Active Display</span>
                   </span>
-                  <span className="font-mono text-[11px] font-semibold text-brand-700 bg-white border border-brand-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
+                  <span className="font-mono text-[12px] font-semibold text-brand-700 bg-white border border-brand-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
                     {cardWidthPx} × {cardHeightPx} px
                   </span>
                 </div>
-                <p className="text-[11px] text-brand-700 leading-relaxed">
+                <p className="text-[12px] text-brand-700 leading-relaxed">
                   Exact 1-to-1 card replica: matches card aspect ratio, active zoom, centroid sticks, and peak labels.
                 </p>
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-ink-600 mb-1">
+                <label className="block text-[12px] font-medium text-ink-600 mb-1">
                   Raster Resolution (PNG only)
                 </label>
                 <select
@@ -445,7 +445,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
           {activeTab === "journal" && (
             <div className="space-y-2.5">
               <div>
-                <label className="block text-[11px] font-medium text-ink-600 mb-1">
+                <label className="block text-[12px] font-medium text-ink-600 mb-1">
                   Journal Preset
                 </label>
                 <select
@@ -501,7 +501,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Width (mm)</label>
+                  <label className="block text-[12px] font-medium text-ink-600 mb-1">Width (mm)</label>
                   <input
                     type="number"
                     className="input w-full py-1 text-xs"
@@ -519,7 +519,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Height (mm)</label>
+                  <label className="block text-[12px] font-medium text-ink-600 mb-1">Height (mm)</label>
                   <input
                     type="number"
                     className="input w-full py-1 text-xs"
@@ -540,7 +540,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Resolution (DPI)</label>
+                  <label className="block text-[12px] font-medium text-ink-600 mb-1">Resolution (DPI)</label>
                   <select
                     className="input w-full py-1 text-xs"
                     value={settings.dpi}
@@ -554,7 +554,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Legend font (pt)</label>
+                  <label className="block text-[12px] font-medium text-ink-600 mb-1">Legend font (pt)</label>
                   <input
                     type="number"
                     className="input w-full py-1 text-xs"
@@ -572,7 +572,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                 </div>
               </div>
 
-              <div className="text-[11px] text-ink-500 pt-0.5 leading-snug">
+              <div className="text-[12px] text-ink-500 pt-0.5 leading-snug">
                 {describePublicationExport(settings)}
               </div>
 

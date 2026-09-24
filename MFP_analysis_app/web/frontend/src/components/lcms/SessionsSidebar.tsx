@@ -134,7 +134,7 @@ export function SessionsSidebar(props: {
               type="button"
               onClick={props.onCreateProject}
               title="Create project"
-              className="min-h-6 rounded-md border border-ink-200 bg-surface px-1.5 py-0.5 text-[11px] font-medium text-ink-700 hover:bg-ink-100"
+              className="min-h-6 rounded-md border border-ink-200 bg-surface px-1.5 py-0.5 text-[12px] font-medium text-ink-700 hover:bg-ink-100"
             >
               + Project
             </button>
@@ -212,7 +212,7 @@ export function SessionsSidebar(props: {
               )}
               onClick={() => props.onSelectProject("__all")}
             >
-              All <span className="font-mono text-[10px] text-ink-400">{props.sessions.length}</span>
+              All <span className="font-mono text-[12px] text-ink-500">{props.sessions.length}</span>
             </button>
             <ProjectHeaderRow
               id="__unassigned"
@@ -282,7 +282,7 @@ export function SessionsSidebar(props: {
                 onClick={() => props.onSelect(s.session_id)}
                 title={s.display_name}
                 className={clsx(
-                  "flex h-7 w-8 shrink-0 items-center justify-center rounded-md border text-[10px] font-semibold transition-colors",
+                  "flex h-7 w-8 shrink-0 items-center justify-center rounded-md border text-[12px] font-semibold transition-colors",
                   isActive
                     ? "border-brand-500 bg-surface text-brand-600 shadow-card"
                     : "border-transparent text-ink-500 hover:border-ink-200 hover:bg-surface",
@@ -303,7 +303,7 @@ export function SessionsSidebar(props: {
             >
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{s.display_name}</div>
-                <div className="text-[11px] text-ink-500">
+                <div className="text-[12px] text-ink-500">
                   {s.ms1_count} MS1 • {formatRange(s.rt_min, s.rt_max)} min
                   {s.uv?.available && " • UV"}
                 </div>
@@ -355,7 +355,7 @@ export function ProjectHeaderRow(props: {
       >
         <button
           type="button"
-          className="h-5 w-5 rounded text-[10px] hover:bg-ink-200/70"
+          className="h-5 w-5 rounded text-[12px] hover:bg-ink-200/70"
           onClick={props.onToggle}
           aria-label={props.expanded ? "Collapse project" : "Expand project"}
         >
@@ -369,11 +369,11 @@ export function ProjectHeaderRow(props: {
         >
           {props.title}
         </button>
-        <span className="font-mono text-[10px] text-ink-400">{props.count}</span>
+        <span className="font-mono text-[12px] text-ink-500">{props.count}</span>
         {!props.builtin && props.onDeleteProject && (
           <button
             type="button"
-            className="rounded px-1 text-[10px] text-ink-400 hover:bg-ink-200 hover:text-ink-800"
+            className="rounded px-1 text-[12px] text-ink-500 hover:bg-ink-200 hover:text-ink-800"
             onClick={props.onDeleteProject}
             title="Delete project"
           >
@@ -395,7 +395,7 @@ export function ProjectSessionRows(props: {
   onMoveSession: (sessionId: string, projectId: string | null) => void;
 }) {
   if (props.sessions.length === 0) {
-    return <div className="px-2 py-1 text-[11px] text-ink-400">No files</div>;
+    return <div className="px-2 py-1 text-[12px] text-ink-500">No files</div>;
   }
 
   return (
@@ -419,14 +419,14 @@ export function ProjectSessionRows(props: {
           >
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium" title={sessionTooltip(session)}>{session.display_name}</div>
-              <div className="text-[11px] text-ink-500">
+              <div className="text-[12px] text-ink-500">
                 {session.ms1_count} MS1 - {formatRange(session.rt_min, session.rt_max)} min
                 {session.uv?.available && " - UV"}
                       {session.uploaded_at && ` - ${formatUploaded(session.uploaded_at)}`}
               </div>
             </div>
             <select
-              className="max-w-[5.5rem] rounded border border-ink-200 bg-surface px-1 py-0.5 text-[10px] text-ink-600 opacity-0 transition-opacity group-hover:opacity-100"
+              className="max-w-[5.5rem] rounded border border-ink-200 bg-surface px-1 py-0.5 text-[12px] text-ink-600 opacity-0 transition-opacity group-hover:opacity-100"
               value={currentProject}
               title="Move to project"
               onClick={(event) => event.stopPropagation()}
@@ -496,7 +496,7 @@ export function ProjectSessionSection(props: {
       >
         <button
           type="button"
-          className="h-5 w-5 rounded text-[10px] hover:bg-ink-200/70"
+          className="h-5 w-5 rounded text-[12px] hover:bg-ink-200/70"
           onClick={props.onToggle}
           aria-label={props.expanded ? "Collapse project" : "Expand project"}
         >
@@ -510,11 +510,11 @@ export function ProjectSessionSection(props: {
         >
           {props.title}
         </button>
-        <span className="font-mono text-[10px] text-ink-400">{props.sessions.length}</span>
+        <span className="font-mono text-[12px] text-ink-500">{props.sessions.length}</span>
         {!props.builtin && props.onDeleteProject && (
           <button
             type="button"
-            className="rounded px-1 text-[10px] text-ink-400 hover:bg-ink-200 hover:text-ink-800"
+            className="rounded px-1 text-[12px] text-ink-500 hover:bg-ink-200 hover:text-ink-800"
             onClick={props.onDeleteProject}
             title="Delete project"
           >
@@ -525,7 +525,7 @@ export function ProjectSessionSection(props: {
       {props.expanded && (
         <div className="mt-1 flex flex-col gap-1 pl-3">
           {props.sessions.length === 0 ? (
-            <div className="px-2 py-1 text-[11px] text-ink-400">No files</div>
+            <div className="px-2 py-1 text-[12px] text-ink-500">No files</div>
           ) : (
             props.sessions.map((session) => {
               const isActive = session.session_id === props.activeSid;
@@ -546,14 +546,14 @@ export function ProjectSessionSection(props: {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium" title={sessionTooltip(session)}>{session.display_name}</div>
-                    <div className="text-[11px] text-ink-500">
+                    <div className="text-[12px] text-ink-500">
                       {session.ms1_count} MS1 - {formatRange(session.rt_min, session.rt_max)} min
                       {session.uv?.available && " - UV"}
                       {session.uploaded_at && ` - ${formatUploaded(session.uploaded_at)}`}
                     </div>
                   </div>
                   <select
-                    className="max-w-[5.5rem] rounded border border-ink-200 bg-surface px-1 py-0.5 text-[10px] text-ink-600 opacity-0 transition-opacity group-hover:opacity-100"
+                    className="max-w-[5.5rem] rounded border border-ink-200 bg-surface px-1 py-0.5 text-[12px] text-ink-600 opacity-0 transition-opacity group-hover:opacity-100"
                     value={currentProject}
                     title="Move to project"
                     onClick={(event) => event.stopPropagation()}

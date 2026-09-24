@@ -403,7 +403,7 @@ export function KendrickDialog({
                           <td className="px-2 py-1.5">
                             <button
                               type="button"
-                              className="rounded border border-ink-200 px-2 py-0.5 text-[11px] text-ink-700 hover:bg-ink-100"
+                              className="rounded border border-ink-200 px-2 py-0.5 text-[12px] text-ink-700 hover:bg-ink-100"
                               onClick={() => handleCreateSeriesEic(series.id)}
                               title="Create EICs for the top 5 most-intense peaks in this series"
                             >

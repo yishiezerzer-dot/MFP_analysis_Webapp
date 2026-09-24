@@ -751,22 +751,17 @@ export function SpectrumChart(props: {
                     lastPeakClickTimeRef.current = Date.now();
                     props.onPeakClick?.(peak.mz, peak.intensity, e.nativeEvent);
                   }}
-                  className={clsx(
-                    "group inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-xs font-medium transition-all shadow-2xs cursor-pointer",
-                    props.polarityBadge === "ESI-"
-                      ? "border-rose-200 bg-surface text-ink-800 hover:border-rose-400 hover:bg-rose-50/80 hover:text-rose-900"
-                      : "border-ink-200 bg-surface text-ink-800 hover:border-brand-300 hover:bg-brand-50/80 hover:text-brand-900",
-                  )}
+                  className="group inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-ink-200 bg-surface px-2 py-0.5 font-mono text-xs font-medium text-ink-800 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-800"
                   title={`m/z ${peak.mz.toFixed(4)}\nIntensity: ${peak.intensity.toExponential(3)} (${pct}%)\nClick to open Peak Actions (EIC, Deconvolute, Polymer Match)`}
                 >
                   <span className="font-semibold text-ink-900 group-hover:text-brand-700">
                     {peak.mz.toFixed(4)}
                   </span>
-                  <span className="text-[10px] text-ink-500 font-sans">
+                  <span className="text-[12px] text-ink-500 font-sans">
                     {pct >= 100 ? "100%" : `${pct}%`}
                   </span>
                   {peak.label && (
-                    <span className="rounded bg-brand-100 px-1 text-[10px] font-sans font-semibold text-brand-700">
+                    <span className="rounded bg-brand-100 px-1 text-[12px] font-sans font-semibold text-brand-700">
                       {peak.label}
                     </span>
                   )}

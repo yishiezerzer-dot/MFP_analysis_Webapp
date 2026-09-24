@@ -94,12 +94,12 @@ export function UserMenu({
                 {user.name}
               </div>
               {user.secondary && (
-                <div className="truncate text-[11px] text-ink-500">
+                <div className="truncate text-[12px] text-ink-500">
                   {user.secondary}
                 </div>
               )}
             </div>
-            <IconChevronUpDown className="h-3.5 w-3.5 shrink-0 text-ink-400" />
+            <IconChevronUpDown className="h-3.5 w-3.5 shrink-0 text-ink-500" />
           </>
         )}
       </button>
@@ -233,7 +233,7 @@ function UserMenuPopover({ anchor, popoverRef, user, onClose }: PopoverProps) {
 
       <DividerThin />
 
-      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">
+      <div className="px-3 pt-2 pb-1 text-[12px] font-semibold uppercase tracking-wider text-ink-500">
         Lab Member Profiles
       </div>
       <div className="max-h-40 overflow-y-auto p-1">
@@ -255,7 +255,7 @@ function UserMenuPopover({ anchor, popoverRef, user, onClose }: PopoverProps) {
             <div className="min-w-0 flex-1 truncate">
               <span>{ws.name}</span>
               {ws.session_count > 0 && (
-                <span className="ml-1.5 text-[11px] text-ink-400">({ws.session_count})</span>
+                <span className="ml-1.5 text-[12px] text-ink-500">({ws.session_count})</span>
               )}
             </div>
             {ws.id === activeWorkspaceId && (
@@ -341,10 +341,10 @@ function UserMenuPopover({ anchor, popoverRef, user, onClose }: PopoverProps) {
       <div className="p-1 pb-1.5">
         <MenuRow
           onClick={() => handleItemClick("Sign out")}
-          icon={<IconSignOut className="h-[17px] w-[17px] shrink-0 text-red-500" />}
+          icon={<IconSignOut className="h-[17px] w-[17px] shrink-0 text-danger-fg" />}
           danger
         >
-          <span className="text-[13px] font-medium text-red-500">Sign out</span>
+          <span className="text-[13px] font-medium text-danger-fg">Sign out</span>
         </MenuRow>
       </div>
     </div>,
@@ -395,12 +395,12 @@ function ThemeSubmenu() {
         <span className="min-w-0 flex-1 truncate text-[13px] text-ink-800">
           Theme
         </span>
-        <span className="shrink-0 truncate text-[11px] text-ink-500">
+        <span className="shrink-0 truncate text-[12px] text-ink-500">
           {current.label}
         </span>
         <IconChevronRight
           className={clsx(
-            "h-3.5 w-3.5 shrink-0 text-ink-400 transition-transform duration-150",
+            "h-3.5 w-3.5 shrink-0 text-ink-500 transition-transform duration-150",
             open && "rotate-90",
           )}
         />
@@ -435,7 +435,7 @@ function ThemeSubmenu() {
                   <span className="block text-[13px] font-medium">
                     {opt.label}
                   </span>
-                  <span className="block text-[11px] text-ink-500">
+                  <span className="block text-[12px] text-ink-500">
                     {opt.description}
                   </span>
                 </span>
@@ -499,13 +499,13 @@ function MenuRow({
       className={clsx(
         "flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-[7px] text-left",
         "transition-colors",
-        danger ? "hover:bg-red-500/10" : "hover:bg-ink-100/60",
+        danger ? "hover:bg-danger/10" : "hover:bg-ink-100/60",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
       )}
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      {hasSubmenu && <IconChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-400" />}
+      {hasSubmenu && <IconChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-500" />}
     </button>
   );
 }
@@ -532,7 +532,7 @@ export function Avatar({
   const sizeCls =
     size === "lg"
       ? "h-12 w-12 text-base"
-      : "h-8 w-8 text-[11px]";
+      : "h-8 w-8 text-[12px]";
   const dotCls =
     size === "lg"
       ? "h-3 w-3 border-2 bottom-0 right-0"
@@ -560,9 +560,9 @@ export function Avatar({
           className={clsx(
             "absolute rounded-full border-white",
             dotCls,
-            user.presence === "online" && "bg-emerald-500",
-            user.presence === "away" && "bg-amber-500",
-            user.presence === "busy" && "bg-red-500",
+            user.presence === "online" && "bg-success",
+            user.presence === "away" && "bg-warning",
+            user.presence === "busy" && "bg-danger",
           )}
           aria-hidden="true"
         />
