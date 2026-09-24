@@ -233,7 +233,7 @@ function UserMenuPopover({ anchor, popoverRef, user, onClose }: PopoverProps) {
 
       <DividerThin />
 
-      <div className="px-3 pt-2 pb-1 text-[12px] font-semibold uppercase tracking-wider text-ink-500">
+      <div className="text-section px-3 pt-2 pb-1">
         Lab Member Profiles
       </div>
       <div className="max-h-40 overflow-y-auto p-1">

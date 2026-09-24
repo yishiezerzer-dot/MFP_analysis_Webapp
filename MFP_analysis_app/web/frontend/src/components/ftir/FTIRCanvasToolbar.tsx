@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import clsx from "clsx";
+import { MousePointer2, Plus, Trash2 } from "lucide-react";
 import { SegmentedControl } from "../common/SegmentedControl";
+import { ICON_PROPS } from "../common/ChartCardParts";
 
 export type PeakEditMode = "none" | "add" | "remove";
 
@@ -12,6 +14,7 @@ export interface FTIRCanvasToolbarProps {
   className?: string;
 }
 
+// Peak tool shown inside the spectrum card's toolbar.
 export function FTIRCanvasToolbar({
   mode,
   onModeChange,
@@ -30,48 +33,34 @@ export function FTIRCanvasToolbar({
   }, [mode, onModeChange]);
 
   return (
-    <div
-      className={clsx(
-        "flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink-200 bg-surface/90 px-3 py-1.5 shadow-sm backdrop-blur-sm",
-        className,
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-          Peak Tool:
+    <div className={clsx("flex flex-wrap items-center gap-2", className)}>
+      <SegmentedControl
+        size="xs"
+        ariaLabel="Peak tool"
+        value={mode}
+        onChange={onModeChange}
+        options={[
+          { value: "none", label: "Inspect", icon: <MousePointer2 {...ICON_PROPS} />, title: "Standard view & zoom mode" },
+          { value: "add", label: "Add peak", icon: <Plus {...ICON_PROPS} />, title: "Click spectrum to add a manual peak" },
+          { value: "remove", label: "Delete peak", icon: <Trash2 {...ICON_PROPS} />, title: "Click a peak to remove it" },
+        ]}
+      />
+      {mode !== "none" && (
+        <span className="text-caption flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-brand-600" aria-hidden />
+          {mode === "add" ? "Click spectrum to place peak (Esc to cancel)" : "Click peak marker to remove (Esc to cancel)"}
         </span>
-        <SegmentedControl
-          size="xs"
-          value={mode}
-          onChange={onModeChange}
-          options={[
-            { value: "none", label: "Inspect", icon: "👁️", title: "Standard view & zoom mode" },
-            { value: "add", label: "Add Peak", icon: "➕", title: "Click spectrum to add a manual peak" },
-            { value: "remove", label: "Delete Peak", icon: "❌", title: "Click a peak to remove it" },
-          ]}
-        />
-      </div>
-
-      <div className="flex items-center gap-2 text-xs">
-        {mode !== "none" && (
-          <span className="flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-0.5 text-[11px] font-medium text-brand-700 animate-in fade-in">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand-600 animate-ping" />
-            {mode === "add" && "Click spectrum to place peak (Esc to cancel)"}
-            {mode === "remove" && "Click peak marker to remove (Esc to cancel)"}
-          </span>
-        )}
-
-        {manualPeakCount > 0 && (
-          <button
-            type="button"
-            className="rounded border border-ink-200 bg-surface px-2 py-0.5 text-[11px] text-ink-600 transition-colors hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700"
-            onClick={onClearManual}
-            title="Reset all manually added and deleted peaks"
-          >
-            Clear Manual ({manualPeakCount})
-          </button>
-        )}
-      </div>
+      )}
+      {manualPeakCount > 0 && (
+        <button
+          type="button"
+          className="btn-danger px-2 py-0.5"
+          onClick={onClearManual}
+          title="Reset all manually added and deleted peaks"
+        >
+          Clear manual ({manualPeakCount})
+        </button>
+      )}
     </div>
   );
 }
