@@ -1,6 +1,6 @@
 # UI refresh, stage 1: shared foundation + LCMS
 
-Date: 2026-09-24 · Status: approved in brainstorming, awaiting spec review
+Date: 2026-09-24 · Status: implemented on `design/ui-refresh-stage1`
 
 ## Goal
 
@@ -208,7 +208,16 @@ MS1 spectrum:
 - **Screenshots** of LCMS before and after, at 1920 and 1440 px, in day and night. The user approves them before merge.
 - One merge to `main`; the user then checks on Railway.
 
-## 5. Risks
+## 5. Changes made while implementing
+
+- **Day trace colours were kept.** The spec proposed blue default traces in day. They stay as before (near-black), because exported figures copy the on-screen trace colour. Only night swaps the old near-black defaults for a light colour, and each trace carries its original colour (`meta.exportColor`) so exports are unchanged.
+- **Axis numbers are shown as ×10ⁿ** (`exponentformat: "power"`, a scientific notation) rather than SI suffixes, on screen only. Exported figures keep e-notation.
+- **The dataset ribbon stays as a slim row** (name, status line, experiment tag, polarity switch) rather than moving into the page header, because it holds the tag editor and polarity control.
+- **The Primary Actions buttons duplicated scan-navigation buttons** (both "EIC" buttons and both "m/z" buttons opened the same dialogs), so only one of each remains.
+- **Labels are hidden with Plotly's `visible: false`** rather than removed, so saved label drag offsets (indexed by label position) stay aligned.
+- **Existing bug fixed:** in night theme, the LCMS session name in the sessions list rendered black on dark.
+
+## 6. Risks
 
 - Other tabs use one-off styles and may look inconsistent until their stage. This is cosmetic only.
 - Users who saved night-vision see day on next load.

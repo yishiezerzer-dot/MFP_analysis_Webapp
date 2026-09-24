@@ -4,6 +4,8 @@ Spec: `docs/superpowers/specs/2026-09-24-ui-refresh-stage1-design.md` · Branch:
 
 Each task is one commit. After each task, `tsc` and `vitest` pass.
 
+**Status (2026-09-24):** tasks 0–7 are done and committed; task 8 is waiting for the user to approve the screenshots before merge.
+
 0. **Before screenshots**: LCMS in day and night, saved to the scratchpad. Check: images exist.
 1. **Tokens, fonts, themes** (`styles.css`, `tailwind.config.js`, `ThemeProvider.tsx`, `UserMenu.tsx`)
    - Changes: neutral day ramp; `-fg`/`on-brand` tokens; night additions; night-vision removed with fallback; IBM Plex Sans; type-scale classes; button/badge/status/label classes on tokens.

@@ -115,7 +115,7 @@ export function SessionsSidebar(props: {
       aria-expanded={expanded}
       aria-label="Sessions"
       className={clsx(
-        "absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-ink-200 bg-canvas",
+        "absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-ink-200 bg-canvas text-ink-900",
         "transition-[width] duration-200 ease-out",
         expanded ? "w-60" : "w-12",
         compact && expanded && "shadow-lg",
