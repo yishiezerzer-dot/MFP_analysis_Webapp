@@ -3,7 +3,7 @@ import Plot from "react-plotly.js";
 import type { PlotMouseEvent, PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
 import { UVChromatogramResponse } from "../../api";
-import { usePlotlyTheme } from "../../theme/ThemeProvider";
+import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../../theme/ThemeProvider";
 import { PaperFigureExportToolbar } from "../PaperFigureExportToolbar";
 import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExportSettings, publicationFilenameSuffix, sanitizeFilenamePart } from "../../utils/publicationPlotExport";
 import { DEFAULT_OVERLAY_LABEL_SETTINGS, OVERLAY_PALETTE, type ChartSettings, type ChromatogramOverlayMode } from "../../lcms/settings";
@@ -937,7 +937,8 @@ export function UVChromatogramChart(props: {
                         x: xs,
                         y: activeY,
                         customdata: uv.signal,
-                        line: { color: settings.color, width: settings.lineWidth },
+                        line: { color: themeTraceColor(settings.color, pt.theme), width: settings.lineWidth },
+                ...exportColorMeta(settings.color),
                         hovertemplate:
                           overlayMode === "raw"
                             ? `RT: %{x:.3f} ${unit}<br>Signal: %{y:.3e}<extra></extra>`
@@ -955,7 +956,7 @@ export function UVChromatogramChart(props: {
                 title: settings.title
                   ? { text: settings.title, font: { size: settings.titleSize } }
                   : undefined,
-                font: { size: settings.tickSize },
+                font: { size: settings.tickSize, color: pt.screenFontColor },
                 xaxis: {
                   title: axisTitle(`${settings.xTitle} (${unit})`, settings.axisTitleSize),
                   zeroline: false,
@@ -977,7 +978,7 @@ export function UVChromatogramChart(props: {
                     settings.axisTitleSize,
                   ),
                   zeroline: false,
-                  exponentformat: "e",
+                  exponentformat: "power",
                   showgrid: settings.showGrid,
                   range:
                     overlayMode === "raw"

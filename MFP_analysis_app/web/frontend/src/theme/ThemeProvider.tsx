@@ -7,6 +7,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import type { PlotData } from "plotly.js";
 
 /**
  * Two named themes are applied by setting `data-theme` on <html>.
@@ -107,6 +108,23 @@ export interface PlotlyThemeColors {
   zerolineColor: string;
   /** Ordered trace colorway — use as Plotly layout.colorway */
   colorway: string[];
+  /** Plotly layout.font.color for on-screen charts; undefined keeps Plotly's default (day). */
+  screenFontColor: string | undefined;
+}
+
+// Light trace colour for night. The old stored defaults below are near-black, which is
+// invisible on the night plot background.
+export const NIGHT_TRACE_COLOR = "#b0c6ff";
+const DARK_TRACE_DEFAULTS = new Set(["#1e2636", "#323c50"]);
+
+export function themeTraceColor(stored: string, theme: ThemeName): string {
+  return theme === "night" && DARK_TRACE_DEFAULTS.has(stored.toLowerCase()) ? NIGHT_TRACE_COLOR : stored;
+}
+
+// Plotly supports trace `meta` but its typings omit it. Figure export reads meta.exportColor so a
+// trace drawn in a theme colour on screen is exported in its own colour.
+export function exportColorMeta(color: string): Partial<PlotData> {
+  return { meta: { exportColor: color } } as Partial<PlotData>;
 }
 
 /**
@@ -129,7 +147,7 @@ export const DEFAULT_PLOTLY_CONFIG = {
   modeBarButtonsToRemove: ["toImage" as const],
 };
 
-const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
+export const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
   day: {
     plot_bgcolor: "#ffffff",
     paper_bgcolor: "#ffffff",
@@ -138,19 +156,21 @@ const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
     legendBg: "rgba(255,255,255,0.88)",
     zerolineColor: "#b6c4da",
     colorway: [...OKABE_ITO_PALETTE],
+    screenFontColor: undefined,
   },
   night: {
-    plot_bgcolor: "#001a37",
-    paper_bgcolor: "#001a37",
+    plot_bgcolor: "#060e20",
+    paper_bgcolor: "#060e20",
     fontColor: "#d9e6ff",
     gridColor: "#002042",
     legendBg: "rgba(0,26,55,0.88)",
     zerolineColor: "#284974",
     colorway: ["#56B4E9", "#E69F00", "#5EEAD4", "#FDA4AF", "#FCD34D", "#C4B5FD", "#67E8F9", "#FFFFFF"],
+    screenFontColor: "#d9e6ff",
   },
 };
 
-export function usePlotlyTheme(): PlotlyThemeColors {
+export function usePlotlyTheme(): PlotlyThemeColors & { theme: ThemeName } {
   const { theme } = useTheme();
-  return PLOTLY_THEME_COLORS[theme];
+  return useMemo(() => ({ ...PLOTLY_THEME_COLORS[theme], theme }), [theme]);
 }

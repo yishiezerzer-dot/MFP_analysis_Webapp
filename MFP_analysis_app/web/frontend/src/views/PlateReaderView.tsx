@@ -15,7 +15,7 @@ import {
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton, HelpShell } from "../help/HelpShell";
 import { getHelpModule } from "../help/registry";
-import { usePlotlyTheme } from "../theme/ThemeProvider";
+import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
 import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
@@ -1406,6 +1406,7 @@ function MICChart({
 }) {
   const pt = usePlotlyTheme();
   const { config, result, sample_nan_ratio } = mic;
+  const controlColor = themeTraceColor(settings.controlColor, pt.theme);
   // x_positions puts bars and the fitted curve on one axis (log2 concentration); older saved
   // results only have column indices.
   const xs = result.x_positions ?? result.concentrations;
@@ -1446,7 +1447,8 @@ function MICChart({
         x: xs,
         y: result.control_mean!,
         error_y: errBars(result.control_std),
-        marker: { color: settings.controlColor },
+        marker: { color: controlColor },
+        ...exportColorMeta(settings.controlColor),
         width: settings.barWidth,
         offsetgroup: "control",
       } as unknown as Data);
@@ -1469,8 +1471,9 @@ function MICChart({
           x: xs,
           y: result.control_mean!,
           error_y: errBars(result.control_std),
-          line: { color: settings.controlColor, width: settings.lineWidth },
-          marker: { color: settings.controlColor, size: settings.markerSize },
+          line: { color: controlColor, width: settings.lineWidth },
+          marker: { color: controlColor, size: settings.markerSize },
+          ...exportColorMeta(settings.controlColor),
         });
       }
     }
@@ -1495,8 +1498,9 @@ function MICChart({
         x: xs,
         y: result.control_mean!,
         error_y: errBars(result.control_std),
-        line: { color: settings.controlColor, width: settings.lineWidth },
-        marker: { color: settings.controlColor, size: settings.markerSize },
+        line: { color: controlColor, width: settings.lineWidth },
+        marker: { color: controlColor, size: settings.markerSize },
+        ...exportColorMeta(settings.controlColor),
       });
     }
   }

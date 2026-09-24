@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import Plot from "react-plotly.js";
 import type { PlotMouseEvent, PlotlyHTMLElement } from "plotly.js";
-import { usePlotlyTheme } from "../../theme/ThemeProvider";
+import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../../theme/ThemeProvider";
 import { PaperFigureExportToolbar } from "../PaperFigureExportToolbar";
 import { Tooltip } from "../Tooltip";
 import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExportSettings, publicationFilenameSuffix, sanitizeFilenamePart } from "../../utils/publicationPlotExport";
@@ -68,15 +68,16 @@ export function EICChart(props: {
         line: {
           color: isOverlay
             ? (props.settings.overlayColors?.[index] ?? pt.colorway[index % pt.colorway.length] ?? props.settings.color)
-            : props.settings.color,
+            : themeTraceColor(props.settings.color, pt.theme),
           width: props.settings.lineWidth,
         },
+        ...(isOverlay ? {} : exportColorMeta(props.settings.color)),
         hovertemplate: `${eicSourceFile(plot)}<br>m/z ${plot.eic.target_mz.toFixed(4)}<br>RT: %{x:.3f} ${unit}<br>Intensity: %{customdata:.3e}<extra></extra>`,
         name: `${isOverlay ? `${eicSourceFile(plot)} ` : ""}m/z ${plot.eic.target_mz.toFixed(4)}`,
       };
       });
     },
-    [isOverlay, props.eics, props.overlaySettings, props.settings.color, props.settings.lineWidth, props.settings.overlayColors, pt.colorway, scale, unit],
+    [isOverlay, props.eics, props.overlaySettings, props.settings.color, props.settings.lineWidth, props.settings.overlayColors, pt.colorway, pt.theme, scale, unit],
   );
   const primary = props.eics[0]?.eic ?? null;
   usePlotResizePulses([
@@ -277,7 +278,7 @@ export function EICChart(props: {
             title: props.settings.title
               ? { text: props.settings.title, font: { size: props.settings.titleSize } }
               : undefined,
-            font: { size: props.settings.tickSize },
+            font: { size: props.settings.tickSize, color: pt.screenFontColor },
             xaxis: {
               title: axisTitle(`${props.settings.xTitle} (${unit})`, props.settings.axisTitleSize),
               zeroline: false,
@@ -292,7 +293,7 @@ export function EICChart(props: {
                 props.settings.axisTitleSize,
               ),
               zeroline: false,
-              exponentformat: "e",
+              exponentformat: "power",
               showgrid: props.settings.showGrid,
               range: axisRange(props.settings.axis.yMin, props.settings.axis.yMax),
               tickfont: { size: props.settings.tickSize },

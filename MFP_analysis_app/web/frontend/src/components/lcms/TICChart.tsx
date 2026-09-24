@@ -3,7 +3,7 @@ import Plot from "react-plotly.js";
 import type { PlotMouseEvent, PlotSelectionEvent, PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
 import { LCMSTICOverlayTrace, TICData } from "../../api";
-import { usePlotlyTheme } from "../../theme/ThemeProvider";
+import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../../theme/ThemeProvider";
 import { PaperFigureExportToolbar } from "../PaperFigureExportToolbar";
 import { Tooltip } from "../Tooltip";
 import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExportSettings, publicationFilenameSuffix, sanitizeFilenamePart } from "../../utils/publicationPlotExport";
@@ -483,7 +483,11 @@ export function TICChart(props: {
                 x: xs,
                 y: activeY,
                 customdata: props.tic.tic,
-                line: { color: props.colorOverride ?? props.settings.color, width: props.settings.lineWidth },
+                line: {
+                  color: props.colorOverride ?? themeTraceColor(props.settings.color, pt.theme),
+                  width: props.settings.lineWidth,
+                },
+                ...exportColorMeta(props.colorOverride ?? props.settings.color),
                 hovertemplate:
                   overlayMode === "raw"
                     ? `RT: %{x:.3f} ${unit}<br>TIC: %{y:.3e}<extra></extra>`
@@ -499,7 +503,7 @@ export function TICChart(props: {
               title: props.settings.title
                 ? { text: props.settings.title, font: { size: props.settings.titleSize } }
                 : undefined,
-              font: { size: props.settings.tickSize },
+              font: { size: props.settings.tickSize, color: pt.screenFontColor },
               xaxis: {
                 title: axisTitle(`${props.settings.xTitle} (${unit})`, props.settings.axisTitleSize),
                 zeroline: false,
@@ -521,7 +525,7 @@ export function TICChart(props: {
                   props.settings.axisTitleSize,
                 ),
                 zeroline: false,
-                exponentformat: "e",
+                exponentformat: "power",
                 showgrid: props.settings.showGrid,
                 range:
                   overlayMode === "raw"

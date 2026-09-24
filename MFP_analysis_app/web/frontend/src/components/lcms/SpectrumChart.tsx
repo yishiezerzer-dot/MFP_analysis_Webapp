@@ -3,7 +3,7 @@ import Plot from "react-plotly.js";
 import type { PlotMouseEvent, PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
 import { SpectrumData } from "../../api";
-import { usePlotlyTheme } from "../../theme/ThemeProvider";
+import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../../theme/ThemeProvider";
 import { PaperFigureExportToolbar } from "../PaperFigureExportToolbar";
 import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExportSettings, publicationFilenameSuffix, sanitizeFilenamePart } from "../../utils/publicationPlotExport";
 import { extractTopPeaks } from "../../lcms/analysis";
@@ -854,7 +854,8 @@ export function SpectrumChart(props: {
                 y: activeY,
                 customdata: displayActive.intensity.map((v) => [v, (v / activeBasePeak) * 100]),
                 width: props.settings.barWidth,
-                marker: { color: props.colorOverride ?? props.settings.color },
+                marker: { color: props.colorOverride ?? themeTraceColor(props.settings.color, pt.theme) },
+                ...exportColorMeta(props.colorOverride ?? props.settings.color),
                 hovertemplate:
                   isNorm
                     ? "m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata[0]:.3e}<extra></extra>"
@@ -873,7 +874,7 @@ export function SpectrumChart(props: {
                     font: { size: props.settings.titleSize },
                   }
                 : undefined,
-              font: { size: props.settings.tickSize },
+              font: { size: props.settings.tickSize, color: pt.screenFontColor },
               xaxis: {
                 title: axisTitle(props.settings.xTitle, props.settings.axisTitleSize),
                 zeroline: false,
@@ -897,7 +898,7 @@ export function SpectrumChart(props: {
                 zeroline: isButterfly,
                 zerolinecolor: isButterfly ? "#94a3b8" : undefined,
                 zerolinewidth: isButterfly ? 1.5 : undefined,
-                exponentformat: "e",
+                exponentformat: "power",
                 showgrid: props.settings.showGrid,
                 range:
                   isButterfly

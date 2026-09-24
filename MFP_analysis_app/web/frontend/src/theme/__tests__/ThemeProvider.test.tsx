@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cleanup, render } from "@testing-library/react";
-import { THEMES, ThemeProvider } from "../ThemeProvider";
+import { NIGHT_TRACE_COLOR, THEMES, ThemeProvider, themeTraceColor } from "../ThemeProvider";
 
 afterEach(() => {
   cleanup();
@@ -75,4 +75,19 @@ describe("token contrast (WCAG AA, 4.5:1)", () => {
       });
     }
   }
+});
+
+describe("themeTraceColor", () => {
+  it("keeps every colour in day", () => {
+    expect(themeTraceColor("#1e2636", "day")).toBe("#1e2636");
+  });
+
+  it("swaps the old near-black defaults for a light colour in night", () => {
+    expect(themeTraceColor("#1e2636", "night")).toBe(NIGHT_TRACE_COLOR);
+    expect(themeTraceColor("#323C50", "night")).toBe(NIGHT_TRACE_COLOR);
+  });
+
+  it("never changes a colour the user picked", () => {
+    expect(themeTraceColor("#e69f00", "night")).toBe("#e69f00");
+  });
 });
