@@ -23,6 +23,8 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **Polymer Studio and Polymer Match dialog now offer the same settings.** The Studio gained per-bond delta, max DP, min relative intensity and the small-oligomer preset; tolerance, unit, max DP and min intensity now sit above the tabs so they are always visible. The dialog gained custom adducts (previously Studio-only). Both are built from the same sections, and a test checks they expose identical controls. "Reset" is now described correctly: it restores your saved defaults, not factory defaults.
+
 - **Operations (plan 6.5):** the server snapshots its SQLite databases to `<data>/backups` once a day (newest 7 kept); `python -m app.backup OUT.tar.gz` writes a full archive (databases + uploads) for an off-site copy. The Docker image sets `MFP_DATA_DIR=/data`, so LCMS index caches now also persist on the Railway volume instead of being rebuilt after each deploy. Server logs are timestamped single lines. Hosting stays public on the Railway link (decision recorded in `plan.md`).
 
 - **CI (plan 6.4):** GitHub Actions runs backend tests (locked deps and pandas 3), frontend type-check and tests, and a Docker build.
