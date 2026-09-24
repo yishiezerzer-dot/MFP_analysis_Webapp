@@ -118,7 +118,6 @@ export function LCMSView() {
     "navigate",
     (value) => (isTabId(value) ? value : "navigate"),
   );
-  const [workflowHidden, setWorkflowHidden] = useStoredState(`${LCMS_STORAGE_PREFIX}.workflowHidden`, false);
   const [showPolymerControls, setShowPolymerControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showPolymerControls`, true);
   const [showConfidenceControls, setShowConfidenceControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showConfidenceControls`, false);
   const [showAlignmentDiagnostics, setShowAlignmentDiagnostics] = useStoredState(`${LCMS_STORAGE_PREFIX}.showAlignmentDiagnostics`, false);
@@ -3527,8 +3526,6 @@ export function LCMSView() {
 
         <ToolsPanel
           // Primary actions
-          onEIC={() => dispatchUiAction("lcms.open_dialog", { dialog: "eic" })}
-          onJumpMz={() => dispatchUiAction("lcms.open_dialog", { dialog: "find_mz" })}
           onExportLabels={() => dispatchUiAction("lcms.export_labels_csv")}
           onExportSpectrum={() => dispatchUiAction("lcms.export_spectrum_csv")}
           onExportUV={() => dispatchUiAction("lcms.export_uv_csv")}
@@ -3540,8 +3537,6 @@ export function LCMSView() {
           busy={busy}
           activeLoaded={!!active}
           // Workflow chrome
-          workflowHidden={workflowHidden}
-          setWorkflowHidden={setWorkflowHidden}
           showPolymerControls={showPolymerControls}
           setShowPolymerControls={setShowPolymerControls}
           showConfidenceControls={showConfidenceControls}

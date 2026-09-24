@@ -4,8 +4,9 @@ import clsx from "clsx";
 import { LCMSSessionSummary } from "../../api";
 import { ExperimentTagEditor } from "../ExperimentTagEditor";
 import { type PolymerUiSettings } from "../../lcms/analysis";
-import { Polarity, RtUnit, UvTimeUnit, TabId, UVLabelOrientation, formatRange } from "../../lcms/viewShared";
-import { IconChevronLeft, IconChevronRight } from "./SessionsSidebar";
+import { ChevronLeft, ChevronRight, Columns2, PanelRightClose, PanelRightOpen, Rows2 } from "lucide-react";
+import { SegmentedControl } from "../common/SegmentedControl";
+import { Polarity, RtUnit, UvTimeUnit, TabId, UVLabelOrientation, formatRange, ICON_PROPS } from "../../lcms/viewShared";
 
 export function DatasetRibbon(props: {
   active: LCMSSessionSummary | null;
@@ -16,111 +17,60 @@ export function DatasetRibbon(props: {
   setDualLayout: (l: "stacked" | "grid") => void;
 }) {
   const a = props.active;
+  const status = a
+    ? [
+        `${a.ms1_count} MS1 scans`,
+        `RT ${formatRange(a.rt_min ?? null, a.rt_max ?? null)} min`,
+        a.polarities?.length ? a.polarities.join(" / ") : null,
+        a.uv?.available ? `UV: ${a.uv.filename ?? "attached"}` : "no UV",
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "No dataset open";
   return (
-    <div className="card flex flex-wrap items-center justify-between gap-4 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-6">
-        <Field label="Dataset" value={a?.display_name ?? "—"} strong />
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
         {a && (
-          <div>
-            <div className="label">Experiment Tag</div>
-            <div className="mt-1">
-              <ExperimentTagEditor
-                sessionId={a.session_id}
-                currentTag={a.experiment_tag}
-                module="lcms"
-                onTagUpdated={props.onTagUpdated}
-              />
-            </div>
-          </div>
+          <span className="text-card-title max-w-[28rem] truncate" title={a.display_name}>
+            {a.display_name}
+          </span>
         )}
-        <Field label="MS1 scans" value={a?.ms1_count ?? "—"} />
-        <Field
-          label="RT range (min)"
-          value={formatRange(a?.rt_min ?? null, a?.rt_max ?? null)}
-        />
-        <Field
-          label="Polarities in file"
-          value={a?.polarities?.length ? a.polarities.join(", ") : "—"}
-        />
-        <Field
-          label="UV"
-          value={a?.uv?.available ? a.uv.filename ?? "attached" : "—"}
-        />
+        <span className="text-caption">{status}</span>
+        {a && (
+          <ExperimentTagEditor
+            sessionId={a.session_id}
+            currentTag={a.experiment_tag}
+            module="lcms"
+            onTagUpdated={props.onTagUpdated}
+          />
+        )}
       </div>
-
-      {/* Quick Polarity & Dual Layout Controls */}
-      <div className="flex items-center gap-2.5 pt-1 lg:pt-0">
-        <div className="flex items-center rounded-lg bg-ink-100/80 p-0.5 text-xs">
-          {(["all", "positive", "negative", "dual"] as Polarity[]).map((v) => (
-            <button
-              key={v}
-              type="button"
-              className={clsx(
-                "py-1 px-2 rounded-md font-medium transition-all text-xs whitespace-nowrap",
-                props.polarity === v
-                  ? "bg-surface text-ink-900 shadow-xs font-semibold"
-                  : "text-ink-600 hover:text-ink-900",
-              )}
-              onClick={() => props.setPolarity(v)}
-            >
-              {v === "all"
-                ? "All"
-                : v === "positive"
-                ? "ESI+"
-                : v === "negative"
-                ? "ESI-"
-                : "Dual (+/−)"}
-            </button>
-          ))}
-        </div>
+      <div className="flex items-center gap-2">
+        <SegmentedControl
+          size="sm"
+          ariaLabel="Polarity"
+          value={props.polarity}
+          onChange={props.setPolarity}
+          options={[
+            { value: "all", label: "All" },
+            { value: "positive", label: "ESI+" },
+            { value: "negative", label: "ESI−" },
+            { value: "dual", label: "Dual (+/−)" },
+          ]}
+        />
         {props.polarity === "dual" && (
-          <div className="flex items-center rounded-lg bg-ink-100/80 p-0.5 text-xs">
-            <button
-              type="button"
-              className={clsx(
-                "py-1 px-2 rounded-md font-medium transition-all text-xs whitespace-nowrap",
-                props.dualLayout === "stacked"
-                  ? "bg-surface text-ink-900 shadow-xs font-semibold"
-                  : "text-ink-600 hover:text-ink-900",
-              )}
-              onClick={() => props.setDualLayout("stacked")}
-              title="Stacked cards layout (full width)"
-            >
-              ≡ Stacked
-            </button>
-            <button
-              type="button"
-              className={clsx(
-                "py-1 px-2 rounded-md font-medium transition-all text-xs whitespace-nowrap",
-                props.dualLayout === "grid"
-                  ? "bg-surface text-ink-900 shadow-xs font-semibold"
-                  : "text-ink-600 hover:text-ink-900",
-              )}
-              onClick={() => props.setDualLayout("grid")}
-              title="Side-by-side 2-column grid layout"
-            >
-              ◫ 2-Col
-            </button>
-          </div>
+          <SegmentedControl
+            size="sm"
+            ariaLabel="Dual layout"
+            value={props.dualLayout}
+            onChange={props.setDualLayout}
+            options={[
+              { value: "stacked", label: "Stacked", icon: <Rows2 {...ICON_PROPS} />, title: "Stacked cards layout (full width)" },
+              { value: "grid", label: "2 columns", icon: <Columns2 {...ICON_PROPS} />, title: "Side-by-side 2-column grid layout" },
+            ]}
+          />
         )}
       </div>
-    </div>
-  );
-}
-
-export function Field({
-  label,
-  value,
-  strong,
-}: {
-  label: string;
-  value: ReactNode;
-  strong?: boolean;
-}) {
-  return (
-    <div>
-      <div className="label">{label}</div>
-      <div className={clsx("text-sm", strong && "font-medium")}>{value}</div>
     </div>
   );
 }
@@ -129,8 +79,6 @@ export function Field({
 
 export interface ToolsPanelProps {
   // primary
-  onEIC: () => void;
-  onJumpMz: () => void;
   onExportLabels: () => void;
   onExportSpectrum: () => void;
   onExportUV: () => void;
@@ -142,8 +90,6 @@ export interface ToolsPanelProps {
   busy: boolean;
   activeLoaded: boolean;
   // chrome
-  workflowHidden: boolean;
-  setWorkflowHidden: (v: boolean) => void;
   showPolymerControls: boolean;
   setShowPolymerControls: (v: boolean) => void;
   showConfidenceControls: boolean;
@@ -257,14 +203,15 @@ export interface ToolsPanelProps {
 
 export function ToolsPanel(p: ToolsPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const displayTab = p.activeTab === "view";
 
   return (
     <aside
       aria-expanded={!collapsed}
       className={clsx(
-        "flex shrink-0 flex-col border-l border-ink-200 bg-ink-50/40",
+        "flex shrink-0 flex-col border-l border-ink-200 bg-surface",
         "transition-[width] duration-200 ease-out",
-        collapsed ? "w-10 overflow-hidden" : "w-80 overflow-auto",
+        collapsed ? "w-11 overflow-hidden" : "w-[290px] overflow-y-auto overflow-x-hidden",
       )}
     >
       {collapsed ? (
@@ -274,238 +221,39 @@ export function ToolsPanel(p: ToolsPanelProps) {
             onClick={() => setCollapsed(false)}
             title="Expand tools panel"
             aria-label="Expand tools panel"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-ink-200/60 hover:text-ink-800"
+            className="btn-ghost px-1.5"
           >
-            <IconChevronLeft className="h-4 w-4" />
+            <PanelRightOpen {...ICON_PROPS} />
           </button>
         </div>
       ) : (
         <>
-          <PrimaryActions
-            onEIC={p.onEIC}
-            onJumpMz={p.onJumpMz}
-            onExportLabels={p.onExportLabels}
-            onExportSpectrum={p.onExportSpectrum}
-            onExportUV={p.onExportUV}
-            onExportTICOverlay={p.onExportTICOverlay}
-            onSumRegionSpectrum={p.onSumRegionSpectrum}
-            onFeatureTable={p.onFeatureTable}
-            onComparisonMatrix={p.onComparisonMatrix}
-            featureCount={p.featureCount}
-            busy={p.busy}
-            activeLoaded={p.activeLoaded}
-            onCollapse={() => setCollapsed(true)}
-          />
-
-          <WorkflowTools
-            hidden={p.workflowHidden}
-            setHidden={p.setWorkflowHidden}
-            showPolymerControls={p.showPolymerControls}
-            setShowPolymerControls={p.setShowPolymerControls}
-            showConfidenceControls={p.showConfidenceControls}
-            setShowConfidenceControls={p.setShowConfidenceControls}
-            showAlignmentDiagnostics={p.showAlignmentDiagnostics}
-            setShowAlignmentDiagnostics={p.setShowAlignmentDiagnostics}
-            activeTab={p.activeTab}
-            setActiveTab={p.setActiveTab}
-          >
-            {p.activeTab === "view" ? (
-              <DisplayTab {...p} />
-            ) : (
-              <ToolsTab {...p} />
-            )}
-          </WorkflowTools>
+          <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-ink-200 bg-surface px-3 py-2">
+            <SegmentedControl
+              size="sm"
+              className="flex-1 [&>button]:flex-1"
+              ariaLabel="Tools panel section"
+              value={displayTab ? "view" : "navigate"}
+              onChange={p.setActiveTab}
+              options={[
+                { value: "navigate", label: "Analysis" },
+                { value: "view", label: "Display" },
+              ]}
+            />
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              title="Collapse tools panel"
+              aria-label="Collapse tools panel"
+              className="btn-ghost px-1.5"
+            >
+              <PanelRightClose {...ICON_PROPS} />
+            </button>
+          </div>
+          <div className="flex-1 p-3">{displayTab ? <DisplayTab {...p} /> : <ToolsTab {...p} />}</div>
         </>
       )}
     </aside>
-  );
-}
-
-export function PrimaryActions({
-  onEIC,
-  onJumpMz,
-  onExportLabels,
-  onExportSpectrum,
-  onExportUV,
-  onExportTICOverlay,
-  onSumRegionSpectrum,
-  onFeatureTable,
-  onComparisonMatrix,
-  featureCount,
-  busy,
-  activeLoaded,
-  onCollapse,
-}: {
-  onEIC: () => void;
-  onJumpMz: () => void;
-  onExportLabels: () => void;
-  onExportSpectrum: () => void;
-  onExportUV: () => void;
-  onExportTICOverlay: () => void;
-  onSumRegionSpectrum: () => void;
-  onFeatureTable: () => void;
-  onComparisonMatrix: () => void;
-  featureCount: number;
-  busy: boolean;
-  activeLoaded: boolean;
-  onCollapse?: () => void;
-}) {
-  return (
-    <section className="border-b border-ink-200 bg-surface p-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold">Primary Actions</h3>
-          <p className="mt-0.5 text-xs text-ink-500">
-            The highest-value actions stay visible here at all times.
-          </p>
-        </div>
-        {onCollapse && (
-          <button
-            type="button"
-            onClick={onCollapse}
-            title="Collapse tools panel"
-            aria-label="Collapse tools panel"
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-800"
-          >
-            <IconChevronRight className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-      <div className="mt-3 flex flex-col gap-2">
-        <button
-          className="rounded-md border border-brand-500 bg-brand-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:border-ink-200 disabled:bg-ink-100 disabled:text-ink-400"
-          disabled={!activeLoaded || busy}
-          onClick={onEIC}
-        >
-          EIC (new chromatogram)…
-        </button>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
-            disabled={!activeLoaded || busy}
-            onClick={onJumpMz}
-          >
-            Jump to m/z…
-          </button>
-          <button
-            className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
-            disabled={!activeLoaded}
-            onClick={onFeatureTable}
-          >
-            Feature table{featureCount > 0 ? ` (${featureCount})` : ""}...
-          </button>
-          <button
-            className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
-            disabled={!activeLoaded}
-            onClick={onComparisonMatrix}
-          >
-            Comparison matrix...
-          </button>
-          <button
-            className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
-            disabled={!activeLoaded || busy}
-            onClick={onExportLabels}
-          >
-            Export labels (all scans)…
-          </button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function WorkflowTools({
-  hidden,
-  setHidden,
-  showPolymerControls,
-  setShowPolymerControls,
-  showConfidenceControls,
-  setShowConfidenceControls,
-  showAlignmentDiagnostics,
-  setShowAlignmentDiagnostics,
-  activeTab,
-  setActiveTab,
-  children,
-}: {
-  hidden: boolean;
-  setHidden: (v: boolean) => void;
-  showPolymerControls: boolean;
-  setShowPolymerControls: (v: boolean) => void;
-  showConfidenceControls: boolean;
-  setShowConfidenceControls: (v: boolean) => void;
-  showAlignmentDiagnostics: boolean;
-  setShowAlignmentDiagnostics: (v: boolean) => void;
-  activeTab: TabId;
-  setActiveTab: (t: TabId) => void;
-  children: ReactNode;
-}) {
-  return (
-    <section className="flex flex-1 flex-col">
-      <header className="flex items-start justify-between gap-2 bg-surface p-4 pb-2">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold">Workflow &amp; Tools</h3>
-          <p className="mt-0.5 text-xs text-ink-500">
-            Fine-tune visibility and advanced LCMS controls
-          </p>
-        </div>
-        <button
-          className="flex h-7 shrink-0 items-center gap-1 rounded-md border border-dashed border-ink-300 bg-surface px-2 text-xs text-ink-700 hover:bg-ink-100"
-          onClick={() => setHidden(!hidden)}
-        >
-          {hidden ? "Show ▼" : "Hide ▲"}
-        </button>
-      </header>
-
-      {!hidden && (
-        <>
-          <div className="flex flex-col gap-1 bg-surface/70px-4 pb-2">
-            <Check
-              label="Show polymer matching controls"
-              checked={showPolymerControls}
-              onChange={setShowPolymerControls}
-            />
-            <Check
-              label="Show confidence controls"
-              checked={showConfidenceControls}
-              onChange={setShowConfidenceControls}
-            />
-            <Check
-              label="Show alignment diagnostics controls"
-              checked={showAlignmentDiagnostics}
-              onChange={setShowAlignmentDiagnostics}
-            />
-          </div>
-
-          <div className="flex items-center gap-1 border-b border-ink-200 bg-surface/70 px-3 pt-2">
-            {[
-              { id: "navigate" as const, label: "Tools & Analysis" },
-              { id: "view" as const, label: "Display & Overlays" },
-            ].map((t) => {
-              const isSelected =
-                t.id === "view"
-                  ? activeTab === "view"
-                  : activeTab === "navigate" || activeTab === "annotate" || activeTab === "polymer";
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setActiveTab(t.id)}
-                  className={clsx(
-                    "-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition-colors",
-                    isSelected
-                      ? "border-brand-500 text-ink-900"
-                      : "border-transparent text-ink-500 hover:text-ink-800",
-                  )}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex-1 p-4">{children}</div>
-        </>
-      )}
-    </section>
   );
 }
 
@@ -522,14 +270,15 @@ export function ToolsTab(p: ToolsPanelProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 1. Scan Navigation */}
-      <GroupBox title="Scan Navigation">
-        <div className="grid grid-cols-4 gap-2">
+      <GroupBox title="Scan navigation">
+        <div className="grid grid-cols-2 gap-2">
           <NavyButton onClick={p.onPrev} disabled={!p.activeLoaded}>
-            ◄ Prev
+            <ChevronLeft {...ICON_PROPS} />
+            Prev
           </NavyButton>
           <NavyButton onClick={p.onNext} disabled={!p.activeLoaded}>
-            Next ►
+            Next
+            <ChevronRight {...ICON_PROPS} />
           </NavyButton>
           <NavyButton onClick={p.onFirst} disabled={!p.activeLoaded}>
             First
@@ -538,15 +287,16 @@ export function ToolsTab(p: ToolsPanelProps) {
             Last
           </NavyButton>
         </div>
-        <div className="mt-1 flex items-center justify-between text-[11px] text-ink-500">
-          <span>Tip: use ← / → keys to step</span>
-        </div>
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <NavyButton onClick={p.onFindMz} disabled={!p.activeLoaded}>
-            Find m/z…
-          </NavyButton>
-          <NavyButton onClick={p.onEICDialog} disabled={!p.activeLoaded}>
+        <p className="text-caption">Tip: ← / → keys step through scans</p>
+      </GroupBox>
+
+      <GroupBox title="Chromatograms">
+        <div className="grid grid-cols-2 gap-2">
+          <NavyButton primary onClick={p.onEICDialog} disabled={!p.activeLoaded || p.busy}>
             EIC…
+          </NavyButton>
+          <NavyButton onClick={p.onFindMz} disabled={!p.activeLoaded || p.busy}>
+            Find m/z…
           </NavyButton>
         </div>
       </GroupBox>
@@ -554,12 +304,10 @@ export function ToolsTab(p: ToolsPanelProps) {
       {/* 2. Jump to RT */}
       <GroupBox title="Jump to RT">
         <div className="flex items-center gap-2">
-          <label className="text-xs text-ink-700">
-            RT ({p.rtUnit === "seconds" ? "s" : "min"}):
-          </label>
+          <span className="text-body shrink-0">RT ({p.rtUnit === "seconds" ? "s" : "min"})</span>
           <input
             type="number"
-            className="input flex-1"
+            className="input min-w-0 flex-1"
             aria-label={`Jump to retention time (${p.rtUnit === "seconds" ? "s" : "min"})`}
             placeholder="e.g. 2.45"
             value={p.rtJumpText}
@@ -576,7 +324,7 @@ export function ToolsTab(p: ToolsPanelProps) {
       </GroupBox>
 
       {/* 3. Spectrum Peak Labels */}
-      <GroupBox title="Spectrum Peak Labels">
+      <GroupBox title="Spectrum peak labels">
         <Check
           label="Annotate spectrum peaks with m/z"
           checked={p.annotateSpectrum}
@@ -593,7 +341,7 @@ export function ToolsTab(p: ToolsPanelProps) {
             }
           />
         </Row>
-        <Row label="Min rel">
+        <Row label="Min rel intensity">
           <input
             type="number"
             step="0.01"
@@ -614,10 +362,10 @@ export function ToolsTab(p: ToolsPanelProps) {
 
       {/* 4. Polymer & Reaction Matching */}
       {p.showPolymerControls && (
-        <GroupBox title="Polymer & Reaction Matching">
+        <GroupBox title="Polymer & reaction matching">
           <label
             className={clsx(
-              "flex items-center gap-2 text-sm text-ink-800",
+              "text-body flex items-center gap-2",
               polymerDisabled && "opacity-60",
             )}
           >
@@ -634,13 +382,13 @@ export function ToolsTab(p: ToolsPanelProps) {
             />
             <span>Enable polymer/reaction matching</span>
           </label>
-          <p className="mt-1 text-xs text-ink-500">{polymerStatus}</p>
-          <NavyButton className="mt-2 w-full" onClick={p.onPolymerDialog}>
+          <p className="text-caption">{polymerStatus}</p>
+          <NavyButton className="w-full" onClick={p.onPolymerDialog}>
             Polymer Match…
           </NavyButton>
           <button
             type="button"
-            className="mt-2 w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+            className={SECONDARY_BUTTON}
             onClick={p.onExpectedProducts}
             disabled={!p.canOpenExpectedProducts}
             title={
@@ -649,11 +397,11 @@ export function ToolsTab(p: ToolsPanelProps) {
                 : "Select polarity, monomers, and load an MS1 spectrum first"
             }
           >
-            Expected Products...
+            Expected products…
           </button>
           <button
             type="button"
-            className="mt-2 w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-400"
+            className={SECONDARY_BUTTON}
             onClick={p.onKendrick}
             disabled={!p.canOpenKendrick}
             title={
@@ -662,17 +410,31 @@ export function ToolsTab(p: ToolsPanelProps) {
                 : "Load an MS1 spectrum first"
             }
           >
-            Kendrick Plot...
+            Kendrick plot…
           </button>
           <button
             type="button"
-            className="mt-2 w-full rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+            className={SECONDARY_BUTTON}
             onClick={p.onSavePolymerDefaults}
           >
             Save current as defaults
           </button>
         </GroupBox>
       )}
+
+      <GroupBox title="Tables & exports">
+        <div className="grid grid-cols-2 gap-2">
+          <NavyButton onClick={p.onFeatureTable} disabled={!p.activeLoaded}>
+            Feature table{p.featureCount > 0 ? ` (${p.featureCount})` : ""}
+          </NavyButton>
+          <NavyButton onClick={p.onComparisonMatrix} disabled={!p.activeLoaded}>
+            Comparison
+          </NavyButton>
+        </div>
+        <NavyButton onClick={p.onExportLabels} disabled={!p.activeLoaded || p.busy}>
+          Export labels (all scans)…
+        </NavyButton>
+      </GroupBox>
     </div>
   );
 }
@@ -680,7 +442,13 @@ export function ToolsTab(p: ToolsPanelProps) {
 export function DisplayTab(p: ToolsPanelProps) {
   return (
     <div className="flex flex-col gap-4">
-      <GroupBox title="Filters & Units">
+      <GroupBox title="Extra controls">
+        <Check label="Polymer matching" checked={p.showPolymerControls} onChange={p.setShowPolymerControls} />
+        <Check label="Confidence" checked={p.showConfidenceControls} onChange={p.setShowConfidenceControls} />
+        <Check label="Alignment diagnostics" checked={p.showAlignmentDiagnostics} onChange={p.setShowAlignmentDiagnostics} />
+      </GroupBox>
+
+      <GroupBox title="Filters & units">
         <Row label="RT display unit">
           <select
             className="input"
@@ -709,7 +477,7 @@ export function DisplayTab(p: ToolsPanelProps) {
       <GroupBox title="Polarity">
         <div className="flex flex-wrap items-center gap-4">
           {(["all", "positive", "negative", "dual"] as Polarity[]).map((v) => (
-            <label key={v} className="flex items-center gap-1.5 text-sm capitalize">
+            <label key={v} className="text-body flex items-center gap-1.5">
               <input
                 type="radio"
                 name="polarity"
@@ -728,14 +496,14 @@ export function DisplayTab(p: ToolsPanelProps) {
         </div>
         {p.polarity === "dual" && (
           <div className="mt-3 pt-2.5 border-t border-ink-100/80">
-            <Row label="Dual Layout">
+            <Row label="Dual layout">
               <select
-                className="input py-1 text-xs"
+                className="input py-1"
                 value={p.dualLayout}
                 onChange={(e) => p.setDualLayout(e.target.value as "stacked" | "grid")}
               >
-                <option value="stacked">Stacked (Full Width)</option>
-                <option value="grid">Side-by-Side (2 Columns)</option>
+                <option value="stacked">Stacked (full width)</option>
+                <option value="grid">Side by side (2 columns)</option>
               </select>
             </Row>
           </div>
@@ -745,7 +513,7 @@ export function DisplayTab(p: ToolsPanelProps) {
       <GroupBox title="Panels">
         <Check label="Show TIC" checked={p.showTIC} onChange={p.setShowTIC} />
         <Check
-          label="Show Spectrum"
+          label="Show spectrum"
           checked={p.showSpectrum}
           onChange={p.setShowSpectrum}
         />
@@ -754,7 +522,7 @@ export function DisplayTab(p: ToolsPanelProps) {
 
       <GroupBox title="TIC region">
         <Check
-          label="Region Select (drag on TIC)"
+          label="Region select (drag on TIC)"
           checked={p.regionSelect}
           onChange={p.setRegionSelect}
         />
@@ -780,17 +548,18 @@ export function DisplayTab(p: ToolsPanelProps) {
             }}
           />
         </Row>
-        <p className="text-[11px] text-ink-500">
+        <p className="text-caption">
           {p.regionIgnoredCount > 0
             ? `${p.regionIgnoredCount} mass${p.regionIgnoredCount === 1 ? "" : "es"} hidden from summed region MS1 scaling.`
             : "Hide dominant contaminants from summed region MS1 scaling."}
         </p>
         <button
-          className="mt-2 rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-60"
+          type="button"
+          className={SECONDARY_BUTTON}
           disabled={!p.regionSelect}
           onClick={() => p.setRegionSelect(false)}
         >
-          Clear Region
+          Clear region
         </button>
       </GroupBox>
 
@@ -818,7 +587,7 @@ export function DisplayTab(p: ToolsPanelProps) {
         <div>
           <button
             type="button"
-            className="w-full rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+            className={SECONDARY_BUTTON}
             disabled={p.overlaySessionIds.length === 0}
             onClick={() => p.setOverlaySessionIds([])}
           >
@@ -827,7 +596,7 @@ export function DisplayTab(p: ToolsPanelProps) {
         </div>
         <div className="max-h-28 overflow-auto rounded-md border border-ink-200 bg-surface p-2">
           {p.sessions.map((session) => (
-            <label key={session.session_id} className="flex items-center gap-2 py-0.5 text-xs">
+            <label key={session.session_id} className="flex items-center gap-2 py-0.5 text-[13px]">
               <input
                 type="checkbox"
                 checked={p.overlaySessionIds.includes(session.session_id)}
@@ -877,12 +646,13 @@ export function DisplayTab(p: ToolsPanelProps) {
 
 // --- Small layout primitives -------------------------------------------------
 
+const SECONDARY_BUTTON =
+  "btn justify-center border border-ink-200 bg-surface text-ink-800 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-40";
+
 export function GroupBox({ title, children }: { title: string; children: ReactNode }) {
   return (
     <fieldset className="rounded-md border border-ink-200 bg-surface p-3">
-      <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
-        {title}
-      </legend>
+      <legend className="text-section px-1">{title}</legend>
       <div className="flex flex-col gap-2">{children}</div>
     </fieldset>
   );
@@ -892,7 +662,7 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   // Wrapping the control in the <label> associates the text with it for screen readers.
   return (
     <label className="flex items-center justify-between gap-2">
-      <span className="text-sm text-ink-700">{label}</span>
+      <span className="text-body text-ink-700">{label}</span>
       {children}
     </label>
   );
@@ -910,7 +680,7 @@ export function Check({
   className?: string;
 }) {
   return (
-    <label className={clsx("flex items-center gap-2 text-sm text-ink-800", className)}>
+    <label className={clsx("text-body flex items-center gap-2", className)}>
       <input
         type="checkbox"
         checked={checked}
@@ -921,28 +691,26 @@ export function Check({
   );
 }
 
+// Outlined secondary button for the tools panel; `primary` makes it the one filled action of its group.
 export function NavyButton({
   children,
   onClick,
   disabled,
   className,
+  primary,
 }: {
   children: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   className?: string;
+  primary?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={clsx(
-        "rounded-md bg-[rgb(85,115,185)] px-3 py-1.5 text-xs font-medium text-white transition-colors",
-        "hover:bg-ink-900",
-        "disabled:cursor-not-allowed disabled:bg-ink-300 disabled:text-ink-500",
-        className,
-      )}
+      className={clsx(primary ? "btn-primary justify-center" : SECONDARY_BUTTON, className)}
     >
       {children}
     </button>
