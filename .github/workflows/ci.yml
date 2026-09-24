@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"  # matches the npm 11 that wrote package-lock.json
           cache: npm
           cache-dependency-path: MFP_analysis_app/web/frontend/package-lock.json
       - run: npm ci
