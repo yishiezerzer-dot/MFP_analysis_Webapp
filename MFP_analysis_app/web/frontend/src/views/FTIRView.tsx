@@ -658,6 +658,10 @@ export function FTIRView() {
       setAssignments(null);
       return;
     }
+    // Ignore responses from superseded requests: when the y-mode switches (e.g. on load, a file is
+    // detected as absorbance), an older transmittance response arriving last would otherwise be
+    // drawn under the absorbance label (inverted bands).
+    let cancelled = false;
     setBusy(true);
     api.ftir
       .spectrum(activeSid, {
@@ -666,9 +670,18 @@ export function FTIRView() {
         include_second_derivative: showSecondDerivative,
         include_baseline: showBaselineCurve,
       })
-      .then(setSpectrum)
-      .catch((e) => setError(String(e)))
-      .finally(() => setBusy(false));
+      .then((next) => {
+        if (!cancelled) setSpectrum(next);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [activeSid, pre, sessions, showSecondDerivative, showBaselineCurve]);
 
   useEffect(() => {
