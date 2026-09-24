@@ -1,4 +1,5 @@
 import { ReactNode, Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { COMPACT_LAYOUT_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { NavLink, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import type { PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
@@ -188,17 +189,9 @@ function Sidebar() {
     return stored === null ? true : stored === "1";
   });
   const [hovered, setHovered] = useState(false);
-  // On phone-width screens a pinned 256 px sidebar leaves almost no room for the view, so it
-  // collapses to the icon rail (it still expands on hover/tap).
-  const [narrow, setNarrow] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 767px)");
-    const onChange = () => setNarrow(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+  // On laptops a pinned 256 px sidebar squeezes the charts, so it stays an icon rail and
+  // expands over the content on hover instead.
+  const compact = useMediaQuery(COMPACT_LAYOUT_QUERY);
 
   useEffect(() => {
     try {
@@ -208,7 +201,8 @@ function Sidebar() {
     }
   }, [pinned]);
 
-  const expanded = (pinned && !narrow) || hovered;
+  const docked = pinned && !compact;
+  const expanded = docked || hovered;
   const { activeWorkspace } = useWorkspace();
 
   const currentUser: AppUser = useMemo(
@@ -221,13 +215,15 @@ function Sidebar() {
   );
 
   return (
+    <div className={clsx("relative h-full shrink-0 transition-[width] duration-200 ease-out", docked ? "w-64" : "w-[56px]")}>
     <aside
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={clsx(
-        "flex h-full shrink-0 flex-col overflow-hidden border-r border-ink-200/70",
+        "absolute inset-y-0 left-0 z-40 flex flex-col overflow-hidden border-r border-ink-200/70",
         "transition-[width] duration-200 ease-out",
         expanded ? "w-64" : "w-[56px]",
+        expanded && !docked && "shadow-lg",
       )}
       style={{ backgroundColor: "rgb(var(--surface))" }}
       aria-expanded={expanded}
@@ -322,6 +318,7 @@ function Sidebar() {
 
       <UserMenu user={currentUser} expanded={expanded} />
     </aside>
+    </div>
   );
 }
 

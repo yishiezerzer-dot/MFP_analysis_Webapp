@@ -2,6 +2,7 @@ import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { LCMSSessionSummary } from "../../api";
 import { LCMSProject, LCMSActiveProjectId, formatUploaded, sessionTooltip, formatRange } from "../../lcms/viewShared";
+import { COMPACT_LAYOUT_QUERY, useMediaQuery } from "../../hooks/useMediaQuery";
 
 export const SESSIONS_PIN_STORAGE_KEY = "mfp.lcms.sessions.pinned";
 
@@ -26,6 +27,26 @@ export function SessionsSidebar(props: {
   const [hovered, setHovered] = useState(false);
   const [openProjectId, setOpenProjectId] = useState<LCMSActiveProjectId>("__unassigned");
   const hideTimer = useRef<number | null>(null);
+  // Laptops: a slim rail that opens over the charts (hover or click) instead of taking width.
+  const compact = useMediaQuery(COMPACT_LAYOUT_QUERY);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  const asideRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!overlayOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOverlayOpen(false);
+    };
+    const onDown = (e: MouseEvent) => {
+      if (asideRef.current && !asideRef.current.contains(e.target as Node)) setOverlayOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [overlayOpen]);
 
   useEffect(() => {
     try {
@@ -38,7 +59,11 @@ export function SessionsSidebar(props: {
     }
   }, [pinned]);
 
-  const expanded = pinned || hovered || openProjectId !== "__all";
+  const expanded = compact ? hovered || overlayOpen : pinned || hovered || openProjectId !== "__all";
+  const selectSession = (sid: string) => {
+    props.onSelect(sid);
+    setOverlayOpen(false);
+  };
   const unassignedSessions = props.sessions.filter((session) => !props.sessionProjectById[session.session_id]);
   const sessionsByProject = useMemo(() => {
     const grouped = new Map<string, LCMSSessionSummary[]>();
@@ -82,14 +107,18 @@ export function SessionsSidebar(props: {
   }, [openProjectId, props.projects]);
 
   return (
+    <div className={clsx("relative shrink-0 transition-[width] duration-200 ease-out", !compact && expanded ? "w-60" : "w-12")}>
     <aside
+      ref={asideRef}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
       aria-expanded={expanded}
+      aria-label="Sessions"
       className={clsx(
-        "flex shrink-0 flex-col overflow-hidden border-r border-ink-200 bg-ink-50/50",
+        "absolute inset-y-0 left-0 z-30 flex flex-col overflow-hidden border-r border-ink-200 bg-canvas",
         "transition-[width] duration-200 ease-out",
         expanded ? "w-60" : "w-12",
+        compact && expanded && "shadow-lg",
       )}
     >
       <header
@@ -128,13 +157,15 @@ export function SessionsSidebar(props: {
           // Collapsed affordance: a stack icon that hints the panel holds a list
           // of items. Hovering the whole aside already expands it, so this is
           // purely a visual cue.
-          <div
-            className="flex h-7 w-7 items-center justify-center rounded-md text-ink-500"
-            title="Sessions (hover to expand, click to pin)"
-            aria-hidden="true"
+          <button
+            type="button"
+            className="btn-ghost px-1.5"
+            title={compact ? "Open sessions" : "Pin sessions panel open"}
+            aria-label={compact ? "Open sessions" : "Pin sessions panel open"}
+            onClick={() => (compact ? setOverlayOpen(true) : setPinned(true))}
           >
             <IconStack className="h-4 w-4" />
-          </div>
+          </button>
         )}
       </header>
 
@@ -155,10 +186,10 @@ export function SessionsSidebar(props: {
               <button
                 key={s.session_id}
                 type="button"
-                onClick={() => props.onSelect(s.session_id)}
+                onClick={() => selectSession(s.session_id)}
                 title={s.display_name}
                 className={clsx(
-                  "flex h-7 w-8 shrink-0 items-center justify-center rounded-md border text-[10px] font-semibold transition-colors",
+                  "flex h-7 w-8 shrink-0 items-center justify-center rounded-md border text-[12px] font-semibold transition-colors",
                   isActive
                     ? "border-brand-500 bg-surface text-brand-600 shadow-card"
                     : "border-transparent text-ink-500 hover:border-ink-200 hover:bg-surface",
@@ -217,7 +248,7 @@ export function SessionsSidebar(props: {
                   activeSid={props.activeSid}
                   projects={props.projects}
                   sessionProjectById={props.sessionProjectById}
-                  onSelectSession={props.onSelect}
+                  onSelectSession={selectSession}
                   onRemoveSession={props.onRemove}
                   onMoveSession={props.onMoveSession}
                 />
@@ -230,7 +261,7 @@ export function SessionsSidebar(props: {
                     activeSid={props.activeSid}
                     projects={props.projects}
                     sessionProjectById={props.sessionProjectById}
-                    onSelectSession={props.onSelect}
+                    onSelectSession={selectSession}
                     onRemoveSession={props.onRemove}
                     onMoveSession={props.onMoveSession}
                   />
@@ -292,6 +323,7 @@ export function SessionsSidebar(props: {
         })}
       </div>
     </aside>
+    </div>
   );
 }
 
