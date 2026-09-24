@@ -7,21 +7,20 @@ import {
   useMemo,
   useState,
 } from "react";
+import type { PlotData } from "plotly.js";
 
 /**
- * Three named themes are applied by setting `data-theme` on <html>.
+ * Two named themes are applied by setting `data-theme` on <html>.
  *
- *   day           – light mode (default, matches the original app look).
- *   night         – dark mode.
- *   night-vision  – low-light theme dominated by red tones, similar to
- *                   astronomy / cockpit night-vision modes.
+ *   day    – light mode (default).
+ *   night  – dark mode.
  *
  * Each theme is a set of CSS custom properties defined in `styles.css`.
  * Tailwind's `ink-*` and `brand-*` color classes are wired to those
  * variables (see `tailwind.config.js`), so swapping `data-theme` instantly
  * re-colors the entire app without needing to touch individual components.
  */
-export type ThemeName = "day" | "night" | "night-vision";
+export type ThemeName = "day" | "night";
 
 export interface ThemeOption {
   id: ThemeName;
@@ -32,20 +31,14 @@ export interface ThemeOption {
 export const THEMES: readonly ThemeOption[] = [
   { id: "day", label: "Day", description: "Light mode" },
   { id: "night", label: "Night", description: "Dark mode" },
-  {
-    id: "night-vision",
-    label: "Night Vision",
-    description: "Low-light dark red",
-  },
 ] as const;
 
 const STORAGE_KEY = "mfp.theme";
 const DEFAULT_THEME: ThemeName = "day";
 
 function isThemeName(value: unknown): value is ThemeName {
-  return (
-    value === "day" || value === "night" || value === "night-vision"
-  );
+  // A stored "night-vision" (theme removed 2026-09) is not a ThemeName, so it falls back to day.
+  return value === "day" || value === "night";
 }
 
 function readInitialTheme(): ThemeName {
@@ -115,6 +108,23 @@ export interface PlotlyThemeColors {
   zerolineColor: string;
   /** Ordered trace colorway — use as Plotly layout.colorway */
   colorway: string[];
+  /** Plotly layout.font.color for on-screen charts; undefined keeps Plotly's default (day). */
+  screenFontColor: string | undefined;
+}
+
+// Light trace colour for night. The old stored defaults below are near-black, which is
+// invisible on the night plot background.
+export const NIGHT_TRACE_COLOR = "#b0c6ff";
+const DARK_TRACE_DEFAULTS = new Set(["#1e2636", "#323c50"]);
+
+export function themeTraceColor(stored: string, theme: ThemeName): string {
+  return theme === "night" && DARK_TRACE_DEFAULTS.has(stored.toLowerCase()) ? NIGHT_TRACE_COLOR : stored;
+}
+
+// Plotly supports trace `meta` but its typings omit it. Figure export reads meta.exportColor so a
+// trace drawn in a theme colour on screen is exported in its own colour.
+export function exportColorMeta(color: string): Partial<PlotData> {
+  return { meta: { exportColor: color } } as Partial<PlotData>;
 }
 
 /**
@@ -137,7 +147,7 @@ export const DEFAULT_PLOTLY_CONFIG = {
   modeBarButtonsToRemove: ["toImage" as const],
 };
 
-const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
+export const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
   day: {
     plot_bgcolor: "#ffffff",
     paper_bgcolor: "#ffffff",
@@ -146,28 +156,21 @@ const PLOTLY_THEME_COLORS: Record<ThemeName, PlotlyThemeColors> = {
     legendBg: "rgba(255,255,255,0.88)",
     zerolineColor: "#b6c4da",
     colorway: [...OKABE_ITO_PALETTE],
+    screenFontColor: undefined,
   },
   night: {
-    plot_bgcolor: "#001a37",
-    paper_bgcolor: "#001a37",
+    plot_bgcolor: "#060e20",
+    paper_bgcolor: "#060e20",
     fontColor: "#d9e6ff",
     gridColor: "#002042",
     legendBg: "rgba(0,26,55,0.88)",
     zerolineColor: "#284974",
     colorway: ["#56B4E9", "#E69F00", "#5EEAD4", "#FDA4AF", "#FCD34D", "#C4B5FD", "#67E8F9", "#FFFFFF"],
-  },
-  "night-vision": {
-    plot_bgcolor: "#100505",
-    paper_bgcolor: "#100505",
-    fontColor: "#ffaaa5",
-    gridColor: "#1a0808",
-    legendBg: "rgba(16,5,5,0.88)",
-    zerolineColor: "#3c1616",
-    colorway: ["#FF6B6B", "#FFB347", "#FFEAA7", "#FF9F80", "#E8A0BF", "#AFF8D8"],
+    screenFontColor: "#d9e6ff",
   },
 };
 
-export function usePlotlyTheme(): PlotlyThemeColors {
+export function usePlotlyTheme(): PlotlyThemeColors & { theme: ThemeName } {
   const { theme } = useTheme();
-  return PLOTLY_THEME_COLORS[theme];
+  return useMemo(() => ({ ...PLOTLY_THEME_COLORS[theme], theme }), [theme]);
 }

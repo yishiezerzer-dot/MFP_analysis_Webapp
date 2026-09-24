@@ -19,9 +19,9 @@ export function PageHeaderContent({
   return (
     <div className="flex min-h-12 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-4 py-1.5">
       <div className="min-w-0 flex items-baseline gap-2.5">
-        <h1 className="truncate text-[14px] font-semibold tracking-tight text-ink-900">{title}</h1>
+        <h1 className="text-page-title truncate">{title}</h1>
         {subtitle !== undefined && (
-          <span className="text-[12px] text-ink-500 truncate">{subtitle}</span>
+          <span className="text-caption truncate">{subtitle}</span>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">

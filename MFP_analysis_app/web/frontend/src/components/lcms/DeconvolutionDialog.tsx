@@ -169,7 +169,7 @@ export function DeconvolutionDialog({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
               disabled={!result || result.components.length === 0}
               onClick={handleExportCsv}
             >
@@ -210,7 +210,7 @@ export function DeconvolutionDialog({
           <div className="flex flex-col">
             <div className="flex items-center justify-between">
               <span className="label text-xs">Tolerance</span>
-              <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-[10px]">
+              <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-[12px]">
                 <button
                   type="button"
                   className={`rounded px-1 py-0.5 font-semibold transition-colors ${
@@ -274,7 +274,7 @@ export function DeconvolutionDialog({
                   Deconvoluting…
                 </>
               ) : (
-                "⚛ Run Deconvolution"
+                "Run deconvolution"
               )}
             </button>
           </div>
@@ -290,11 +290,11 @@ export function DeconvolutionDialog({
         {/* Zero-Charge True Mass Spectrum */}
         <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-600">
+            <h4 className="text-section">
               Zero-Charge True Mass Spectrum (Deconvoluted M, Da)
             </h4>
             {result && result.components.length > 0 && (
-              <span className="text-[11px] text-ink-500">
+              <span className="text-[12px] text-ink-500">
                 Dominant mass: <strong>{result.components[0].mass.toFixed(2)} Da</strong>
               </span>
             )}
@@ -349,8 +349,8 @@ export function DeconvolutionDialog({
                 }}
               />
             ) : (
-              <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm text-ink-400">
-                <span>Click &ldquo;⚛ Run Deconvolution&rdquo; above to calculate the zero-charge true mass spectrum.</span>
+              <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm text-ink-500">
+                <span>Click &ldquo;Run deconvolution&rdquo; above to calculate the zero-charge true mass spectrum.</span>
               </div>
             )}
           </div>
@@ -359,7 +359,7 @@ export function DeconvolutionDialog({
         {/* Deconvoluted Components Table */}
         {result && result.components.length > 0 && (
           <div className="flex flex-col gap-1">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-600">
+            <h4 className="text-section">
               Deconvoluted Mass Components ({result.components.length})
             </h4>
             <div className="max-h-[280px] overflow-auto rounded-md border border-ink-200">
@@ -395,11 +395,11 @@ export function DeconvolutionDialog({
                         </td>
                         <td className="px-2.5 py-2 font-medium">
                           <span
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                            className={`rounded px-1.5 py-0.5 text-[12px] font-semibold ${
                               comp.score >= 0.8
-                                ? "bg-emerald-100 text-emerald-800"
+                                ? "bg-success-surface text-success-fg"
                                 : comp.score >= 0.6
-                                  ? "bg-amber-100 text-amber-800"
+                                  ? "bg-warning-surface text-warning-fg"
                                   : "bg-ink-100 text-ink-700"
                             }`}
                           >
@@ -412,7 +412,7 @@ export function DeconvolutionDialog({
                             {comp.charge_states.map((cs) => (
                               <span
                                 key={cs.charge}
-                                className="inline-flex items-baseline gap-0.5 rounded bg-ink-100 px-1 py-0.5 text-[10px] font-mono"
+                                className="inline-flex items-baseline gap-0.5 rounded bg-ink-100 px-1 py-0.5 text-[12px] font-mono"
                                 title={`Theoretical m/z: ${cs.theoretical_mz.toFixed(4)}, Err: ${cs.error_ppm.toFixed(1)} ppm`}
                               >
                                 <strong>+{cs.charge}:</strong> {cs.observed_mz.toFixed(2)}
@@ -423,7 +423,7 @@ export function DeconvolutionDialog({
                         <td className="px-2.5 py-2 text-right">
                           <button
                             type="button"
-                            className="rounded border border-ink-200 bg-surface px-2 py-1 text-[11px] font-medium text-ink-700 shadow-sm hover:bg-ink-50"
+                            className="rounded border border-ink-200 bg-surface px-2 py-1 text-[12px] font-medium text-ink-700 shadow-sm hover:bg-ink-50"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleCreateComponentEics(comp);

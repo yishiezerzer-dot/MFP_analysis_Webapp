@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { LayoutTemplate, Palette, Ruler, Tags } from "lucide-react";
+
+const ICON = { size: 15, strokeWidth: 1.8, "aria-hidden": true } as const;
 import clsx from "clsx";
 import {
   DEFAULT_OVERLAY_LABEL_SETTINGS,
@@ -145,16 +148,16 @@ export function SinglePlotDesignDialog({
 
   const hasLabels = graphId === "spectrum" || graphId === "uv";
   const tabs = [
-    { id: "layout" as const, label: "Layout & Titles", icon: "📐" },
-    { id: "traces" as const, label: "Traces & Overlays", icon: "🎨" },
-    ...(hasLabels ? [{ id: "labels" as const, label: "Peak Labels", icon: "🏷️" }] : []),
-    { id: "axes" as const, label: "Axes & Limits", icon: "📏" },
+    { id: "layout" as const, label: "Layout & Titles", icon: <LayoutTemplate {...ICON} /> },
+    { id: "traces" as const, label: "Traces & Overlays", icon: <Palette {...ICON} /> },
+    ...(hasLabels ? [{ id: "labels" as const, label: "Peak Labels", icon: <Tags {...ICON} /> }] : []),
+    { id: "axes" as const, label: "Axes & Limits", icon: <Ruler {...ICON} /> },
   ];
   const [activeTab, setActiveTab] = useState<"layout" | "traces" | "labels" | "axes">("layout");
 
   return (
     <Modal
-      title={`🎨 ${meta.title} Design`}
+      title={`${meta.title} design`}
       onClose={onClose}
       width="max-w-2xl"
       footer={
@@ -197,7 +200,7 @@ export function SinglePlotDesignDialog({
             )}
             onClick={() => setActiveTab(t.id)}
           >
-            <span>{t.icon}</span>
+            {t.icon}
             <span>{t.label}</span>
           </button>
         ))}
@@ -287,7 +290,7 @@ export function SinglePlotDesignDialog({
         <div className={activeTab === "traces" ? undefined : "hidden"}>
         {(graphId === "tic" || graphId === "uv" || graphId === "spectrum") && (
           <GroupBox title="Overlay & Multi-Trace Settings">
-            <p className="mb-2 text-[11px] text-ink-500">
+            <p className="mb-2 text-[12px] text-ink-500">
               Control visualization modes, stacking, opacity, and peak alignment when multiple traces/files are compared.
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -404,7 +407,7 @@ export function SinglePlotDesignDialog({
           ((overlaySessions && overlaySessions.length > 0) ||
             (overlayTraceNames && overlayTraceNames.length > 0)) && (
             <GroupBox title="Overlay Peak Labels">
-              <p className="mb-2.5 text-[11px] text-ink-500">
+              <p className="mb-2.5 text-[12px] text-ink-500">
                 Customize the orientation, box, font size, and color of overlaid peak labels.
               </p>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -487,7 +490,7 @@ export function SinglePlotDesignDialog({
         {((overlaySessions && overlaySessions.length > 0) ||
           (overlayTraceNames && overlayTraceNames.length > 0)) && (
           <GroupBox title="Overlay Trace Colors">
-            <p className="mb-2.5 text-[11px] text-ink-500">
+            <p className="mb-2.5 text-[12px] text-ink-500">
               Customize line/bar colors and peak label colors for each overlaid trace.
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -662,7 +665,7 @@ export function SinglePlotDesignDialog({
               onChange={(value) => updateAxis({ yMax: value })}
             />
           </div>
-          <p className="mt-1 text-[11px] text-ink-500">
+          <p className="mt-1 text-[12px] text-ink-500">
             Leave blank to allow Plotly to dynamically auto-scale to visible data.
           </p>
         </GroupBox>
@@ -708,7 +711,7 @@ export function SinglePlotDesignDialog({
         <div className={activeTab === "labels" ? undefined : "hidden"}>
         {graphId === "spectrum" && (
           <GroupBox title="Polymer Match Labels">
-            <p className="mb-2.5 text-[11px] text-ink-500">
+            <p className="mb-2.5 text-[12px] text-ink-500">
               Customize the orientation, box, font size, and color of matched polymer peak labels.
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

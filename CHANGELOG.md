@@ -23,6 +23,23 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **UI refresh, stage 1 (shared look + LCMS).** Calmer, easier-to-read interface:
+  - neutral grey day theme and IBM Plex Sans; text is at least 12 px (13 px body);
+  - line icons instead of emoji; one filled button per area, with the rest quiet;
+  - status badges now meet contrast minimums (the green badge was 1.9:1);
+  - LCMS: chart cards show a title plus one grey status line, and the dataset details form one slim row;
+  - LCMS tools panel: "Primary Actions" merged into it (duplicate EIC and m/z buttons removed), tabs renamed Analysis / Display, fixed at 290 px with no sideways scrolling;
+  - laptop screens (below 1600 px): the side menu and LCMS session list collapse to slim strips that open over the content;
+  - MS1 spectrum: the x-axis now fits the peaks instead of running to the scan limit, and overlapping peak labels are hidden until you zoom in;
+  - on-screen axes show ×10ⁿ.
+
+  **Not changed:**
+  - analysis results, saved sessions and workspaces;
+  - exported figures: they keep their colours, fonts and e-notation;
+  - your own chart colours, and day-theme chart line colours.
+
+  **Night theme:** chart lines and text are now visible, and filled buttons are readable (they were 1.7:1). The **night-vision theme was removed**; if you had it selected, the app opens in day.
+
 - **Polymer Studio and Polymer Match dialog now offer the same settings.** The Studio gained per-bond delta, max DP, min relative intensity and the small-oligomer preset; tolerance, unit, max DP and min intensity now sit above the tabs so they are always visible. The dialog gained custom adducts (previously Studio-only). Both are built from the same sections, and a test checks they expose identical controls. "Reset" is now described correctly: it restores your saved defaults, not factory defaults.
 
 - **Operations (plan 6.5):** the server snapshots its SQLite databases to `<data>/backups` once a day (newest 7 kept); `python -m app.backup OUT.tar.gz` writes a full archive (databases + uploads) for an off-site copy. The Docker image sets `MFP_DATA_DIR=/data`, so LCMS index caches now also persist on the Railway volume instead of being rebuilt after each deploy. Server logs are timestamped single lines. Hosting stays public on the Railway link (decision recorded in `plan.md`).

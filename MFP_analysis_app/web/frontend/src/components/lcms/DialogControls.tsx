@@ -45,8 +45,8 @@ export function Modal({
 
 export function GroupBox({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <fieldset className="rounded-md border border-ink-200 bg-surface p-3">
-      <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500">
+    <fieldset className="min-w-0 rounded-md border border-ink-200 bg-surface p-3">
+      <legend className="text-section px-1">
         {title}
       </legend>
       <div className="flex flex-col gap-2">{children}</div>

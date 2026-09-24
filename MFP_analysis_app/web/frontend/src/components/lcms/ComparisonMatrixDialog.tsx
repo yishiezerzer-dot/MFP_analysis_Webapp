@@ -69,7 +69,7 @@ export function ComparisonMatrixDialog({
           </span>
           <div className="flex items-center gap-2">
             <button
-              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
               disabled={groups.length === 0}
               onClick={() =>
                 void onExportCsv(rows, {
@@ -156,7 +156,7 @@ export function ComparisonMatrixDialog({
                     <tr key={group.id}>
                       <td className="sticky left-0 z-10 max-w-[260px] bg-surface px-2 py-1.5">
                         <div className="truncate font-medium text-ink-800" title={group.label}>{group.label}</div>
-                        {group.annotation ? <div className="truncate text-[11px] text-ink-500">{group.annotation}</div> : null}
+                        {group.annotation ? <div className="truncate text-[12px] text-ink-500">{group.annotation}</div> : null}
                       </td>
                       <td className="px-2 py-1.5 font-mono">{group.mz.toFixed(4)}</td>
                       <td className="px-2 py-1.5 font-mono" title={`RT range ${group.rtMin.toFixed(3)}–${group.rtMax.toFixed(3)}`}>{formatRtRange(group)}</td>
@@ -170,7 +170,7 @@ export function ComparisonMatrixDialog({
                               <span>{formatCellValue(cell, maxValue) || "-"}</span>
                               {extra > 0 ? (
                                 <span
-                                  className="rounded bg-amber-100 px-1 text-[10px] text-amber-800"
+                                  className="rounded bg-warning-surface px-1 text-[12px] text-warning-fg"
                                   title={`${extra} additional row${extra === 1 ? "" : "s"} matched this (group, sample)`}
                                 >
                                   +{extra}
@@ -178,7 +178,7 @@ export function ComparisonMatrixDialog({
                               ) : null}
                             </div>
                             {cell && normalizeRows ? (
-                              <div className="text-[11px] text-ink-400">
+                              <div className="text-[12px] text-ink-500">
                                 {valueFor(cell.row).toExponential(2)}
                               </div>
                             ) : null}

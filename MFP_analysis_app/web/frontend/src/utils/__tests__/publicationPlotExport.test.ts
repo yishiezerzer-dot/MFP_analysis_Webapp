@@ -12,7 +12,12 @@ import {
   PUBLICATION_WIDTH_PRESETS,
   pxToLogicalMm,
   sanitizeAnnotation,
+  buildPublicationLayout,
+  clonePlotData,
+  publicationExportPixels as pixelsFor,
 } from "../publicationPlotExport";
+import { PLOTLY_THEME_COLORS } from "../../theme/ThemeProvider";
+import type { Data, Layout } from "plotly.js";
 
 describe("publication plot export sizing", () => {
   it("uses CSS pixels for logical Plotly layout size", () => {
@@ -170,5 +175,35 @@ describe("publication plot export sizing", () => {
     expect(clean).not.toHaveProperty("_arrowpath");
     expect(clean).not.toHaveProperty("_rect");
     expect(clean).not.toHaveProperty("_textBBox");
+  });
+});
+
+describe("exports ignore on-screen theme styling", () => {
+  const pixels = pixelsFor({ widthMm: 85, heightMm: 60, dpi: 300, format: "png", legendFontSize: 8 } as never);
+
+  it("restores a trace's own colour when the screen showed a theme colour", () => {
+    const [trace] = clonePlotData(
+      [{ type: "scatter", line: { color: "#b0c6ff" }, meta: { exportColor: "#1e2636" } } as Data],
+      "png",
+    ) as Array<{ line: { color: string } }>;
+    expect(trace.line.color).toBe("#1e2636");
+  });
+
+  it("never exports the night text colour", () => {
+    const night = PLOTLY_THEME_COLORS.night.fontColor;
+    for (const current of [true, false]) {
+      const layout = buildPublicationLayout({ font: { size: 12, color: night } } as Partial<Layout>, undefined, pixels, 8, undefined, current);
+      expect((layout.font as { color?: string }).color).not.toBe(night);
+    }
+  });
+
+  it("keeps e-notation axis numbers in exports", () => {
+    const layout = buildPublicationLayout({ yaxis: { exponentformat: "power" } } as Partial<Layout>, undefined, pixels, 8, undefined, true);
+    expect((layout.yaxis as { exponentformat?: string }).exponentformat).toBe("e");
+  });
+
+  it("leaves day styling untouched", () => {
+    const layout = buildPublicationLayout({ font: { size: 12, color: "#0d1322" } } as Partial<Layout>, undefined, pixels, 8, undefined, true);
+    expect((layout.font as { color?: string }).color).toBe("#0d1322");
   });
 });

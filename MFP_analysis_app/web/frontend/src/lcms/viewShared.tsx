@@ -1,4 +1,6 @@
 import { DependencyList, useEffect, useRef, useState } from "react";
+import clsx from "clsx";
+import type { LucideIcon } from "lucide-react";
 import type { PlotlyHTMLElement } from "plotly.js";
 import { LCMSEICData, LCMSSessionSummary, SpectrumData, SpectrumLabel, UVChromatogramResponse } from "../api";
 import { type LCMSFeatureRow, type LCMSEICPlot, type PolymerUiSettings } from "./analysis";
@@ -903,3 +905,110 @@ export function filterIgnoredRegionSpectrum(
 }
 
 // --- Main view ---------------------------------------------------------------
+
+export const ICON_PROPS = { size: 15, strokeWidth: 1.8, "aria-hidden": true } as const;
+
+// Quiet card-toolbar action: line icon + label, no border. `active` marks a toggled-on state.
+export function ToolbarButton({
+  icon: Icon,
+  label,
+  title,
+  onClick,
+  active,
+  disabled,
+}: {
+  icon: LucideIcon;
+  label: string;
+  title?: string;
+  onClick: () => void;
+  active?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className={clsx(
+        "btn-ghost whitespace-nowrap px-2 py-1 disabled:cursor-not-allowed disabled:opacity-40",
+        active && "bg-brand-50 text-brand-800 hover:bg-brand-100",
+      )}
+      title={title}
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <Icon {...ICON_PROPS} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+// Card title plus one grey status line ("ESI+ · 1,554 points · RT 4.69 min") instead of chips.
+export function ChartCardTitle({ title, status }: { title: string; status: Array<string | false | null | undefined> }) {
+  const line = status.filter(Boolean).join(" · ");
+  return (
+    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <h3 className="text-card-title whitespace-nowrap">{title}</h3>
+      {line && <span className="text-caption min-w-0 truncate">{line}</span>}
+    </div>
+  );
+}
+
+// Peaks below this fraction of the base peak don't widen the default m/z window: centroid lists
+// carry noise out to the scan limit (e.g. data ends near 300 but the axis ran to 1500).
+const RANGE_PEAK_FRACTION = 0.005;
+
+export function spectrumDefaultRange(
+  mz: ArrayLike<number>,
+  intensity: ArrayLike<number>,
+  keepMz: number[] = [],
+): [number, number] | undefined {
+  let base = 0;
+  for (let i = 0; i < intensity.length; i++) base = Math.max(base, Math.abs(intensity[i]));
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < mz.length; i++) {
+    if (base > 0 && Math.abs(intensity[i]) >= base * RANGE_PEAK_FRACTION) {
+      lo = Math.min(lo, mz[i]);
+      hi = Math.max(hi, mz[i]);
+    }
+  }
+  for (const m of keepMz) {
+    lo = Math.min(lo, m);
+    hi = Math.max(hi, m);
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return undefined;
+  const span = hi > lo ? hi - lo : Math.max(1, hi * 0.1);
+  return [Math.max(0, lo - span * 0.05), hi + span * 0.1];
+}
+
+export interface LabelBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  priority: number;
+  pinned: boolean;
+}
+
+// Greedy placement in screen pixels: pinned labels first, then by priority (ties keep list order);
+// a label is hidden if its box overlaps one already placed.
+export function visibleLabelMask(boxes: LabelBox[]): boolean[] {
+  const order = boxes
+    .map((b, i) => i)
+    .sort((a, b) =>
+      boxes[a].pinned !== boxes[b].pinned ? (boxes[a].pinned ? -1 : 1) : boxes[b].priority - boxes[a].priority || a - b,
+    );
+  const placed: LabelBox[] = [];
+  const visible = boxes.map(() => false);
+  for (const i of order) {
+    const b = boxes[i];
+    const hit = placed.some(
+      (o) => Math.abs(o.x - b.x) * 2 < o.width + b.width && Math.abs(o.y - b.y) * 2 < o.height + b.height,
+    );
+    if (b.pinned || !hit) {
+      visible[i] = true;
+      placed.push(b);
+    }
+  }
+  return visible;
+}

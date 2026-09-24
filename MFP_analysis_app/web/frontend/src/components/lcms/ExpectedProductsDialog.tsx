@@ -185,7 +185,7 @@ export function ExpectedProductsDialog({
           <div className="self-end pb-2 text-xs text-ink-500">
             {matchedCount} matched / {rows.length} candidates
             {truncated && (
-              <span className="ml-2 rounded bg-amber-50 px-1.5 py-0.5 text-amber-800">
+              <span className="ml-2 rounded bg-warning-surface px-1.5 py-0.5 text-warning-fg">
                 showing first {VISIBLE_ROW_CAP}
               </span>
             )}
@@ -197,7 +197,7 @@ export function ExpectedProductsDialog({
               </span>
             )}
             <button
-              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-400"
+              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
               onClick={downloadCsv}
               disabled={rows.length === 0 || !spectrum}
             >
@@ -205,7 +205,7 @@ export function ExpectedProductsDialog({
             </button>
             <div className="flex items-center gap-1.5">
               <button
-                className="rounded-md border border-brand-300 bg-surface px-2 py-1 text-xs text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:text-ink-400"
+                className="rounded-md border border-brand-300 bg-surface px-2 py-1 text-xs text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:text-ink-500"
                 onClick={() => void downloadAllScansCsv()}
                 disabled={exportingAllScans || !activeSid || !tic}
                 title={`Export matched products from all TIC scans above ${allScansThresholdPct}% of max TIC intensity`}
@@ -252,10 +252,10 @@ export function ExpectedProductsDialog({
                 {visibleRows.map((row) => {
                   const mzForEic = row.observedMz ?? row.expectedMz;
                   return (
-                    <tr key={row.id} className={row.observedMz == null ? "text-ink-400" : "text-ink-700"}>
+                    <tr key={row.id} className={row.observedMz == null ? "text-ink-500" : "text-ink-700"}>
                       <td className="max-w-[220px] px-2 py-1.5">
                         <div className="truncate font-medium">{row.composition}</div>
-                        {row.variant ? <div className="text-[11px] text-ink-500">{row.variant}</div> : null}
+                        {row.variant ? <div className="text-[12px] text-ink-500">{row.variant}</div> : null}
                       </td>
                       <td className="px-2 py-1.5 font-mono">{row.ion}</td>
                       <td className="px-2 py-1.5 font-mono">{row.expectedMz.toFixed(4)}</td>

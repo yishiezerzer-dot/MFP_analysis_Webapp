@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -13,25 +13,24 @@
  * space-separated triplets so `<alpha-value>` syntax keeps working for
  * /opacity modifiers like `bg-ink-50/50`.
  *
- *   day           – light mode (default).
- *   night         – deep blue-black dark mode, inspired by precision lab
- *                   instrument UIs and tools like Linear / Vercel dashboard.
- *   night-vision  – very dark theme dominated by red tones for low-light
- *                   viewing in dark lab environments.
+ *   day    – light mode (default), neutral greys.
+ *   night  – deep blue-black dark mode, inspired by precision lab
+ *            instrument UIs and tools like Linear / Vercel dashboard.
  * ------------------------------------------------------------------------- */
 
 :root,
 [data-theme="day"] {
-  --ink-50:  246 248 251;
-  --ink-100: 235 239 246;
-  --ink-200: 214 222 234;
-  --ink-300: 182 196 214;
-  --ink-400: 135 152 174;
-  --ink-500:  88 107 134;
-  --ink-600:  62  78 104;
-  --ink-700:  44  57  80;
-  --ink-800:  27  36  54;
-  --ink-900:  13  19  34;
+  /* Neutral grey ramp (no blue cast). 400 is for borders/disabled only, never text. */
+  --ink-50:  250 250 250;
+  --ink-100: 244 244 245;
+  --ink-200: 228 228 231;
+  --ink-300: 212 212 216;
+  --ink-400: 161 161 170;
+  --ink-500:  99  99 109;
+  --ink-600:  82  82  91;
+  --ink-700:  63  63  70;
+  --ink-800:  39  39  42;
+  --ink-900:  24  24  27;
 
   --brand-50:  235 240 252;
   --brand-100: 215 226 248;
@@ -44,9 +43,11 @@
   --brand-800:  38  55  97;
   --brand-900:  25  38  69;
 
-  --canvas: 241 244 248;
+  --canvas: 244 244 245;
   --surface: 255 255 255;
-  --surface-raised: 252 253 255;
+  --surface-raised: 250 250 250;
+  /* Text on filled brand buttons */
+  --on-brand: 255 255 255;
 
   /* Semantic status tokens */
   --success:          16 185 129;
@@ -57,6 +58,11 @@
   --danger-surface:  254 242 242;
   --info:             59 130 246;
   --info-surface:    239 246 255;
+  /* Readable text colours on the matching *-surface (all >= 4.5:1) */
+  --success-fg:   4 120  87;
+  --warning-fg: 180  83   9;
+  --danger-fg:  185  28  28;
+  --info-fg:     50  72 126;
 
   color-scheme: light;
 }
@@ -101,46 +107,12 @@
   --danger-surface:   69  10  10;
   --info:            147 197 253;
   --info-surface:     23  37  84;
-
-  color-scheme: dark;
-}
-
-[data-theme="night-vision"] {
-  --ink-50:   16   5   5;
-  --ink-100:  26   8   8;
-  --ink-200:  55  16  16;
-  --ink-300:  90  26  26;
-  --ink-400: 144  52  52;
-  --ink-500: 190  74  74;
-  --ink-600: 216  96  96;
-  --ink-700: 232 116 116;
-  --ink-800: 246 138 138;
-  --ink-900: 255 170 165;
-
-  --brand-50:   38   9   9;
-  --brand-100:  58  14  14;
-  --brand-200:  88  22  22;
-  --brand-300: 126  38  38;
-  --brand-400: 224  76  76;
-  --brand-500: 205  56  56;
-  --brand-600: 172  38  38;
-  --brand-700: 136  26  26;
-  --brand-800:  96  18  18;
-  --brand-900:  68  12  12;
-
-  --canvas:          7   2   2;
-  --surface:        16   5   5;
-  --surface-raised: 26   8   8;
-
-  /* Semantic status tokens — red-tinted for night-vision environment */
-  --success:         74 222 128;
-  --success-surface:  6  44  22;
-  --warning:         251 191  36;
-  --warning-surface:  50  28   2;
-  --danger:          252 165 165;
-  --danger-surface:   50   8   8;
-  --info:            253 186 116;
-  --info-surface:     46  24   4;
+  --success-fg: 110 231 183;
+  --warning-fg: 252 211  77;
+  --danger-fg:  252 165 165;
+  --info-fg:    176 198 255;
+  /* Dark text on the pale night brand fill (white on it was 1.7:1) */
+  --on-brand:    11  21  48;
 
   color-scheme: dark;
 }
@@ -153,13 +125,11 @@
  * white. `text-white` is NOT overridden — button labels must stay white.
  * ------------------------------------------------------------------------- */
 
-[data-theme="night"] .bg-white,
-[data-theme="night-vision"] .bg-white {
+[data-theme="night"] .bg-white{
   background-color: rgb(var(--surface));
 }
 
-[data-theme="night"] .hover\:bg-white:hover,
-[data-theme="night-vision"] .hover\:bg-white:hover {
+[data-theme="night"] .hover\:bg-white:hover{
   background-color: rgb(var(--surface));
 }
 
@@ -174,8 +144,8 @@ body,
 }
 
 body {
-  font-family: 'Instrument Sans', 'DM Sans', system-ui, sans-serif;
-  font-size: 14px;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 13px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -193,26 +163,22 @@ body {
 }
 
 /* Subtle custom scrollbars in dark themes */
-[data-theme="night"] *,
-[data-theme="night-vision"] * {
+[data-theme="night"] *{
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--ink-300)) transparent;
 }
 
-[data-theme="night"] ::-webkit-scrollbar,
-[data-theme="night-vision"] ::-webkit-scrollbar {
+[data-theme="night"] ::-webkit-scrollbar{
   width: 6px;
   height: 6px;
 }
 
-[data-theme="night"] ::-webkit-scrollbar-thumb,
-[data-theme="night-vision"] ::-webkit-scrollbar-thumb {
+[data-theme="night"] ::-webkit-scrollbar-thumb{
   background-color: rgb(var(--ink-300));
   border-radius: 3px;
 }
 
-[data-theme="night"] ::-webkit-scrollbar-track,
-[data-theme="night-vision"] ::-webkit-scrollbar-track {
+[data-theme="night"] ::-webkit-scrollbar-track{
   background: transparent;
 }
 
@@ -220,33 +186,41 @@ body {
  * Design-system component classes
  * ------------------------------------------------------------------------- */
 
-/* Typography scale */
+/* Typography scale: 18 / 15 / 13 / 12. Nothing below 12 px. */
+.text-page-title {
+  @apply text-[18px] font-semibold leading-6 text-ink-900;
+}
+.text-card-title {
+  @apply text-[15px] font-semibold leading-5 text-ink-900;
+}
+.text-section {
+  @apply text-[12px] font-semibold leading-4 text-ink-600;
+}
+/* Legacy name for .text-section (was 10 px uppercase); kept until later stages migrate their views. */
 .text-heading {
-  @apply text-[10px] font-semibold tracking-[0.08em] uppercase text-ink-500;
-  font-family: 'Instrument Sans', sans-serif;
+  @apply text-section;
 }
 .text-body {
   @apply text-[13px] leading-5 text-ink-800;
 }
 .text-caption {
-  @apply text-[11px] leading-4 text-ink-500;
+  @apply text-[12px] leading-4 text-ink-500;
 }
 .text-mono-val {
   font-family: 'IBM Plex Mono', 'JetBrains Mono', 'Fira Mono', monospace;
-  @apply text-[12px] text-ink-600;
+  @apply text-[13px] text-ink-700;
 }
 
 /* Card */
 .card {
   @apply rounded-[6px] border border-ink-200/60 transition-shadow duration-150;
   background-color: rgb(var(--surface));
-  box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 2px 6px rgba(1,14,34,0.07);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.03), 0 1px 4px rgba(0,0,0,0.05);
 }
 .card:focus-within {
   @apply shadow-sm ring-1 ring-brand-500/25;
 }
-[data-theme="night"] .card,
-[data-theme="night-vision"] .card {
+[data-theme="night"] .card{
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.35);
 }
 
@@ -258,12 +232,12 @@ body {
 
 /* Buttons */
 .btn {
-  /* min-h-6: 24 px minimum target size (WCAG 2.2) even when a view shrinks padding/text */
-  @apply inline-flex min-h-6 items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[13px] font-medium leading-5 transition-colors cursor-pointer select-none;
+  /* min-h-7: 28 px target size even when a view shrinks padding/text */
+  @apply inline-flex min-h-7 items-center gap-1.5 rounded-[6px] px-3 py-1.5 text-[13px] font-medium leading-5 transition-colors cursor-pointer select-none;
 }
 
 .btn-primary {
-  @apply btn bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50;
+  @apply btn bg-brand-600 text-on-brand hover:bg-brand-700 active:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-50;
 }
 
 .btn-ghost {
@@ -271,8 +245,7 @@ body {
 }
 
 .btn-danger {
-  @apply btn border border-red-500/25 text-red-400 hover:bg-red-500/15 active:bg-red-500/20;
-  background-color: rgb(239 68 68 / 0.08);
+  @apply btn border border-danger/30 bg-danger-surface text-danger-fg hover:border-danger/60;
 }
 
 /* Section divider with label */
@@ -311,22 +284,21 @@ body {
   border-left: 2px solid rgb(var(--brand-500));
   padding-left: calc(0.625rem - 2px);
 }
-[data-theme="night"] .nav-item.active,
-[data-theme="night-vision"] .nav-item.active {
+[data-theme="night"] .nav-item.active{
   @apply bg-brand-500/15 text-brand-500;
 }
 
 /* Form elements */
 .label {
-  @apply text-[10px] font-semibold uppercase tracking-[0.06em] text-ink-500;
+  @apply text-[12px] font-medium text-ink-600;
 }
 
 .kbd {
-  @apply rounded-[4px] border border-ink-200 bg-ink-50 px-1.5 py-0.5 font-mono text-[11px] text-ink-600;
+  @apply rounded-[4px] border border-ink-200 bg-ink-50 px-1.5 py-0.5 font-mono text-[12px] text-ink-600;
 }
 
 .input {
-  @apply rounded-[6px] border border-ink-200 px-2.5 py-1.5 text-[13px] text-ink-900 outline-none placeholder:text-ink-400;
+  @apply rounded-[6px] border border-ink-200 px-2.5 py-1.5 text-[13px] text-ink-900 outline-none placeholder:text-ink-500;
   @apply transition-colors focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20;
   @apply disabled:cursor-not-allowed disabled:opacity-50;
   background-color: rgb(var(--surface));
@@ -346,26 +318,30 @@ body {
   @apply bg-white text-ink-900 shadow-sm;
 }
 
-[data-theme="night"] .pill-item.active,
-[data-theme="night-vision"] .pill-item.active {
+[data-theme="night"] .pill-item.active{
   background-color: rgb(var(--surface-raised));
 }
 
 /* Badge / chip */
 .badge {
-  @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium;
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium;
 }
 
-.badge-blue {
-  @apply badge bg-brand-500/15 text-brand-500;
+.badge-blue,
+.chip-accent {
+  @apply badge bg-brand-50 text-brand-800;
 }
 
 .badge-green {
-  @apply badge bg-emerald-500/15 text-emerald-400;
+  @apply badge bg-success-surface text-success-fg;
+}
+
+.badge-amber {
+  @apply badge bg-warning-surface text-warning-fg;
 }
 
 .badge-red {
-  @apply badge bg-red-500/15 text-red-400;
+  @apply badge bg-danger-surface text-danger-fg;
 }
 
 .badge-gray {
@@ -377,14 +353,14 @@ body {
   @apply inline-block h-2 w-2 rounded-full;
 }
 
-.status-dot.online { @apply bg-emerald-400; }
+.status-dot.online { @apply bg-success; }
 .status-dot.offline { @apply bg-ink-400; }
-.status-dot.warning { @apply bg-amber-400; }
+.status-dot.warning { @apply bg-warning; }
 
 /* Select chevron customization per theme */
 select.input {
   @apply appearance-none pr-7;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none' stroke='%2358678a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none' stroke='%2363636d' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 8px center;
   background-size: 14px 14px;
@@ -398,9 +374,6 @@ select.input:disabled {
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none' stroke='%238eacde' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
 }
 
-[data-theme="night-vision"] select.input {
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none' stroke='%23be4a4a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 8l5 5 5-5'/%3E%3C/svg%3E");
-}
 
 /* Panel / sidebar section backgrounds */
 .panel-section {
@@ -431,7 +404,7 @@ select.input:disabled {
 
 .data-table .mono {
   font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
-  @apply text-[11px] text-ink-700;
+  @apply text-[12px] text-ink-700;
 }
 
 /* Sidebar left-accent for active session items */

@@ -1,4 +1,5 @@
 import type { Config, Data, Layout, PlotlyHTMLElement } from "plotly.js";
+import { PLOTLY_THEME_COLORS } from "../theme/ThemeProvider";
 
 export type PublicationExportFormat = "svg" | "png";
 
@@ -236,7 +237,7 @@ export function sanitizeAnnotation(ann: unknown): Record<string, unknown> {
   return clean;
 }
 
-function buildPublicationLayout(
+export function buildPublicationLayout(
   sourceLayout: Partial<Layout> | undefined,
   fullLayout: Record<string, unknown> | undefined,
   pixels: PublicationExportPixels,
@@ -245,6 +246,10 @@ function buildPublicationLayout(
   isCurrentView?: boolean,
 ): Partial<Layout> {
   const source = cleanObjectTree(sourceLayout ?? {});
+  // Figures are always exported on white; the night theme's light text colour is screen-only.
+  if (isRecord(source.font) && source.font.color === PLOTLY_THEME_COLORS.night.screenFontColor) {
+    delete source.font.color;
+  }
   const sourceMargin = isRecord(source.margin) ? source.margin : {};
   const overrideMargin = isRecord(overrides?.margin) ? overrides.margin : {};
 
@@ -393,6 +398,9 @@ function exportAxis(
     cleanSource.autorange = false;
   }
 
+  // On screen axes show ×10ⁿ; exported figures keep the e-notation they have always used.
+  if (cleanSource.exponentformat === "power") cleanSource.exponentformat = "e";
+
   if (isCurrentView) {
     return {
       ...cleanSource,
@@ -424,13 +432,22 @@ function exportAxis(
   };
 }
 
-function clonePlotData(data: Data[], format: PublicationExportFormat, overrides?: Partial<Data>): Data[] {
+export function clonePlotData(data: Data[], format: PublicationExportFormat, overrides?: Partial<Data>): Data[] {
   return data.map((trace) => {
     // If trace has original _input, prefer it to bypass stale Plotly DOM bindings
     const sourceTrace = isRecord(trace) && isRecord((trace as unknown as { _input?: unknown })._input)
       ? (trace as unknown as { _input: unknown })._input
       : trace;
     const cloned = cleanObjectTree(sourceTrace) as Record<string, unknown>;
+
+    // A trace drawn in a theme colour on screen carries its own colour in meta.exportColor.
+    const exportColor = isRecord(cloned.meta) ? cloned.meta.exportColor : undefined;
+    if (typeof exportColor === "string") {
+      if (isRecord(cloned.line)) cloned.line = { ...cloned.line, color: exportColor };
+      if (isRecord(cloned.marker) && typeof cloned.marker.color === "string") {
+        cloned.marker = { ...cloned.marker, color: exportColor };
+      }
+    }
 
     if (format === "svg" && cloned.type === "scattergl") {
       cloned.type = "scatter";

@@ -52,7 +52,7 @@ export function SegmentedControl<T extends string>({
             }}
             className={clsx(
               "flex min-h-6 items-center justify-center gap-1.5 rounded-md font-medium transition-all select-none",
-              size === "xs" && "px-2 py-0.5 text-[11px]",
+              size === "xs" && "px-2 py-0.5 text-[12px]",
               size === "sm" && "px-2.5 py-1 text-xs",
               size === "md" && "px-3 py-1.5 text-sm",
               isSelected

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
+import { ChevronDown, Download, FileText, Image as ImageIcon, Monitor, PenTool } from "lucide-react";
 import { useStoredState } from "../hooks/useStoredState";
 import {
   clampPublicationDpi,
@@ -169,7 +170,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
             }}
           >
             <option value={CURRENT_VIEW_PRESET_ID}>
-              ⭐ Current View (1:1 Card)
+              Current view (1:1 card)
             </option>
             <optgroup label="ACS (JACS, Macromolecules)">
               {PUBLICATION_WIDTH_PRESETS.filter((p) => p.category === "ACS").map((preset) => (
@@ -305,19 +306,17 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
         <button
           type="button"
           className={clsx(
-            "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors shadow-xs whitespace-nowrap",
-            props.disabled
-              ? "border-ink-200 bg-surface text-ink-400 cursor-not-allowed opacity-50"
-              : isOpen
-                ? "border-brand-500 bg-brand-50 text-brand-700 ring-1 ring-brand-500"
-                : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
+            "btn-ghost whitespace-nowrap px-2 py-1",
+            props.disabled && "cursor-not-allowed opacity-40",
+            isOpen && "bg-brand-50 text-brand-800",
           )}
           disabled={props.disabled}
+          aria-expanded={isOpen}
           onClick={() => setIsOpen((prev) => !prev)}
         >
-          <span>📷</span>
+          <Download size={15} strokeWidth={1.8} aria-hidden />
           <span>Export</span>
-          <span className="text-[9px] text-ink-400">▾</span>
+          <ChevronDown size={13} strokeWidth={1.8} aria-hidden />
         </button>
       </Tooltip>
 
@@ -325,12 +324,12 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
         <div className="absolute right-0 top-full mt-1.5 z-50 w-[390px] max-w-[calc(100vw-1.5rem)] rounded-xl border border-ink-200 bg-surface p-3.5 shadow-xl text-xs text-ink-800 animate-in fade-in zoom-in-95 duration-100">
           <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-ink-200">
             <div className="flex items-center gap-1.5 font-semibold text-ink-900 text-[13px]">
-              <span>📷</span>
-              <span>Figure & Publication Export</span>
+              <Download size={15} strokeWidth={1.8} aria-hidden />
+              <span>Figure & publication export</span>
             </div>
             <button
               type="button"
-              className="text-ink-400 hover:text-ink-700 text-sm p-1 rounded transition-colors"
+              className="text-ink-500 hover:text-ink-700 text-sm p-1 rounded transition-colors"
               onClick={() => setIsOpen(false)}
               title="Close export panel"
             >
@@ -359,8 +358,8 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                 }));
               }}
             >
-              <span>🖥️</span>
-              <span>Current View (1:1)</span>
+              <Monitor size={15} strokeWidth={1.8} aria-hidden />
+              <span>Current view (1:1)</span>
             </button>
             <button
               type="button"
@@ -379,8 +378,8 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                 }));
               }}
             >
-              <span>📄</span>
-              <span>Journal Presets</span>
+              <FileText size={15} strokeWidth={1.8} aria-hidden />
+              <span>Journal presets</span>
             </button>
           </div>
 
@@ -392,17 +391,17 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                   <span className="font-semibold text-brand-900 text-xs flex items-center gap-1.5 whitespace-nowrap">
                     <span>Active Display</span>
                   </span>
-                  <span className="font-mono text-[11px] font-semibold text-brand-700 bg-white border border-brand-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
+                  <span className="font-mono text-[12px] font-semibold text-brand-700 bg-white border border-brand-200 px-2 py-0.5 rounded shadow-2xs whitespace-nowrap">
                     {cardWidthPx} × {cardHeightPx} px
                   </span>
                 </div>
-                <p className="text-[11px] text-brand-700 leading-relaxed">
+                <p className="text-[12px] text-brand-700 leading-relaxed">
                   Exact 1-to-1 card replica: matches card aspect ratio, active zoom, centroid sticks, and peak labels.
                 </p>
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-ink-600 mb-1">
+                <label className="block text-[12px] font-medium text-ink-600 mb-1">
                   Raster Resolution (PNG only)
                 </label>
                 <select
@@ -426,7 +425,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                   onClick={() => handleExport1to1("png")}
                   title={`Export 1:1 PNG at ${settings.dpi} DPI (${Math.round(cardWidthPx * (settings.dpi / 96))} × ${Math.round(cardHeightPx * (settings.dpi / 96))} px)`}
                 >
-                  <span>📷</span>
+                  <ImageIcon size={15} strokeWidth={1.8} aria-hidden />
                   <span>Export 1:1 PNG</span>
                 </button>
                 <button
@@ -435,7 +434,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                   onClick={() => handleExport1to1("svg")}
                   title="Export 1:1 Vector SVG (infinite resolution, vector peak sticks)"
                 >
-                  <span>📐</span>
+                  <PenTool size={15} strokeWidth={1.8} aria-hidden />
                   <span>Export 1:1 SVG</span>
                 </button>
               </div>
@@ -446,7 +445,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
           {activeTab === "journal" && (
             <div className="space-y-2.5">
               <div>
-                <label className="block text-[11px] font-medium text-ink-600 mb-1">
+                <label className="block text-[12px] font-medium text-ink-600 mb-1">
                   Journal Preset
                 </label>
                 <select
@@ -502,7 +501,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Width (mm)</label>
+                  <label className="block text-[12px] font-medium text-ink-600 mb-1">Width (mm)</label>
                   <input
                     type="number"
                     className="input w-full py-1 text-xs"
@@ -520,7 +519,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Height (mm)</label>
+                  <label className="block text-[12px] font-medium text-ink-600 mb-1">Height (mm)</label>
                   <input
                     type="number"
                     className="input w-full py-1 text-xs"
@@ -541,7 +540,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Resolution (DPI)</label>
+                  <label className="block text-[12px] font-medium text-ink-600 mb-1">Resolution (DPI)</label>
                   <select
                     className="input w-full py-1 text-xs"
                     value={settings.dpi}
@@ -555,7 +554,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-medium text-ink-600 mb-1">Legend font (pt)</label>
+                  <label className="block text-[12px] font-medium text-ink-600 mb-1">Legend font (pt)</label>
                   <input
                     type="number"
                     className="input w-full py-1 text-xs"
@@ -573,7 +572,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
                 </div>
               </div>
 
-              <div className="text-[11px] text-ink-500 pt-0.5 leading-snug">
+              <div className="text-[12px] text-ink-500 pt-0.5 leading-snug">
                 {describePublicationExport(settings)}
               </div>
 

@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { ChartLine } from "lucide-react";
 import clsx from "clsx";
 import { NumberSetting } from "./DialogControls";
 import { CustomUvLabelDraft } from "../../lcms/viewShared";
@@ -7,7 +8,7 @@ import { Check } from "./ToolsPanel";
 export function EmptyState(props: { onPick: () => void }) {
   return (
     <div className="card flex flex-col items-center justify-center gap-3 p-12 text-center">
-      <div className="text-4xl">📈</div>
+      <ChartLine size={40} strokeWidth={1.5} className="text-ink-500" aria-hidden />
       <div>
         <div className="text-lg font-semibold">Open an mzML or mzML.gz file to begin</div>
         <div className="text-sm text-ink-500">
@@ -40,7 +41,7 @@ export function StatusBar({
 }) {
   const sep = <span className="text-ink-300">·</span>;
   return (
-    <footer className="flex shrink-0 items-center justify-between border-t border-ink-200 bg-surface px-6 py-1.5 text-[11px] text-ink-500">
+    <footer className="flex shrink-0 items-center justify-between border-t border-ink-200 bg-surface px-6 py-1.5 text-[12px] text-ink-500">
       <span className="font-medium text-ink-700 truncate max-w-[220px]">
         {truncName || "No session loaded"}
       </span>
@@ -53,8 +54,8 @@ export function StatusBar({
       <span className="flex items-center gap-1.5">
         {uvAttached ? (
           <>
-            <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-            <span className="text-green-600">UV attached</span>
+            <span className="h-1.5 w-1.5 rounded-full bg-success" />
+            <span className="text-success-fg">UV attached</span>
           </>
         ) : (
           <span className="text-ink-300">No UV</span>
@@ -169,7 +170,7 @@ export function FindMzDialog({
             <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-xs">
               <button
                 type="button"
-                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
                   unit === "da" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
                 }`}
                 onClick={() => {
@@ -183,7 +184,7 @@ export function FindMzDialog({
               </button>
               <button
                 type="button"
-                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
                   unit === "ppm" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
                 }`}
                 onClick={() => {
@@ -334,7 +335,7 @@ export function EICDialog({
             <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-xs">
               <button
                 type="button"
-                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
                   unit === "da" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
                 }`}
                 onClick={() => {
@@ -348,7 +349,7 @@ export function EICDialog({
               </button>
               <button
                 type="button"
-                className={`rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
                   unit === "ppm" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
                 }`}
                 onClick={() => {

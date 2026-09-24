@@ -25,7 +25,7 @@ import {
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton, HelpShell } from "../help/HelpShell";
 import { getHelpModule } from "../help/registry";
-import { usePlotlyTheme } from "../theme/ThemeProvider";
+import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
 import { Tooltip } from "../components/Tooltip";
@@ -2660,7 +2660,8 @@ function SpectrumChart(props: {
       mode: "lines",
       x: spectrum.wn,
       y: spectrum.y,
-      line: { color: activeColor, width: props.graphSettings.lineWidth },
+      line: { color: themeTraceColor(activeColor, pt.theme), width: props.graphSettings.lineWidth },
+      ...exportColorMeta(activeColor),
       name: props.title,
       hovertemplate: "%{x:.1f} cm⁻¹<br>%{y:.4g}<extra></extra>",
     };

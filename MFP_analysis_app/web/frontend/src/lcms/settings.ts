@@ -23,7 +23,7 @@ export interface PolymerLabelSettings {
 
 export const DEFAULT_POLYMER_LABEL_SETTINGS: PolymerLabelSettings = {
   color: "#7c3aed",
-  fontSize: 10,
+  fontSize: 12,
   orientation: "horizontal",
   showBox: true,
   showArrow: true,
@@ -53,7 +53,7 @@ export interface OverlayLabelSettings {
 
 export const DEFAULT_OVERLAY_LABEL_SETTINGS: OverlayLabelSettings = {
   enabled: true,
-  fontSize: 10,
+  fontSize: 12,
   color: "#475569",
   useTraceColor: true,
   orientation: "horizontal",
@@ -145,7 +145,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
     frameMode: "half",
     showScaleBars: true,
     axis: { ...DEFAULT_AXIS_LIMITS },
-    labels: { enabled: false, fontSize: 10, color: "#46536a" },
+    labels: { enabled: false, fontSize: 12, color: "#46536a" },
   },
   uv: {
     title: "",
@@ -164,7 +164,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
     annotationConnectorColor: "#334155",
     annotationConnectorOpacity: 0.7,
     axis: { ...DEFAULT_AXIS_LIMITS },
-    labels: { enabled: false, fontSize: 10, color: "#46536a" },
+    labels: { enabled: false, fontSize: 12, color: "#46536a" },
   },
   spectrum: {
     title: "",
@@ -181,7 +181,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
     frameMode: "half",
     showScaleBars: true,
     axis: { ...DEFAULT_AXIS_LIMITS },
-    labels: { enabled: true, fontSize: 10, color: "#46536a" },
+    labels: { enabled: true, fontSize: 12, color: "#46536a" },
     polymerLabels: { ...DEFAULT_POLYMER_LABEL_SETTINGS },
   },
   eic: {
@@ -199,7 +199,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
     frameMode: "half",
     showScaleBars: true,
     axis: { ...DEFAULT_AXIS_LIMITS },
-    labels: { enabled: false, fontSize: 10, color: "#46536a" },
+    labels: { enabled: false, fontSize: 12, color: "#46536a" },
   },
   eicOverlay: {
     normalize: false,

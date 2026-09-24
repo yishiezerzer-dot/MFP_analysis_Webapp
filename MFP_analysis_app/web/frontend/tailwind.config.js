@@ -31,7 +31,7 @@ export default {
           900: "rgb(var(--brand-900) / <alpha-value>)",
         },
         // Surface / canvas semantic tokens — use these instead of bg-white
-        // so surfaces automatically adapt to all three themes.
+        // so surfaces automatically adapt to both themes.
         canvas:            "rgb(var(--canvas) / <alpha-value>)",
         surface:           "rgb(var(--surface) / <alpha-value>)",
         "surface-raised":  "rgb(var(--surface-raised) / <alpha-value>)",
@@ -44,11 +44,16 @@ export default {
         "danger-surface":  "rgb(var(--danger-surface) / <alpha-value>)",
         info:              "rgb(var(--info) / <alpha-value>)",
         "info-surface":    "rgb(var(--info-surface) / <alpha-value>)",
+        // Readable text on the matching *-surface, and text on filled brand buttons.
+        "success-fg":      "rgb(var(--success-fg) / <alpha-value>)",
+        "warning-fg":      "rgb(var(--warning-fg) / <alpha-value>)",
+        "danger-fg":       "rgb(var(--danger-fg) / <alpha-value>)",
+        "info-fg":         "rgb(var(--info-fg) / <alpha-value>)",
+        "on-brand":        "rgb(var(--on-brand) / <alpha-value>)",
       },
       fontFamily: {
         sans: [
-          "Instrument Sans",
-          "DM Sans",
+          "IBM Plex Sans",
           "system-ui",
           "sans-serif",
         ],
@@ -63,10 +68,10 @@ export default {
         ],
       },
       boxShadow: {
-        card: "0 1px 2px rgba(1, 14, 34, 0.04), 0 2px 4px rgba(1, 14, 34, 0.06)",
-        sm: "0 1px 2px rgba(1, 14, 34, 0.06)",
-        md: "0 4px 12px rgba(1, 14, 34, 0.10), 0 1px 3px rgba(1, 14, 34, 0.06)",
-        lg: "0 8px 24px rgba(1, 14, 34, 0.14), 0 2px 6px rgba(1, 14, 34, 0.08)",
+        card: "0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 4px rgba(0, 0, 0, 0.05)",
+        sm: "0 1px 2px rgba(0, 0, 0, 0.05)",
+        md: "0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05)",
+        lg: "0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06)",
       },
       backgroundOpacity: {
         8: "0.08",
