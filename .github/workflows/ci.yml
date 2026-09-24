@@ -41,7 +41,9 @@ jobs:
           node-version: "24"  # matches the npm 11 that wrote package-lock.json
           cache: npm
           cache-dependency-path: MFP_analysis_app/web/frontend/package-lock.json
-      - run: npm ci
+      # npm install, like the Dockerfile: the Windows-written lockfile lacks some Linux-only optional
+      # packages (@emnapi/*), which npm ci rejects; locked versions are still used.
+      - run: npm install --no-audit --no-fund
       - run: npm run lint
       - run: npm run test:run
 
