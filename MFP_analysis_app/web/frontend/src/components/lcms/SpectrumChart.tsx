@@ -8,7 +8,9 @@ import { PaperFigureExportToolbar } from "../PaperFigureExportToolbar";
 import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExportSettings, publicationFilenameSuffix, sanitizeFilenamePart } from "../../utils/publicationPlotExport";
 import { extractTopPeaks } from "../../lcms/analysis";
 import { DEFAULT_POLYMER_LABEL_SETTINGS, DEFAULT_OVERLAY_LABEL_SETTINGS, OVERLAY_PALETTE, type ChartSettings, type SpectrumOverlayMode } from "../../lcms/settings";
-import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, LCMSSpectrumOverlayTrace, cleanLabelText, formatRt, axisRange, axisTitle, axisFrame } from "../../lcms/viewShared";
+import { Atom, Hand, Hexagon, Palette, RotateCcw, RotateCw, ZoomIn } from "lucide-react";
+import { SegmentedControl } from "../common/SegmentedControl";
+import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, LCMSSpectrumOverlayTrace, cleanLabelText, formatRt, axisRange, axisTitle, axisFrame, ChartCardTitle, ICON_PROPS, ToolbarButton } from "../../lcms/viewShared";
 
 export function hexToRgba(hex: string, alpha: number): string {
   const clean = (hex || "#7c3aed").replace("#", "").trim();
@@ -503,80 +505,35 @@ export function SpectrumChart(props: {
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       {/* Tier 1: Title & Status Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 min-h-[28px]">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
-            <span>📊</span>
-            <span>{props.title ?? "MS1 Spectrum"}</span>
-          </h3>
-          {props.polarityBadge ? (
-            <span
-              className={clsx(
-                "rounded-md px-2 py-0.5 font-mono text-xs font-semibold whitespace-nowrap",
-                props.polarityBadge === "ESI+"
-                  ? "bg-blue-50 text-blue-700 border border-blue-200"
-                  : "bg-rose-50 text-rose-700 border border-rose-200",
-              )}
-            >
-              {props.polarityBadge}
-            </span>
-          ) : s ? (
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-700 whitespace-nowrap">
-              {s.meta.polarity === "positive" ? "ESI+" : s.meta.polarity === "negative" ? "ESI-" : s.meta.polarity ?? "ESI"}
-            </span>
-          ) : null}
-          {s && (
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
-              {s.meta.n_peaks.toLocaleString()} peaks
-            </span>
-          )}
-          {s?.meta.n_scans != null && (
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
-              {s.meta.n_scans.toLocaleString()} scans ({s.meta.merge_mode ?? "sum"})
-            </span>
-          )}
-          {(props.polymerEnabled || polymerLabelCount > 0) && (
-            <span className="rounded-md bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 text-xs font-semibold whitespace-nowrap">
-              {polymerLabelCount} polymer match{polymerLabelCount === 1 ? "" : "es"}
-            </span>
-          )}
-          {s?.meta.ignored_peak_count ? (
-            <span className="rounded-md bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 text-xs font-medium whitespace-nowrap">
-              ignored {s.meta.ignored_peak_count} peak{s.meta.ignored_peak_count === 1 ? "" : "s"}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {s?.meta.rt_start != null && s.meta.rt_end != null ? (
-            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
-              Region {formatRt(s.meta.rt_start, props.rtUnit)} - {formatRt(s.meta.rt_end, props.rtUnit)}
-            </span>
-          ) : props.selectedRt != null ? (
-            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
-              RT {formatRt(props.selectedRt, props.rtUnit)}
-            </span>
-          ) : null}
-          {movedLabelCount > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                setLabelOffsets({});
-                setLocalRevision((r) => r + 1);
-              }}
-              className="inline-flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2 py-0.5 text-xs font-medium text-ink-700 hover:bg-ink-100 hover:text-ink-900 transition-colors shadow-2xs cursor-pointer whitespace-nowrap"
-              title="Reset all repositioned peak labels back to default"
-            >
-              <span>↺</span>
-              <span>Reset Positions ({movedLabelCount})</span>
-            </button>
-          )}
-          {props.showDragHint && s?.labels.length ? (
-            <span className="text-xs text-ink-400 hidden xl:inline whitespace-nowrap">
-              Drag labels to reposition
-            </span>
-          ) : null}
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5">
+        <ChartCardTitle
+          title={props.title ?? "MS1 Spectrum"}
+          status={[
+            s?.meta.rt_start != null && s.meta.rt_end != null
+              ? `Region ${formatRt(s.meta.rt_start, props.rtUnit)} – ${formatRt(s.meta.rt_end, props.rtUnit)}`
+              : props.selectedRt != null && `RT ${formatRt(props.selectedRt, props.rtUnit)}`,
+            props.polarityBadge ??
+              (s && (s.meta.polarity === "positive" ? "ESI+" : s.meta.polarity === "negative" ? "ESI-" : s.meta.polarity ?? "ESI")),
+            (props.polymerEnabled || polymerLabelCount > 0) &&
+              `${polymerLabelCount} polymer match${polymerLabelCount === 1 ? "" : "es"}`,
+            s && `${s.meta.n_peaks.toLocaleString()} peaks`,
+            s?.meta.n_scans != null && `${s.meta.n_scans.toLocaleString()} scans (${s.meta.merge_mode ?? "sum"})`,
+            !!s?.meta.ignored_peak_count &&
+              `ignored ${s.meta.ignored_peak_count} peak${s.meta.ignored_peak_count === 1 ? "" : "s"}`,
+            props.showDragHint && !!s?.labels.length && "drag labels to reposition",
+          ]}
+        />
+        {movedLabelCount > 0 && (
+          <ToolbarButton
+            icon={RotateCcw}
+            label={`Reset positions (${movedLabelCount})`}
+            title="Reset all repositioned peak labels back to default"
+            onClick={() => {
+              setLabelOffsets({});
+              setLocalRevision((r) => r + 1);
+            }}
+          />
+        )}
       </div>
 
       {/* Tier 2: Action Toolbar */}
@@ -586,19 +543,15 @@ export function SpectrumChart(props: {
           {props.onTogglePolymerStudio && (
             <button
               type="button"
-              className={clsx(
-                "rounded-md border px-2.5 py-1 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-xs whitespace-nowrap",
-                props.polymerStudioOpen || props.polymerEnabled
-                  ? "border-purple-400 bg-purple-50 text-purple-700 hover:bg-purple-100 ring-1 ring-purple-400"
-                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-50",
-              )}
+              className="btn-primary whitespace-nowrap px-2.5 py-1"
+              aria-pressed={props.polymerStudioOpen}
               onClick={props.onTogglePolymerStudio}
               title="Open Polymer & Reaction Studio (Live parameter tuning)"
             >
-              <span>🧬</span>
+              <Hexagon {...ICON_PROPS} />
               <span>Polymer Studio</span>
               {props.polymerEnabled && (
-                <span className="h-1.5 w-1.5 rounded-full bg-purple-600 animate-pulse" />
+                <span className="h-1.5 w-1.5 rounded-full bg-success" title="Matching is live on the spectrum" />
               )}
             </button>
           )}
@@ -606,12 +559,12 @@ export function SpectrumChart(props: {
           {props.onDeconvolution && (
             <button
               type="button"
-              className="flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50 shadow-xs whitespace-nowrap"
+              className="btn whitespace-nowrap border border-ink-200 bg-surface px-2.5 py-1 text-ink-800 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-40"
               onClick={props.onDeconvolution}
               disabled={!s}
               title="Deconvolute multi-charged ESI envelope and isotopic spacing to true neutral mass"
             >
-              <span>⚛</span>
+              <Atom {...ICON_PROPS} />
               <span>Deconvolute</span>
             </button>
           )}
@@ -624,20 +577,21 @@ export function SpectrumChart(props: {
               }}
               className="flex items-center"
             >
-              <div className="flex items-center rounded-md border border-ink-200 bg-surface pl-2 pr-1 py-0.5 shadow-2xs focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
-                <span className="text-[11px] font-semibold text-ink-500 mr-1 select-none">m/z:</span>
+              <div className="flex items-center rounded-md border border-ink-200 bg-surface py-0.5 pl-2 pr-1 focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
+                <span className="text-caption mr-1 select-none">m/z</span>
                 <input
                   type="number"
                   step="any"
                   value={targetMzInput}
                   onChange={(e) => setTargetMzInput(e.target.value)}
                   placeholder="e.g. 524.3"
-                  className="w-20 bg-transparent text-xs font-mono text-ink-800 placeholder-ink-400 focus:outline-none"
+                  aria-label="Target m/z"
+                  className="w-20 bg-transparent font-mono text-[13px] text-ink-800 placeholder:text-ink-500 focus:outline-none"
                 />
                 <button
                   type="submit"
                   disabled={!targetMzInput.trim()}
-                  className="rounded bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  className="btn-ghost px-2 py-0.5 disabled:cursor-not-allowed disabled:opacity-40"
                   title="Inspect peak or create EIC for this m/z"
                 >
                   Inspect
@@ -648,7 +602,8 @@ export function SpectrumChart(props: {
 
           {s && props.onPeakClick && (
             <select
-              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-50 shadow-2xs focus:border-brand-500 focus:outline-none max-w-[170px] truncate"
+              className="input max-w-[200px] truncate py-1"
+              aria-label="Select a detected peak"
               value=""
               onChange={(e) => {
                 const val = parseFloat(e.target.value);
@@ -659,7 +614,7 @@ export function SpectrumChart(props: {
               title="Pick a mass from detected peaks"
             >
               <option value="" disabled>
-                🎯 Select Peak ({topPeaks.length ? `${topPeaks.length} top` : `${s.labels.length || s.meta.n_peaks} peaks`})...
+                Select peak ({topPeaks.length ? `${topPeaks.length} top` : `${s.labels.length || s.meta.n_peaks} peaks`})...
               </option>
               {(topPeaks.length > 0 ? topPeaks : visibleLabels.map((l) => ({ mz: l.mz, intensity: l.intensity, relIntensity: l.intensity / (activeBasePeak || 1), label: l.text }))).map((p) => (
                 <option key={p.mz} value={p.mz}>
@@ -672,117 +627,43 @@ export function SpectrumChart(props: {
 
         {/* Right Cluster: Quick Mode Pills, Design, Reload & Export */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Zoom vs Move Labels Mode Switch */}
-          <div className="flex items-center rounded-md border border-ink-200 bg-surface p-0.5 shadow-2xs text-xs">
-            <button
-              type="button"
-              onClick={() => setInteractionMode("zoom")}
-              className={clsx(
-                "flex items-center gap-1 rounded px-2 py-0.5 font-medium transition-colors",
-                interactionMode === "zoom"
-                  ? "bg-brand-50 font-semibold text-brand-700 shadow-2xs"
-                  : "text-ink-600 hover:text-ink-900",
-              )}
-              title="Standard box-zoom drag on spectrum canvas"
-            >
-              <span>🔍</span>
-              <span>Zoom</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setInteractionMode("move")}
-              className={clsx(
-                "flex items-center gap-1 rounded px-2 py-0.5 font-medium transition-colors",
-                interactionMode === "move"
-                  ? "bg-brand-50 font-semibold text-brand-700 shadow-2xs"
-                  : "text-ink-600 hover:text-ink-900",
-              )}
-              title="Move peak labels freely without drawing zoom boxes"
-            >
-              <span>✋</span>
-              <span>Move Labels</span>
-            </button>
-          </div>
+          <SegmentedControl
+            size="xs"
+            ariaLabel="Spectrum drag mode"
+            value={interactionMode}
+            onChange={setInteractionMode}
+            options={[
+              { value: "zoom", label: "Zoom", icon: <ZoomIn {...ICON_PROPS} />, title: "Standard box-zoom drag on spectrum canvas" },
+              { value: "move", label: "Move labels", icon: <Hand {...ICON_PROPS} />, title: "Move peak labels freely without drawing zoom boxes" },
+            ]}
+          />
           {props.overlayTraces.length > 0 && props.onUpdateOverlayMode && (
-            <div className="flex items-center rounded-md border border-ink-200 bg-ink-50/70 p-0.5 shadow-xs text-xs">
-              <button
-                type="button"
-                className={clsx(
-                  "rounded px-2 py-0.5 font-medium transition-colors",
-                  overlayMode === "overlay"
-                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
-                    : "text-ink-600 hover:text-ink-900",
-                )}
-                onClick={() => props.onUpdateOverlayMode?.("overlay")}
-                title="Standard overlaid spectra (raw intensity)"
-              >
-                Overlay
-              </button>
-              <button
-                type="button"
-                className={clsx(
-                  "rounded px-2 py-0.5 font-medium transition-colors",
-                  overlayMode === "butterfly"
-                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
-                    : "text-ink-600 hover:text-ink-900",
-                )}
-                onClick={() => props.onUpdateOverlayMode?.("butterfly")}
-                title="Mirrored butterfly plot (Head-to-Tail, raw AU)"
-              >
-                Butterfly
-              </button>
-              <button
-                type="button"
-                className={clsx(
-                  "rounded px-2 py-0.5 font-medium transition-colors",
-                  overlayMode === "butterfly_normalized"
-                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
-                    : "text-ink-600 hover:text-ink-900",
-                )}
-                onClick={() => props.onUpdateOverlayMode?.("butterfly_normalized")}
-                title="Mirrored butterfly plot normalized to base peak (Head-to-Tail, 0 to ±100%)"
-              >
-                Butterfly %
-              </button>
-              <button
-                type="button"
-                className={clsx(
-                  "rounded px-2 py-0.5 font-medium transition-colors",
-                  overlayMode === "normalized"
-                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
-                    : "text-ink-600 hover:text-ink-900",
-                )}
-                onClick={() => props.onUpdateOverlayMode?.("normalized")}
-                title="Normalize each spectrum to 0–100% base peak"
-              >
-                % Norm
-              </button>
-            </div>
+            <SegmentedControl
+              size="xs"
+              ariaLabel="Overlay mode"
+              value={overlayMode}
+              onChange={(mode) => props.onUpdateOverlayMode?.(mode)}
+              options={[
+                { value: "overlay", label: "Overlay", title: "Standard overlaid spectra (raw intensity)" },
+                { value: "butterfly", label: "Butterfly", title: "Mirrored butterfly plot (Head-to-Tail, raw AU)" },
+                { value: "butterfly_normalized", label: "Butterfly %", title: "Mirrored butterfly plot normalized to base peak (Head-to-Tail, 0 to ±100%)" },
+                { value: "normalized", label: "% Norm", title: "Normalize each spectrum to 0–100% base peak" },
+              ]}
+            />
           )}
           {props.onOpenDesign && (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
-              onClick={props.onOpenDesign}
-              title="Configure MS1 spectrum appearance, colors & peak labels"
-            >
-              <span>🎨</span>
-              <span>Design</span>
-            </button>
+            <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} title="Configure MS1 spectrum appearance, colors & peak labels" />
           )}
           {props.onReload && (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
+            <ToolbarButton
+              icon={RotateCw}
+              label="Reload"
+              title="Reload MS1 spectrum plot"
               onClick={() => {
                 setLocalRevision((r) => r + 1);
                 props.onReload?.();
               }}
-              title="Reload MS1 spectrum plot"
-            >
-              <span>🔄</span>
-              <span>Reload</span>
-            </button>
+            />
           )}
           <PaperFigureExportToolbar
             disabled={!s}
@@ -795,10 +676,7 @@ export function SpectrumChart(props: {
       {/* Tier 2.5: Top Peaks Quick-Pill Bar */}
       {s && topPeaks.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 border-t border-ink-100/70 bg-ink-50/50 px-2 py-1.5 text-xs">
-          <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-ink-500 whitespace-nowrap">
-            <span>⚡</span>
-            <span>Top Peaks:</span>
-          </div>
+          <div className="text-section whitespace-nowrap">Top peaks</div>
           <div className="flex flex-wrap items-center gap-1.5">
             {topPeaks.map((peak) => {
               const pct = Math.round(peak.relIntensity * 100);

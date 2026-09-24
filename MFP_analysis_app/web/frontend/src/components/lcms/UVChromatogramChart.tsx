@@ -7,7 +7,9 @@ import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../../theme/Th
 import { PaperFigureExportToolbar } from "../PaperFigureExportToolbar";
 import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExportSettings, publicationFilenameSuffix, sanitizeFilenamePart } from "../../utils/publicationPlotExport";
 import { DEFAULT_OVERLAY_LABEL_SETTINGS, OVERLAY_PALETTE, type ChartSettings, type ChromatogramOverlayMode } from "../../lcms/settings";
-import { schedulePlotResize, useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, UVLabelOrientation, UVTextLabel, LCMSUVOverlayChartTrace, cleanLabelText, UvPlotShape, buildBunchedAnnotations, withAlpha, formatRt, formatScanId, axisRange, maxFinite, axisTitle, axisFrame } from "../../lcms/viewShared";
+import { ArrowDownWideNarrow, FileUp, Link2, MapPin, Palette, Plus, RotateCw, Sparkles, Tags, Unlink } from "lucide-react";
+import { SegmentedControl } from "../common/SegmentedControl";
+import { schedulePlotResize, useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, UVLabelOrientation, UVTextLabel, LCMSUVOverlayChartTrace, cleanLabelText, UvPlotShape, buildBunchedAnnotations, withAlpha, formatRt, formatScanId, axisRange, maxFinite, axisTitle, axisFrame, ChartCardTitle, ICON_PROPS, ToolbarButton } from "../../lcms/viewShared";
 import { hexToRgba } from "./SpectrumChart";
 
 export function UVChromatogramChart(props: {
@@ -451,48 +453,19 @@ export function UVChromatogramChart(props: {
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       {/* Tier 1: Title & Status Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 min-h-[28px]">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
-            <span>📈</span>
-            <span>UV Chromatogram</span>
-          </h3>
-          {available && meta?.filename && (
-            <span className="truncate max-w-[240px] rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-700" title={meta.filename}>
-              {meta.filename}
-              {(meta.y_label || meta.y_col) ? ` · ${meta.y_label || meta.y_col}` : ""}
-            </span>
-          )}
-          {available && uv.peaks.length > 0 && (
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
-              {uv.peaks.length} peak{uv.peaks.length === 1 ? "" : "s"}
-            </span>
-          )}
-          {overlayTraces.length > 0 && (
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
-              {overlayTraces.length} overlay{overlayTraces.length === 1 ? "" : "s"}
-            </span>
-          )}
-          {xOffset !== 0 && (
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
-              offset {xOffset.toFixed(3)} min
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {selectedUvRt != null && (
-            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
-              UV RT {formatRt(selectedUvRt, rtUnit)}
-              {props.selectedScanId ? ` · Scan ${formatScanId(props.selectedScanId)}` : ""}
-            </span>
-          )}
-          {available && (
-            <span className="text-xs text-ink-400 hidden xl:inline whitespace-nowrap">
-              Click a point to load MS spectrum
-            </span>
-          )}
-        </div>
+      <div className="px-1 pb-1.5">
+        <ChartCardTitle
+          title="UV Chromatogram"
+          status={[
+            available && meta?.filename && `${meta.filename}${meta.y_label || meta.y_col ? ` (${meta.y_label || meta.y_col})` : ""}`,
+            available && uv.peaks.length > 0 && `${uv.peaks.length} peak${uv.peaks.length === 1 ? "" : "s"}`,
+            overlayTraces.length > 0 && `${overlayTraces.length} overlay${overlayTraces.length === 1 ? "" : "s"}`,
+            xOffset !== 0 && `offset ${xOffset.toFixed(3)} min`,
+            selectedUvRt != null &&
+              `UV RT ${formatRt(selectedUvRt, rtUnit)}${props.selectedScanId ? ` · Scan ${formatScanId(props.selectedScanId)}` : ""}`,
+            available && "click to load an MS spectrum",
+          ]}
+        />
       </div>
 
       {/* Tier 2: Action Toolbar */}
@@ -503,63 +476,35 @@ export function UVChromatogramChart(props: {
             <>
               <button
                 type="button"
-                className="flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-50 shadow-xs whitespace-nowrap"
+                className="btn-primary whitespace-nowrap px-2.5 py-1"
                 onClick={props.onAutoLabelUV}
                 disabled={busy}
                 title="Automatically detect UV peaks and annotate each with matching MS spectrum m/z"
               >
-                <span>⚡</span>
-                <span>Auto Label Peaks</span>
+                <Sparkles {...ICON_PROPS} />
+                <span>Auto label peaks</span>
               </button>
-
               {props.onLabelSelectedRT && selectedUvRt != null && (
-                <button
-                  type="button"
-                  className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-50 shadow-xs whitespace-nowrap"
+                <ToolbarButton
+                  icon={MapPin}
+                  label="Label RT"
+                  disabled={busy}
                   onClick={props.onLabelSelectedRT}
-                  disabled={busy}
                   title="Annotate currently selected UV retention time with top MS spectrum peaks"
-                >
-                  <span>📍</span>
-                  <span>Label RT</span>
-                </button>
+                />
               )}
-
               {props.onCustomUvLabel && (
-                <button
-                  type="button"
-                  className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-50 shadow-xs whitespace-nowrap"
-                  onClick={props.onCustomUvLabel}
-                  disabled={busy}
-                  title="Add custom text label at retention time"
-                >
-                  <span>➕</span>
-                  <span>Custom</span>
-                </button>
+                <ToolbarButton icon={Plus} label="Custom" disabled={busy} onClick={props.onCustomUvLabel} title="Add custom text label at retention time" />
               )}
-
-              <button
-                type="button"
-                className={clsx(
-                  "flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors shadow-xs whitespace-nowrap",
-                  showLabelOptions
-                    ? "border-brand-500 bg-brand-50 text-brand-700 font-semibold ring-1 ring-brand-500"
-                    : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-50",
-                )}
+              <ToolbarButton
+                icon={Tags}
+                label="Label options"
+                active={showLabelOptions}
                 onClick={() => setShowLabelOptions((prev) => !prev)}
                 title="Configure UV peak detection thresholds, label arrangement, and snapping"
-              >
-                <span>🏷️</span>
-                <span>Label Options</span>
-              </button>
-
+              />
               {labels.length > 0 && (
-                <button
-                  type="button"
-                  className="rounded-md border border-red-200 bg-surface px-2 py-1 text-xs text-red-600 transition-colors hover:bg-red-50 shadow-xs whitespace-nowrap"
-                  onClick={onClearLabels}
-                  title="Delete all transferred UV labels"
-                >
+                <button type="button" className="btn-danger whitespace-nowrap px-2 py-1" onClick={onClearLabels} title="Delete all transferred UV labels">
                   Clear labels ({labels.length})
                 </button>
               )}
@@ -570,88 +515,40 @@ export function UVChromatogramChart(props: {
         {/* Right Cluster: Standard controls, export, and file management */}
         <div className="flex items-center gap-1.5 shrink-0">
           {overlayTraces.length > 0 && props.onUpdateOverlayMode && (
-            <div className="flex items-center rounded-md border border-ink-200 bg-ink-50/70 p-0.5 shadow-xs text-xs">
-              <button
-                type="button"
-                className={clsx(
-                  "rounded px-2 py-0.5 font-medium transition-colors",
-                  overlayMode === "raw"
-                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
-                    : "text-ink-600 hover:text-ink-900",
-                )}
-                onClick={() => props.onUpdateOverlayMode?.("raw")}
-                title="Overlay on shared absolute scale"
-              >
-                Raw
-              </button>
-              <button
-                type="button"
-                className={clsx(
-                  "rounded px-2 py-0.5 font-medium transition-colors",
-                  overlayMode === "normalized"
-                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
-                    : "text-ink-600 hover:text-ink-900",
-                )}
-                onClick={() => props.onUpdateOverlayMode?.("normalized")}
-                title="Normalize each trace to 0–100% base peak"
-              >
-                % Norm
-              </button>
-              <button
-                type="button"
-                className={clsx(
-                  "rounded px-2 py-0.5 font-medium transition-colors",
-                  overlayMode === "stacked"
-                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
-                    : "text-ink-600 hover:text-ink-900",
-                )}
-                onClick={() => props.onUpdateOverlayMode?.("stacked")}
-                title="Waterfall stacked chromatograms"
-              >
-                Stacked
-              </button>
-            </div>
+            <SegmentedControl
+              size="xs"
+              ariaLabel="Overlay scale"
+              value={overlayMode}
+              onChange={(mode) => props.onUpdateOverlayMode?.(mode)}
+              options={[
+                { value: "raw", label: "Raw", title: "Overlay on shared absolute scale" },
+                { value: "normalized", label: "% Norm", title: "Normalize each trace to 0–100% base peak" },
+                { value: "stacked", label: "Stacked", title: "Waterfall stacked chromatograms" },
+              ]}
+            />
           )}
           {props.onToggleSyncZoom && (
-            <button
-              type="button"
-              className={clsx(
-                "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors shadow-xs whitespace-nowrap",
-                props.syncZoom
-                  ? "bg-brand-50 border border-brand-300 text-brand-700 font-semibold"
-                  : "border border-ink-200 bg-surface text-ink-600 hover:bg-ink-50",
-              )}
+            <ToolbarButton
+              icon={Link2}
+              label={props.syncZoom ? "Zoom synced" : "Sync zoom"}
+              active={props.syncZoom}
               onClick={props.onToggleSyncZoom}
               title="Synchronize X-axis zoom & pan between TIC and UV chromatograms"
-            >
-              <span>🔗</span>
-              <span>{props.syncZoom ? "Zoom Synced" : "Sync Zoom"}</span>
-            </button>
+            />
           )}
           {props.onOpenDesign && (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
-              onClick={props.onOpenDesign}
-              title="Configure UV plot appearance, limits & labels"
-            >
-              <span>🎨</span>
-              <span>Design</span>
-            </button>
+            <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} title="Configure UV plot appearance, limits & labels" />
           )}
           {props.onReload && (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
+            <ToolbarButton
+              icon={RotateCw}
+              label="Reload"
+              title="Reload UV plot"
               onClick={() => {
                 setLocalRevision((r) => r + 1);
                 props.onReload?.();
               }}
-              title="Reload UV plot"
-            >
-              <span>🔄</span>
-              <span>Reload</span>
-            </button>
+            />
           )}
 
           <PaperFigureExportToolbar
@@ -661,25 +558,15 @@ export function UVChromatogramChart(props: {
             onExport={saveUvPaper}
           />
 
-          <button
-            type="button"
-            className="rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs text-ink-700 transition-colors hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-60 shadow-xs whitespace-nowrap"
-            onClick={onPickFile}
+          <ToolbarButton
+            icon={FileUp}
+            label={busy ? "Working…" : available ? "Replace CSV…" : "Attach CSV…"}
             disabled={busy}
+            onClick={onPickFile}
             title="Attach a UV/DAD chromatogram exported from your LC"
-          >
-            {busy ? "Working…" : available ? "Replace CSV…" : "Attach CSV…"}
-          </button>
+          />
           {available && (
-            <button
-              type="button"
-              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600 shadow-xs whitespace-nowrap"
-              onClick={onRemove}
-              disabled={busy}
-              title="Detach UV chromatogram"
-            >
-              ✕ Detach
-            </button>
+            <ToolbarButton icon={Unlink} label="Detach" disabled={busy} onClick={onRemove} title="Detach UV chromatogram" />
           )}
         </div>
       </div>
@@ -687,26 +574,27 @@ export function UVChromatogramChart(props: {
       {showLabelOptions && available && (
         <div className="mb-2.5 rounded-lg border border-brand-200 bg-brand-50/20 p-3 text-xs text-ink-800 shadow-sm">
           <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-ink-200 pb-2">
-            <div className="flex items-center gap-1.5 font-semibold text-brand-900">
-              <span>🏷️</span>
-              <span>UV Peak Labeling Controls & Detection Settings</span>
+            <div className="text-section flex items-center gap-1.5">
+              <Tags {...ICON_PROPS} />
+              <span>UV peak labelling & detection settings</span>
             </div>
             <div className="flex items-center gap-2">
               {props.onAutoArrangeLabels && (
                 <button
                   type="button"
-                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs font-medium text-ink-700 hover:bg-ink-100 disabled:opacity-40"
+                  className="btn-ghost px-2 py-1 disabled:opacity-40"
                   onClick={props.onAutoArrangeLabels}
                   disabled={labels.length === 0}
                   title="Arrange labels into clean descending stairs to prevent overlap"
                 >
-                  ↕ Auto Arrange Stairs
+                  <ArrowDownWideNarrow {...ICON_PROPS} />
+                  Auto-arrange stairs
                 </button>
               )}
               {labels.length > 0 && (
                 <button
                   type="button"
-                  className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                  className="btn-danger px-2 py-1"
                   onClick={onClearLabels}
                   title="Clear all transferred and custom UV labels"
                 >

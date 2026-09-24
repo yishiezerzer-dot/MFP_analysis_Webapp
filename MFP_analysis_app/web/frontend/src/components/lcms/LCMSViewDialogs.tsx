@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { ChartLine } from "lucide-react";
 import clsx from "clsx";
 import { NumberSetting } from "./DialogControls";
 import { CustomUvLabelDraft } from "../../lcms/viewShared";
@@ -7,7 +8,7 @@ import { Check } from "./ToolsPanel";
 export function EmptyState(props: { onPick: () => void }) {
   return (
     <div className="card flex flex-col items-center justify-center gap-3 p-12 text-center">
-      <div className="text-4xl">📈</div>
+      <ChartLine size={40} strokeWidth={1.5} className="text-ink-500" aria-hidden />
       <div>
         <div className="text-lg font-semibold">Open an mzML or mzML.gz file to begin</div>
         <div className="text-sm text-ink-500">

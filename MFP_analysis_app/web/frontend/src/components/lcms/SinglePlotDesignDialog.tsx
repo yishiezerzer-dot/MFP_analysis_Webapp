@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { LayoutTemplate, Palette, Ruler, Tags } from "lucide-react";
+
+const ICON = { size: 15, strokeWidth: 1.8, "aria-hidden": true } as const;
 import clsx from "clsx";
 import {
   DEFAULT_OVERLAY_LABEL_SETTINGS,
@@ -145,16 +148,16 @@ export function SinglePlotDesignDialog({
 
   const hasLabels = graphId === "spectrum" || graphId === "uv";
   const tabs = [
-    { id: "layout" as const, label: "Layout & Titles", icon: "📐" },
-    { id: "traces" as const, label: "Traces & Overlays", icon: "🎨" },
-    ...(hasLabels ? [{ id: "labels" as const, label: "Peak Labels", icon: "🏷️" }] : []),
-    { id: "axes" as const, label: "Axes & Limits", icon: "📏" },
+    { id: "layout" as const, label: "Layout & Titles", icon: <LayoutTemplate {...ICON} /> },
+    { id: "traces" as const, label: "Traces & Overlays", icon: <Palette {...ICON} /> },
+    ...(hasLabels ? [{ id: "labels" as const, label: "Peak Labels", icon: <Tags {...ICON} /> }] : []),
+    { id: "axes" as const, label: "Axes & Limits", icon: <Ruler {...ICON} /> },
   ];
   const [activeTab, setActiveTab] = useState<"layout" | "traces" | "labels" | "axes">("layout");
 
   return (
     <Modal
-      title={`🎨 ${meta.title} Design`}
+      title={`${meta.title} design`}
       onClose={onClose}
       width="max-w-2xl"
       footer={
@@ -197,7 +200,7 @@ export function SinglePlotDesignDialog({
             )}
             onClick={() => setActiveTab(t.id)}
           >
-            <span>{t.icon}</span>
+            {t.icon}
             <span>{t.label}</span>
           </button>
         ))}

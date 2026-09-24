@@ -10,7 +10,8 @@ import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExpor
 import { type IntegratedTraceRegion } from "../../lcms/analysis";
 import { OVERLAY_PALETTE, type ChartSettings, type ChromatogramOverlayMode } from "../../lcms/settings";
 import { SegmentedControl } from "../common/SegmentedControl";
-import { schedulePlotResize, useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, formatRt, formatScanId, axisRange, maxFinite, axisTitle, axisFrame } from "../../lcms/viewShared";
+import { Crosshair, Keyboard, Link2, Palette, Redo2, RotateCw, Scissors, Undo2 } from "lucide-react";
+import { schedulePlotResize, useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, formatRt, formatScanId, axisRange, maxFinite, axisTitle, axisFrame, ChartCardTitle, ICON_PROPS, ToolbarButton } from "../../lcms/viewShared";
 
 export function TICChart(props: {
   tic: TICData | null;
@@ -254,53 +255,21 @@ export function TICChart(props: {
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       {/* Tier 1: Title & Status Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 min-h-[28px]">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
-            <span>🌊</span>
-            <span>{props.title ?? "Total Ion Chromatogram"}</span>
-          </h3>
-          {props.polarityBadge && (
-            <span
-              className={clsx(
-                "rounded-md px-2 py-0.5 font-mono text-xs font-semibold whitespace-nowrap",
-                props.polarityBadge === "ESI+"
-                  ? "bg-blue-50 text-blue-700 border border-blue-200"
-                  : "bg-rose-50 text-rose-700 border border-rose-200",
-              )}
-            >
-              {props.polarityBadge}
-            </span>
-          )}
-          {props.tic && (
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-600 whitespace-nowrap">
-              {props.tic.rt_min.length.toLocaleString()} points
-            </span>
-          )}
-          {nonActiveOverlayTraces.length > 0 && (
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
-              {nonActiveOverlayTraces.length} overlay{nonActiveOverlayTraces.length === 1 ? "" : "s"}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {props.regionSelect && props.selectedRegion != null ? (
-            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
-              Region {formatRt(props.selectedRegion.rtMin, props.rtUnit)} - {formatRt(props.selectedRegion.rtMax, props.rtUnit)}
-            </span>
-          ) : props.selectedRt != null ? (
-            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
-              RT {formatRt(props.selectedRt, props.rtUnit)}
-              {props.selectedScanId ? ` · Scan ${formatScanId(props.selectedScanId)}` : ""}
-            </span>
-          ) : null}
-          <span className="text-xs text-ink-400 hidden xl:inline whitespace-nowrap">
-            {props.regionSelect
-              ? "Drag across chromatogram to slice & integrate"
-              : "Click a point to load spectrum"}
-          </span>
-        </div>
+      <div className="px-1 pb-1.5">
+        <ChartCardTitle
+          title={props.title ?? "Total Ion Chromatogram"}
+          status={[
+            props.polarityBadge,
+            props.tic && `${props.tic.rt_min.length.toLocaleString()} points`,
+            nonActiveOverlayTraces.length > 0 &&
+              `${nonActiveOverlayTraces.length} overlay${nonActiveOverlayTraces.length === 1 ? "" : "s"}`,
+            props.regionSelect && props.selectedRegion != null
+              ? `Region ${formatRt(props.selectedRegion.rtMin, props.rtUnit)} – ${formatRt(props.selectedRegion.rtMax, props.rtUnit)}`
+              : props.selectedRt != null &&
+                `RT ${formatRt(props.selectedRt, props.rtUnit)}${props.selectedScanId ? ` · Scan ${formatScanId(props.selectedScanId)}` : ""}`,
+            props.regionSelect ? "drag across a peak to slice & integrate" : "click to load a spectrum",
+          ]}
+        />
       </div>
 
       {/* Tier 2: Action Toolbar */}
@@ -313,8 +282,8 @@ export function TICChart(props: {
               value={props.regionSelect ? "slice" : "point"}
               onChange={(val) => props.onToggleRegionSelect?.(val === "slice")}
               options={[
-                { value: "point", label: "Inspect Peak", icon: "🎯", title: "Inspect scan at clicked RT point" },
-                { value: "slice", label: "Slice Peak", icon: "✂️", title: "Click and drag across a peak to slice & integrate" },
+                { value: "point", label: "Inspect peak", icon: <Crosshair {...ICON_PROPS} />, title: "Inspect scan at clicked RT point" },
+                { value: "slice", label: "Slice peak", icon: <Scissors {...ICON_PROPS} />, title: "Click and drag across a peak to slice & integrate" },
               ]}
             />
           )}
@@ -324,29 +293,31 @@ export function TICChart(props: {
               <Tooltip content="Undo region slice (Ctrl+Z)" placement="bottom">
                 <button
                   type="button"
-                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-30 shadow-xs"
+                  className="btn-ghost px-1.5 py-1 disabled:opacity-30"
                   disabled={!props.canUndoRegion}
                   onClick={(e) => {
                     e.stopPropagation();
                     props.onUndoRegion?.();
                   }}
                   title="Undo region slice (Ctrl+Z)"
+                  aria-label="Undo region slice"
                 >
-                  ↩
+                  <Undo2 {...ICON_PROPS} />
                 </button>
               </Tooltip>
               <Tooltip content="Redo region slice (Ctrl+Y)" placement="bottom">
                 <button
                   type="button"
-                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-30 shadow-xs"
+                  className="btn-ghost px-1.5 py-1 disabled:opacity-30"
                   disabled={!props.canRedoRegion}
                   onClick={(e) => {
                     e.stopPropagation();
                     props.onRedoRegion?.();
                   }}
                   title="Redo region slice (Ctrl+Y)"
+                  aria-label="Redo region slice"
                 >
-                  ↪
+                  <Redo2 {...ICON_PROPS} />
                 </button>
               </Tooltip>
             </div>
@@ -354,7 +325,7 @@ export function TICChart(props: {
 
           {props.regionIntegration && (
             <span
-              className="rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-1 font-mono text-[11px] font-semibold text-emerald-800 shadow-xs whitespace-nowrap"
+              className="badge-green font-mono whitespace-nowrap"
               title={`Integrated Area: ${props.regionIntegration.area.toExponential(4)} | Apex: ${props.regionIntegration.rtApex.toFixed(3)} min | Height: ${props.regionIntegration.height.toExponential(3)}`}
             >
               Area: {props.regionIntegration.area.toExponential(2)} counts·min (Apex {props.regionIntegration.rtApex.toFixed(3)} min, Δ {(props.regionIntegration.width).toFixed(3)} min)
@@ -365,96 +336,44 @@ export function TICChart(props: {
         {/* Right Cluster: Standard actions */}
         <div className="flex items-center gap-1.5 shrink-0">
           {nonActiveOverlayTraces.length > 0 && props.onUpdateOverlayMode && (
-            <div className="flex items-center rounded-md border border-ink-200 bg-ink-50/70 p-0.5 shadow-xs text-xs">
-              <button
-                type="button"
-                className={clsx(
-                  "rounded px-2 py-0.5 font-medium transition-colors",
-                  overlayMode === "raw"
-                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
-                    : "text-ink-600 hover:text-ink-900",
-                )}
-                onClick={() => props.onUpdateOverlayMode?.("raw")}
-                title="Overlay on shared absolute scale"
-              >
-                Raw
-              </button>
-              <button
-                type="button"
-                className={clsx(
-                  "rounded px-2 py-0.5 font-medium transition-colors",
-                  overlayMode === "normalized"
-                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
-                    : "text-ink-600 hover:text-ink-900",
-                )}
-                onClick={() => props.onUpdateOverlayMode?.("normalized")}
-                title="Normalize each trace to 0–100% base peak"
-              >
-                % Norm
-              </button>
-              <button
-                type="button"
-                className={clsx(
-                  "rounded px-2 py-0.5 font-medium transition-colors",
-                  overlayMode === "stacked"
-                    ? "bg-surface font-semibold text-ink-900 shadow-xs"
-                    : "text-ink-600 hover:text-ink-900",
-                )}
-                onClick={() => props.onUpdateOverlayMode?.("stacked")}
-                title="Waterfall stacked chromatograms"
-              >
-                Stacked
-              </button>
-            </div>
+            <SegmentedControl
+              size="xs"
+              ariaLabel="Overlay scale"
+              value={overlayMode}
+              onChange={(mode) => props.onUpdateOverlayMode?.(mode)}
+              options={[
+                { value: "raw", label: "Raw", title: "Overlay on shared absolute scale" },
+                { value: "normalized", label: "% Norm", title: "Normalize each trace to 0–100% base peak" },
+                { value: "stacked", label: "Stacked", title: "Waterfall stacked chromatograms" },
+              ]}
+            />
           )}
           {props.onToggleSyncZoom && (
-            <button
-              type="button"
-              className={clsx(
-                "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors shadow-xs whitespace-nowrap",
-                props.syncZoom
-                  ? "bg-brand-50 border border-brand-300 text-brand-700 font-semibold"
-                  : "border border-ink-200 bg-surface text-ink-600 hover:bg-ink-50",
-              )}
+            <ToolbarButton
+              icon={Link2}
+              label={props.syncZoom ? "Zoom synced" : "Sync zoom"}
+              active={props.syncZoom}
               onClick={props.onToggleSyncZoom}
               title="Synchronize X-axis zoom & pan between TIC and UV chromatograms"
-            >
-              <span>🔗</span>
-              <span>{props.syncZoom ? "Zoom Synced" : "Sync Zoom"}</span>
-            </button>
+            />
           )}
-          <div className="hidden 2xl:flex items-center gap-1 rounded bg-ink-100/60 px-2 py-0.5 text-[11px] text-ink-500 select-none">
-            <span>⌨️</span>
-            <span>←/→ Scans</span>
-            <span>·</span>
-            <span>B Overlay</span>
-            <span>·</span>
-            <span>Esc Reset</span>
-          </div>
+          <span className="text-caption hidden items-center gap-1 whitespace-nowrap 2xl:flex">
+            <Keyboard {...ICON_PROPS} />
+            ←/→ scans · B overlay · Esc reset
+          </span>
           {props.onOpenDesign && (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
-              onClick={props.onOpenDesign}
-              title="Configure TIC appearance, colors & limits"
-            >
-              <span>🎨</span>
-              <span>Design</span>
-            </button>
+            <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} title="Configure TIC appearance, colors & limits" />
           )}
           {props.onReload && (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
+            <ToolbarButton
+              icon={RotateCw}
+              label="Reload"
+              title="Reload TIC plot"
               onClick={() => {
                 setLocalRevision((r) => r + 1);
                 props.onReload?.();
               }}
-              title="Reload TIC plot"
-            >
-              <span>🔄</span>
-              <span>Reload</span>
-            </button>
+            />
           )}
           <PaperFigureExportToolbar
             disabled={!props.tic}

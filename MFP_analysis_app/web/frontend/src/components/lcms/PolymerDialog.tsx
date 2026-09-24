@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent } from "react";
+import { Plus } from "lucide-react";
 import clsx from "clsx";
 import {
   loadPolymerUiSettings,
@@ -246,7 +247,7 @@ export function PolymerTargetFileBanner({
               className="rounded-md border border-brand-300 bg-surface px-2.5 py-1 text-xs font-medium text-brand-700 shadow-2xs transition-colors hover:bg-brand-100/60"
               title="Apply this file's polymer settings to all open mzML files"
             >
-              ⚡ Apply to all open files
+              Apply to all open files
             </button>
           )}
         </div>
@@ -563,7 +564,8 @@ export function PolymerAdductSettings(props: PolymerSectionProps) {
             disabled={!customName.trim() || !Number.isFinite(parseFloat(customMass))}
             onClick={addCustomAdduct}
           >
-            ➕ Add adduct
+            <Plus size={15} strokeWidth={1.8} aria-hidden />
+            Add adduct
           </button>
         </div>
       </GroupBox>

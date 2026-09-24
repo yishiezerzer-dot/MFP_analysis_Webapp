@@ -7,7 +7,8 @@ import { Tooltip } from "../Tooltip";
 import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExportSettings, publicationFilenameSuffix, sanitizeFilenamePart } from "../../utils/publicationPlotExport";
 import { eicSourceFile, type LCMSEICPlot } from "../../lcms/analysis";
 import { type ChartSettings, type EICOverlaySettings } from "../../lcms/settings";
-import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, formatRt, axisRange, maxFinite, axisTitle, axisFrame } from "../../lcms/viewShared";
+import { Palette, Redo2, RotateCw, Sigma, Undo2, X } from "lucide-react";
+import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, formatRt, axisRange, maxFinite, axisTitle, axisFrame, ChartCardTitle, ICON_PROPS, ToolbarButton } from "../../lcms/viewShared";
 
 export function EICChart(props: {
   eics: LCMSEICPlot[];
@@ -141,88 +142,70 @@ export function EICChart(props: {
   return (
     <div className="card flex min-w-0 shrink-0 flex-col overflow-hidden p-3">
       {/* Tier 1: Title & Status Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1.5 min-h-[28px]">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <h3 className="text-sm font-semibold text-ink-900 flex items-center gap-1.5 whitespace-nowrap">
-            <span>🎯</span>
-            <span>
-              {props.eics.length === 1 && primary
-                ? `EIC m/z ${primary.target_mz.toFixed(4)} ± ${primary.tolerance.toFixed(4)}`
-                : `EIC Overlay (${props.eics.length} traces)`}
-            </span>
-          </h3>
-          <span className="max-w-[240px] truncate rounded-md bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-700" title={sourceFiles.join(", ")}>
-            {sourceLabel}
-          </span>
-          {primary && (
-            <span className="rounded-md bg-ink-100 px-2 py-0.5 text-xs text-ink-600 whitespace-nowrap">
-              {props.eics.length === 1
+      <div className="px-1 pb-1.5">
+        <ChartCardTitle
+          title={
+            props.eics.length === 1 && primary
+              ? `EIC m/z ${primary.target_mz.toFixed(4)} ± ${primary.tolerance.toFixed(4)}`
+              : `EIC overlay (${props.eics.length} traces)`
+          }
+          status={[
+            sourceLabel,
+            primary &&
+              (props.eics.length === 1
                 ? `${primary.n_scans} scans`
-                : `${props.eics.length} traces${props.overlaySettings.normalize ? ", norm" : ""}${props.overlaySettings.stack ? ", stacked" : ""}`}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {props.selectedRt != null && (
-            <span className="rounded-full border border-brand-200 bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 shadow-xs whitespace-nowrap">
-              RT {formatRt(props.selectedRt, props.rtUnit)}
-            </span>
-          )}
-        </div>
+                : `${props.eics.length} traces${props.overlaySettings.normalize ? ", normalized" : ""}${props.overlaySettings.stack ? ", stacked" : ""}`),
+            props.selectedRt != null && `RT ${formatRt(props.selectedRt, props.rtUnit)}`,
+          ]}
+        />
       </div>
 
       {/* Tier 2: Action Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100/80 px-1 py-1.5">
-        {/* Left Cluster: Integration & Clear tools */}
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
-            className="flex items-center gap-1 rounded-md border border-brand-300 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-100 shadow-xs whitespace-nowrap"
+            className="btn-primary whitespace-nowrap px-2.5 py-1"
             onClick={() =>
               props.onIntegrateAll && props.eics.length > 1
                 ? props.onIntegrateAll()
                 : props.eics.forEach((plot) => props.onIntegrate(plot))
             }
           >
-            <span>∫</span>
+            <Sigma {...ICON_PROPS} />
             <span>{props.eics.length > 1 ? "Integrate all" : "Integrate"}</span>
           </button>
-          <button
-            type="button"
-            className="rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
-            onClick={props.onClear}
-          >
-            ✕ {props.clearLabel ?? "Clear"}
-          </button>
+          <ToolbarButton icon={X} label={props.clearLabel ?? "Clear"} onClick={props.onClear} />
           {props.onUndoEic && (
             <div className="flex items-center gap-1">
               <Tooltip content="Undo EIC action (Ctrl+Z)" placement="bottom">
                 <button
                   type="button"
-                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-30 shadow-xs"
+                  className="btn-ghost px-1.5 py-1 disabled:opacity-30"
                   disabled={!props.canUndoEic}
+                  aria-label="Undo EIC"
                   onClick={(e) => {
                     e.stopPropagation();
                     props.onUndoEic?.();
                   }}
                   title="Undo EIC (Ctrl+Z)"
                 >
-                  ↩
+                  <Undo2 {...ICON_PROPS} />
                 </button>
               </Tooltip>
               <Tooltip content="Redo EIC action (Ctrl+Y)" placement="bottom">
                 <button
                   type="button"
-                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-30 shadow-xs"
+                  className="btn-ghost px-1.5 py-1 disabled:opacity-30"
                   disabled={!props.canRedoEic}
+                  aria-label="Redo EIC"
                   onClick={(e) => {
                     e.stopPropagation();
                     props.onRedoEic?.();
                   }}
                   title="Redo EIC (Ctrl+Y)"
                 >
-                  ↪
+                  <Redo2 {...ICON_PROPS} />
                 </button>
               </Tooltip>
             </div>
@@ -232,29 +215,18 @@ export function EICChart(props: {
         {/* Right Cluster: Standard actions */}
         <div className="flex items-center gap-1.5 shrink-0">
           {props.onOpenDesign && (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
-              onClick={props.onOpenDesign}
-              title="Configure EIC appearance, colors & overlay options"
-            >
-              <span>🎨</span>
-              <span>Design</span>
-            </button>
+            <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} title="Configure EIC appearance, colors & overlay options" />
           )}
           {props.onReload && (
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-md border border-ink-200 bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:bg-ink-50 shadow-xs whitespace-nowrap"
+            <ToolbarButton
+              icon={RotateCw}
+              label="Reload"
+              title="Reload EIC plot"
               onClick={() => {
                 setLocalRevision((r) => r + 1);
                 props.onReload?.();
               }}
-              title="Reload EIC plot"
-            >
-              <span>🔄</span>
-              <span>Reload</span>
-            </button>
+            />
           )}
           <PaperFigureExportToolbar
             disabled={props.eics.length === 0}

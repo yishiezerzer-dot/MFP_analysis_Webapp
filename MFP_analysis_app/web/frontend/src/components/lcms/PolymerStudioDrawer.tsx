@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChartScatter, Save, Table2 } from "lucide-react";
 import clsx from "clsx";
 import { loadPolymerUiSettings, type Polarity, type PolymerUiSettings } from "../../lcms/analysis";
 import { GroupBox, Modal } from "./DialogControls";
@@ -63,7 +64,8 @@ export function PolymerStudioModal({
           onClick={onSaveDefaults}
           title="Save current configuration as default"
         >
-          💾 Save as Defaults
+          <Save size={15} strokeWidth={1.8} aria-hidden />
+          Save as defaults
         </button>
         <button
           type="button"
@@ -86,8 +88,8 @@ export function PolymerStudioModal({
               : "Select monomers and load an MS1 spectrum first"
           }
         >
-          <span>📋</span>
-          <span>Expected Series</span>
+          <Table2 size={15} strokeWidth={1.8} aria-hidden />
+          <span>Expected series</span>
         </button>
         <button
           type="button"
@@ -96,8 +98,8 @@ export function PolymerStudioModal({
           disabled={!canOpenKendrick}
           title={canOpenKendrick ? "Open Kendrick Mass Defect (KMD) plot for current spectrum" : "Load an MS1 spectrum first"}
         >
-          <span>📈</span>
-          <span>Kendrick Plot</span>
+          <ChartScatter size={15} strokeWidth={1.8} aria-hidden />
+          <span>Kendrick plot</span>
         </button>
         <button type="button" className="btn-primary text-xs" onClick={onClose}>
           Done
@@ -107,7 +109,7 @@ export function PolymerStudioModal({
   );
 
   return (
-    <Modal title={`🧬 Polymer Studio (${polarity})`} onClose={onClose} width="max-w-3xl" footer={modalFooter}>
+    <Modal title={`Polymer Studio (${polarity})`} onClose={onClose} width="max-w-3xl" footer={modalFooter}>
       <div className="flex flex-col gap-4">
         <PolymerTargetFileBanner {...sessionProps} />
 

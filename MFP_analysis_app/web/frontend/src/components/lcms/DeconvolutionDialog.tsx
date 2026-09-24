@@ -274,7 +274,7 @@ export function DeconvolutionDialog({
                   Deconvoluting…
                 </>
               ) : (
-                "⚛ Run Deconvolution"
+                "Run deconvolution"
               )}
             </button>
           </div>
@@ -350,7 +350,7 @@ export function DeconvolutionDialog({
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm text-ink-400">
-                <span>Click &ldquo;⚛ Run Deconvolution&rdquo; above to calculate the zero-charge true mass spectrum.</span>
+                <span>Click &ldquo;Run deconvolution&rdquo; above to calculate the zero-charge true mass spectrum.</span>
               </div>
             )}
           </div>

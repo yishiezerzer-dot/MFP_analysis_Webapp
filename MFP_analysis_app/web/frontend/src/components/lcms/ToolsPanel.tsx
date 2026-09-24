@@ -69,7 +69,7 @@ export function DatasetRibbon(props: {
                 ? "ESI+"
                 : v === "negative"
                 ? "ESI-"
-                : "⚡ Dual (+/-)"}
+                : "Dual (+/−)"}
             </button>
           ))}
         </div>
