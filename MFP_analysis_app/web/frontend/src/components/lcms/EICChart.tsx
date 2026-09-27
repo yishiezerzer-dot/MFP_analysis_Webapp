@@ -8,7 +8,8 @@ import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExpor
 import { eicSourceFile, type LCMSEICPlot } from "../../lcms/analysis";
 import { type ChartSettings, type EICOverlaySettings } from "../../lcms/settings";
 import { Palette, Redo2, RotateCw, Sigma, Undo2, X } from "lucide-react";
-import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, formatRt, axisRange, maxFinite, axisTitle, axisFrame, ChartCardTitle, ICON_PROPS, ToolbarButton } from "../../lcms/viewShared";
+import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, formatRt, axisRange, maxFinite, axisTitle, axisFrame } from "../../lcms/viewShared";
+import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../common/ChartCardParts";
 
 export function EICChart(props: {
   eics: LCMSEICPlot[];

@@ -10,7 +10,8 @@ import { extractTopPeaks } from "../../lcms/analysis";
 import { DEFAULT_POLYMER_LABEL_SETTINGS, DEFAULT_OVERLAY_LABEL_SETTINGS, OVERLAY_PALETTE, type ChartSettings, type SpectrumOverlayMode } from "../../lcms/settings";
 import { Atom, Hand, Hexagon, Palette, RotateCcw, RotateCw, ZoomIn } from "lucide-react";
 import { SegmentedControl } from "../common/SegmentedControl";
-import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, LCMSSpectrumOverlayTrace, cleanLabelText, formatRt, axisRange, axisTitle, axisFrame, ChartCardTitle, ICON_PROPS, ToolbarButton, spectrumDefaultRange, visibleLabelMask } from "../../lcms/viewShared";
+import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, LCMSSpectrumOverlayTrace, cleanLabelText, formatRt, axisRange, axisTitle, axisFrame, spectrumDefaultRange, visibleLabelMask } from "../../lcms/viewShared";
+import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../common/ChartCardParts";
 
 export function hexToRgba(hex: string, alpha: number): string {
   const clean = (hex || "#7c3aed").replace("#", "").trim();

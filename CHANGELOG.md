@@ -23,6 +23,14 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **UI refresh, stage 2 (FTIR).**
+  - **Analysis panel:** 360 px wide with a 2×2 section switcher, so there is no sideways scrolling and the page no longer shifts. Settings sit 2 per row with labels above, so values such as baseline lambda (100000) are no longer cut off. Presets are one dropdown, undo/redo use icons, and the constraint lists are readable.
+  - **Chart:** a title plus one grey status line. The peak tool (Inspect / Add / Delete) moved into the chart toolbar, and the duplicate "Manual peak edit" controls were removed from the panel. The plot now fills the card, and chart text is readable in night mode.
+  - **Removed:** the quick SVG/PNG buttons. Use Export → 1:1 PNG/SVG, which gives a white background at your chosen size and DPI.
+  - **Dataset row:** one slim line.
+  - **Session list:** slim strip below 1600 px.
+  - **Look:** line icons, 12 px minimum text, and status colours from the theme.
+
 - **UI refresh, stage 1 (shared look + LCMS).** Calmer, easier-to-read interface:
   - neutral grey day theme and IBM Plex Sans; text is at least 12 px (13 px body);
   - line icons instead of emoji; one filled button per area, with the rest quiet;
@@ -62,6 +70,8 @@ Re-check analyses made before these fixes if they relied on the items below.
 - LCMS feature-table CSV column `Area` renamed to `AreaCountsMin`, and areas are labelled *counts·min* in the UI (plan 1.10). Update any spreadsheet that reads the old column name.
 
 ### Fixed
+
+- **FTIR spectrum could be drawn with the wrong y-mode.** When the absorbance/transmittance mode changed while a spectrum was loading (for example on opening the page, when a file is detected as absorbance), an older response could arrive last and be drawn instead, e.g. an absorbance file converted as %T, with bands inverted, under an "absorbance" label. Outdated responses are now ignored. Peaks, integrations and fits are computed on the server with the current settings and were not affected; only the displayed spectrum was.
 
 - **Server hardening (plan 3.1–3.3):** the server no longer opens files by a path given in a request (removed `POST /api/lcms/sessions/from_path` and `/sessions/{id}/uv/from_path`, which could read any numeric file on the server), no longer returns server file paths in session summaries or automation outputs, and ignores a request-supplied Ollama URL (only `OLLAMA_BASE_URL` is used). The unused Vercel Blob upload path (`blob_url`), which made the server download any URL it was given, is removed. Loading an LCMS workspace file now re-links sessions that still exist on the server and asks you to re-upload the rest.
 - **Resource limits (plan 3.4):** uploads above `MFP_MAX_UPLOAD_MB` (default 2048) and `.mzML.gz` files that expand beyond `MFP_MAX_DECOMPRESSED_MB` (default 8192) are rejected with HTTP 413 and nothing is kept on disk. Deleting a session now also deletes its uploaded file, UV file and LCMS index cache once no other session uses them (files outside the data directory are never touched), so disk use no longer grows forever. Deleting a session that failed to reload no longer returns 404.

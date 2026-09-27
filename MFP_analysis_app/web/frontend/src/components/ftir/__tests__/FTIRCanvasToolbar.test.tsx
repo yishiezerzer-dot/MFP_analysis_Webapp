@@ -14,7 +14,7 @@ describe("FTIRCanvasToolbar", () => {
       />,
     );
 
-    expect(screen.getByText(/Peak Tool:/i)).toBeDefined();
+    expect(screen.getByRole("radiogroup", { name: /peak tool/i })).toBeDefined();
     const addBtn = screen.getByRole("radio", { name: /add peak/i });
     fireEvent.click(addBtn);
 
