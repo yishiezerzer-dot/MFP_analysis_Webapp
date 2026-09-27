@@ -1413,10 +1413,6 @@ export function FTIRView() {
                     setPickAcrossOverlay={setPickAcrossOverlay}
                     overlayEnabled={overlayEnabled}
                     overlayCount={overlaySessionIds.length}
-                    peakEditMode={peakEditMode}
-                    setPeakEditMode={setPeakEditMode}
-                    onClearManualPeaks={clearManualPeaks}
-                    manualPeakCount={(manualPeakEdits[active.session_id]?.added.length ?? 0) + (manualPeakEdits[active.session_id]?.removed.length ?? 0)}
                   />
                   <AssignmentConstraintsCard
                     categories={libraryCategories}
@@ -1857,35 +1853,25 @@ function PeakCard(props: {
   setPickAcrossOverlay: (value: boolean) => void;
   overlayEnabled: boolean;
   overlayCount: number;
-  peakEditMode: PeakEditMode;
-  setPeakEditMode: (value: PeakEditMode) => void;
-  onClearManualPeaks: () => void;
-  manualPeakCount: number;
 }) {
   const { pk, setPk } = props;
   return (
     <div className="card shrink-0 p-4">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold">Peak picking</h3>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-ink-600">
-            <input
-              type="checkbox"
-              checked={props.pickAcrossOverlay}
-              disabled={!props.overlayEnabled || props.overlayCount < 2}
-              onChange={(e) => props.setPickAcrossOverlay(e.target.checked)}
-            />
-            Pick on overlayed spectra
-          </label>
-          <button
-            className="btn-primary"
-            onClick={props.onRun}
-            disabled={props.disabled || props.picking}
-          >
-            {props.picking ? "Picking…" : "Pick peaks"}
-          </button>
-        </div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-card-title">Peak picking</h3>
+        <button className="btn-primary whitespace-nowrap" onClick={props.onRun} disabled={props.disabled || props.picking}>
+          {props.picking ? "Picking…" : "Pick peaks"}
+        </button>
       </div>
+      <label className="text-body mb-3 flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={props.pickAcrossOverlay}
+          disabled={!props.overlayEnabled || props.overlayCount < 2}
+          onChange={(e) => props.setPickAcrossOverlay(e.target.checked)}
+        />
+        Pick on overlaid spectra
+      </label>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Min prominence" className="flex flex-col justify-end">
           <input
@@ -1993,31 +1979,6 @@ function PeakCard(props: {
           />
         </Field>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-ink-200 pt-3">
-        <span className="text-xs font-medium text-ink-500">Manual peak edit:</span>
-        {(["none", "add", "remove"] as PeakEditMode[]).map((mode) => (
-          <Tooltip key={mode} content={mode === "none" ? "Disable chart click editing" : `${mode === "add" ? "Add" : "Remove"} peaks by clicking the chart`}>
-            <button
-              className={clsx(
-                "rounded-md border px-2 py-1 text-xs transition-colors",
-                props.peakEditMode === mode
-                  ? "border-brand-500 bg-brand-500/10 text-brand-700"
-                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-100",
-              )}
-              onClick={() => props.setPeakEditMode(mode)}
-            >
-              {mode}
-            </button>
-          </Tooltip>
-        ))}
-        <button
-          className="btn-ghost border border-ink-200 px-2 py-1 text-xs"
-          disabled={props.manualPeakCount === 0}
-          onClick={props.onClearManualPeaks}
-        >
-          Clear manual edits{props.manualPeakCount ? ` (${props.manualPeakCount})` : ""}
-        </button>
-      </div>
     </div>
   );
 }
@@ -2054,8 +2015,8 @@ function AssignmentConstraintsCard(props: {
     <div className="card shrink-0 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Assignment constraints</h3>
-          <p className="mt-0.5 text-xs text-ink-500">
+          <h3 className="text-card-title">Assignment constraints</h3>
+          <p className="text-caption mt-0.5">
             Rule out functional groups before re-labeling peaks.
           </p>
         </div>
@@ -2067,7 +2028,7 @@ function AssignmentConstraintsCard(props: {
           </span>
         </Tooltip>
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1.7fr_160px]">
+      <div className="grid grid-cols-1 gap-3">
         <Field label="Exclude categories">
           <div className="max-h-36 overflow-auto rounded-md border border-ink-200 bg-surface p-2">
             {categories.length === 0 ? (
@@ -2075,7 +2036,7 @@ function AssignmentConstraintsCard(props: {
             ) : (
               <div className="grid grid-cols-1 gap-1">
                 {categories.map((category) => (
-                  <label key={category} className="flex items-center gap-2 text-xs text-ink-700">
+                  <label key={category} className="flex items-center gap-2 text-[13px] text-ink-700">
                     <input
                       type="checkbox"
                       checked={props.constraints.excluded_categories.includes(category)}
@@ -2095,7 +2056,7 @@ function AssignmentConstraintsCard(props: {
             ) : (
               <div className="grid grid-cols-1 gap-1">
                 {subcategories.map(({ category, value }) => (
-                  <label key={`${category}:${value}`} className="flex items-center gap-2 text-xs text-ink-700">
+                  <label key={`${category}:${value}`} className="flex items-center gap-2 text-[13px] text-ink-700">
                     <input
                       type="checkbox"
                       checked={props.constraints.excluded_subcategories.includes(value)}
@@ -3077,6 +3038,7 @@ function SpectrumChart(props: {
       showlegend: props.overlays.length > 1,
       shapes: [...groupRegionShapes, ...atmosphericShapes, ...integrationShape],
       annotations: annotationSpecs.map((item) => item.annotation),
+      font: { color: pt.screenFontColor },
       plot_bgcolor: pt.plot_bgcolor,
       paper_bgcolor: pt.paper_bgcolor,
       colorway: pt.colorway,
@@ -3099,6 +3061,7 @@ function SpectrumChart(props: {
       pt.paper_bgcolor,
       pt.fontColor,
       pt.colorway,
+      pt.screenFontColor,
       xRange,
     ],
   );

@@ -23,6 +23,14 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **UI refresh, stage 2 (FTIR).**
+  - **Analysis panel:** 360 px wide with a 2×2 section switcher, so there is no sideways scrolling and the page no longer shifts. Settings sit 2 per row with labels above, so values such as baseline lambda (100000) are no longer cut off. Presets are one dropdown, undo/redo use icons, and the constraint lists are readable.
+  - **Chart:** a title plus one grey status line. The peak tool (Inspect / Add / Delete) moved into the chart toolbar, and the duplicate "Manual peak edit" controls were removed from the panel. The plot now fills the card, and chart text is readable in night mode.
+  - **Removed:** the quick SVG/PNG buttons. Use Export → 1:1 PNG/SVG, which gives a white background at your chosen size and DPI.
+  - **Dataset row:** one slim line.
+  - **Session list:** slim strip below 1600 px.
+  - **Look:** line icons, 12 px minimum text, and status colours from the theme.
+
 - **UI refresh, stage 1 (shared look + LCMS).** Calmer, easier-to-read interface:
   - neutral grey day theme and IBM Plex Sans; text is at least 12 px (13 px body);
   - line icons instead of emoji; one filled button per area, with the rest quiet;

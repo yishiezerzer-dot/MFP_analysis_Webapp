@@ -25,7 +25,7 @@ export interface FTIRInspectorPanelProps {
 const TABS: Array<{ id: FTIRInspectorTab; label: string; icon: LucideIcon; heading: string }> = [
   { id: "preprocess", label: "Preprocess", icon: FlaskConical, heading: "Baseline & spectra adjustments" },
   { id: "peaks", label: "Peaks & library", icon: MapPin, heading: "Peak identification & library matching" },
-  { id: "quant", label: "Deconvolution & quant", icon: Microscope, heading: "Amide I deconvolution & subtraction" },
+  { id: "quant", label: "Deconvolution", icon: Microscope, heading: "Amide I deconvolution & subtraction" },
   { id: "overlay", label: "Multi-overlay", icon: Layers, heading: "Multi-sample comparison" },
 ];
 
