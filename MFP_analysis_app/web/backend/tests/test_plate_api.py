@@ -162,3 +162,33 @@ def test_calculation_workbook_recomputes_to_the_api_values():
         pct = _evaluate(wb, "Calculation", row[col["% growth"]].value)
         assert mean == pytest.approx(point["mean"], abs=1e-9)
         assert pct == pytest.approx(point["percent_growth"], abs=1e-9)
+
+
+def test_experiment_workbook_has_the_grid_and_live_formulas_per_plate():
+    tag = "MIC workbook test"
+    gent = upload("gen5_gentamicin.xlsx")["session_id"]
+    poly = upload("gen5_lacglydoh_511_111.xlsx")["session_id"]
+    client.put(f"/api/plate-reader/sessions/{gent}/layout", json=gent_layout())
+    for sid in (gent, poly):
+        client.put(f"/api/experiments/sessions/{sid}/tag", json={"experiment_tag": tag})
+    exp = client.get(f"/api/plate-reader/experiments/{tag}").json()
+    resp = client.get(f"/api/plate-reader/experiments/{tag}/workbook")
+    assert resp.status_code == 200
+    wb = openpyxl.load_workbook(io.BytesIO(resp.content))
+    assert wb.sheetnames[0] == "MIC grid"
+    assert {"P1 Calculation", "P2 Calculation", "P1 Raw plate", "P2 Controls"} <= set(wb.sheetnames)
+
+    grid = [[c.value for c in r] for r in wb["MIC grid"].iter_rows(min_row=3)]
+    means = [r for r in grid if r[2] == "mean"]
+    assert [r[0] for r in means] == [g["name"] for p in exp["plates"] for g in p["analysis"]["groups"]]
+
+    idx = next(i for i, p in enumerate(exp["plates"], start=1) if p["session_id"] == gent)
+    calc = wb[f"P{idx} Calculation"]
+    rows = [r for r in calc.iter_rows(min_row=2) if r[0].value == "Gentamicin"]
+    api_points = next(p for p in exp["plates"] if p["session_id"] == gent)["analysis"]["groups"][0]["points"]
+    for row, point in zip(rows, api_points):
+        assert _evaluate(wb, f"P{idx} Calculation", row[6].value) == pytest.approx(point["percent_growth"], abs=1e-9)
+
+
+def test_experiment_workbook_404_for_unknown_tag():
+    assert client.get("/api/plate-reader/experiments/no such tag/workbook").status_code == 404

@@ -6,7 +6,7 @@
 4. POST   /sessions/{sid}/analysis        Blank, % growth, mean/SD per concentration, checks (recorded).
 5. GET    /sessions/{sid}/workbook        Excel workbook with every step as a live formula.
 6. GET/POST/DELETE /templates            Named layouts shared by the lab.
-7. GET    /experiments/{tag}              All plates with an experiment tag, analysed.
+7. GET    /experiments/{tag}[/workbook]   All plates with an experiment tag, analysed (or as one workbook).
 8. DELETE /sessions/{sid}
 """
 from __future__ import annotations
@@ -32,7 +32,7 @@ from ..db import (
 )
 from ..provenance import record
 from ..services.plate_reader_service import layout_for, registry, save_layout
-from ..services.plate_workbook import build_workbook
+from ..services.plate_workbook import build_experiment_workbook, build_workbook
 from ..upload_utils import stream_upload_to_file
 
 router = APIRouter()
@@ -205,22 +205,37 @@ def remove_template(template_id: str) -> Dict[str, bool]:
     return {"deleted": True}
 
 
-@router.get("/experiments/{tag}")
-def get_experiment(tag: str, subtract_blank: bool = Query(True)) -> Dict[str, Any]:
-    plates = []
+def _experiment_plates(tag: str, subtract_blank: bool):
     for rec in list_session_records(module="plate_reader", experiment_tag=tag):
         s = registry.get(rec["session_id"])
         if s is None:
             continue
         layout, source = layout_for(s)
-        plates.append({
-            "session_id": s.session_id,
-            "display_name": s.display_name,
-            "metadata": s.read.metadata,
-            "layout_source": source,
-            "analysis": _analyse(s, layout, subtract_blank=subtract_blank, fit_4pl=False),
-        })
+        yield s, layout, source, _analyse(s, layout, subtract_blank=subtract_blank, fit_4pl=False)
+
+
+@router.get("/experiments/{tag}")
+def get_experiment(tag: str, subtract_blank: bool = Query(True)) -> Dict[str, Any]:
+    plates = [
+        {"session_id": s.session_id, "display_name": s.display_name, "metadata": s.read.metadata,
+         "layout_source": source, "analysis": analysis}
+        for s, _, source, analysis in _experiment_plates(tag, subtract_blank)
+    ]
     return {"experiment_tag": tag, "plates": plates}
+
+
+@router.get("/experiments/{tag}/workbook")
+def download_experiment_workbook(tag: str, subtract_blank: bool = Query(True)) -> Response:
+    plates = [(s.display_name, s.read, layout, analysis) for s, layout, _, analysis in _experiment_plates(tag, subtract_blank)]
+    if not plates:
+        raise HTTPException(status_code=404, detail=f"No plates tagged '{tag}'")
+    content = build_experiment_workbook(tag, plates, subtract_blank=subtract_blank)
+    stem = re.sub(r"[^\w\-.]", "_", tag) or "experiment"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{stem}_plates.xlsx"'},
+    )
 
 
 @router.delete("/sessions/{sid}")

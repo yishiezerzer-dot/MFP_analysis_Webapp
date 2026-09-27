@@ -15,6 +15,7 @@ import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
 import { BLANK_RING, GC_RING, PlateGrid } from "../components/plate/PlateGrid";
 import { LayoutPanel, type SaveState } from "../components/plate/LayoutPanel";
 import { ResultsTab } from "../components/plate/ResultsTab";
+import { ExperimentTab } from "../components/plate/ExperimentTab";
 import { useStoredState } from "../hooks/useStoredState";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
@@ -72,6 +73,7 @@ export function PlateReaderView() {
   const [form, setForm] = useState<LayoutForm | null>(null);
   const [paint, setPaint] = useState<PaintTarget | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [savedCount, setSavedCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -79,6 +81,7 @@ export function PlateReaderView() {
   const pendingSave = useRef<{ sid: string; layout: PlateLayout; timer: number } | null>(null);
 
   const active = plates.find((p) => p.session_id === activeSid) ?? null;
+  const view: PlateTab = tab === "experiment" && !active?.experiment_tag ? "map" : tab;
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +112,7 @@ export function PlateReaderView() {
       .saveLayout(p.sid, p.layout)
       .then(() => {
         setSaveState("saved");
+        setSavedCount((n) => n + 1);
         setPlates((prev) =>
           prev.map((x) => (x.session_id === p.sid ? { ...x, layout: p.layout, layout_source: "saved" } : x)),
         );
@@ -319,7 +323,7 @@ export function PlateReaderView() {
                 <SegmentedControl<PlateTab>
                   ariaLabel="Plate view"
                   size="md"
-                  value={tab}
+                  value={view}
                   onChange={setTab}
                   options={[
                     { value: "map", label: "Plate map" },
@@ -328,7 +332,7 @@ export function PlateReaderView() {
                   ]}
                 />
               </div>
-              {tab === "map" ? (
+              {view === "map" ? (
                 <PlateMapCard
                   plate={active}
                   layout={layout}
@@ -337,13 +341,13 @@ export function PlateReaderView() {
                   onToggleExcluded={onToggleExcluded}
                   onPaint={onPaint}
                 />
-              ) : tab === "results" ? (
+              ) : view === "results" ? (
                 <ResultsTab plate={active} layout={layout} />
               ) : (
-                <div className="card p-8 text-center text-sm text-ink-500">Experiment view is being built.</div>
+                <ExperimentTab tag={active.experiment_tag} refreshKey={savedCount} />
               )}
             </main>
-            {tab === "map" && (
+            {view === "map" && (
               <LayoutPanel
                 form={form}
                 onFormChange={setForm}

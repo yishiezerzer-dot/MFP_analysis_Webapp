@@ -891,6 +891,10 @@ export const api = {
       apiFetch(
         `/api/plate-reader/experiments/${encodeURIComponent(tag)}?subtract_blank=${subtractBlank}`,
       ).then((r) => handle<PlateExperiment>(r)),
+    experimentWorkbook: (tag: string, subtractBlank: boolean) =>
+      apiFetch(
+        `/api/plate-reader/experiments/${encodeURIComponent(tag)}/workbook?subtract_blank=${subtractBlank}`,
+      ).then(handleBlob),
     remove: (sid: string) =>
       apiFetch(`/api/plate-reader/sessions/${sid}`, { method: "DELETE" }).then((r) =>
         handle<{ deleted: boolean }>(r),
