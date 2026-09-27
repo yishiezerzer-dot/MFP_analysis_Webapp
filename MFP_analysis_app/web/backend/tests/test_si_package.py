@@ -3,10 +3,10 @@ import hashlib
 import io
 import json
 import zipfile
+from pathlib import Path
 
 import numpy as np
 import openpyxl
-import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -15,7 +15,6 @@ from test_mzml_fast_index import _generate_synthetic_mzml
 
 client = TestClient(app)
 TAG = "SI_real_results"
-CONC = [64 / 2**i for i in range(11)] + [0.0]
 
 
 def _tag(sid):
@@ -39,17 +38,18 @@ def run():
         json={"mode": "absorbance", "region": [1600, 1780], "n_components": 2, "profile": "voigt"},
     ).json()
 
-    od = lambda c: 1.0 if c == 0 else 0.05 + 0.95 / (1 + (c / 2.0) ** 2)
-    rng = np.random.default_rng(1)
-    plate_df = pd.DataFrame([[od(c) + rng.normal(0, 0.01) for c in CONC] for _ in range(3)], columns=[str(i) for i in range(1, 13)])
-    plate_bytes = plate_df.to_csv(index=False).encode()
-    plate = client.post("/api/plate-reader/sessions", files={"file": ("mic_plate.csv", plate_bytes, "text/csv")}).json()["session_id"]
+    plate_bytes = (Path(__file__).parent / "fixtures" / "plate_reader" / "gen5_gentamicin.xlsx").read_bytes()
+    plate = client.post("/api/plate-reader/sessions", files={"file": ("gentamicin.xlsx", plate_bytes, "application/octet-stream")}).json()["session_id"]
     _tag(plate)
-    mic = client.post(
-        f"/api/plate-reader/sessions/{plate}/mic",
-        json={"sample_rows": [0, 1, 2], "concentration_columns": [str(i) for i in range(1, 13)],
-              "tick_text": ",".join(str(c) for c in CONC), "x_label": "Concentration (µg/mL)"},
-    ).json()
+    layout = {
+        "dilution": {"top": 1024, "unit": "µg/mL", "factor": 2},
+        "groups": [{"id": "g1", "name": "Gentamicin", "kind": "reference", "wells": [f"{r}{c}" for r in "ABC" for c in range(1, 12)]}],
+        "growth_control": ["A12", "B12", "C12"],
+        "blank": [f"{r}{c}" for r in "DEFGH" for c in range(1, 13)],
+        "excluded": ["B12"],
+    }
+    client.put(f"/api/plate-reader/sessions/{plate}/layout", json=layout)
+    mic = client.post(f"/api/plate-reader/sessions/{plate}/analysis", json={"subtract_blank": True, "fit_4pl": True}).json()
 
     lcms_bytes = _generate_synthetic_mzml(num_scans=6)
     lcms = client.post("/api/lcms/sessions", files={"file": ("run1.mzML", lcms_bytes, "application/octet-stream")}).json()["session_id"]
@@ -89,13 +89,23 @@ def test_ftir_fit_components_match(run):
     assert [r["Area %"] for r in rows] == pytest.approx([c["area_percent"] for c in run["fit"]["components"]])
 
 
-def test_mic_fit_matches_app_output(run):
-    (row,) = _sheet(run["zip"], "Plate_4PL")
-    fit = run["mic"]["result"]["four_pl"]
-    assert row["IC50"] == pytest.approx(fit["ic50"])
-    assert row["IC50 SE"] == pytest.approx(fit["ic50_se"])
-    assert row["Unit"] == "µg/mL"
-    assert row["R²"] == pytest.approx(fit["r_squared"])
+def test_plate_percent_growth_matches_app_output(run):
+    rows = _sheet(run["zip"], "Plate_MIC")
+    points = run["mic"]["groups"][0]["points"]
+    assert [r["Concentration"] for r in rows] == pytest.approx([p["concentration"] for p in points])
+    assert [r["% growth"] for r in rows] == pytest.approx([p["percent_growth"] for p in points])
+    assert {r["Compound"] for r in rows} == {"Gentamicin"}
+    assert rows[0]["Unit"] == "µg/mL" and rows[0]["Blank subtracted"] is True
+    assert "B12" in rows[0]["Excluded wells"]
+
+
+def test_plate_fit_matches_app_output(run):
+    fit = run["mic"]["groups"][0]["fit"]
+    rows = _sheet(run["zip"], "Plate_MIC_4PL")
+    if fit is None:
+        assert rows == []
+    else:
+        assert rows[0]["IC50"] == pytest.approx(fit["ic50"])
 
 
 def test_lcms_tables_present(run):
@@ -109,7 +119,7 @@ def test_methods_describe_the_actual_settings(run):
     methods = run["zip"].read(next(n for n in run["zip"].namelist() if n.endswith("Methods.md"))).decode()
     assert "airPLS" in methods and "12345" in methods
     assert "pseudo-Voigt" in methods
-    assert "4PL" in methods or "four-parameter" in methods
+    assert "growth control" in methods and "% growth" in methods
     # nothing from the old hard-coded text
     assert "R^2 \ge 0.98" not in methods and "10 ppm" not in methods
 
@@ -119,10 +129,10 @@ def test_manifest_hashes_and_raw_files(run):
     manifest = json.loads(zf.read("manifest.json"))
     by_name = {s["file"]: s for s in manifest["sessions"]}
     assert by_name["pla_film.csv"]["sha256"] == hashlib.sha256(run["ftir_bytes"]).hexdigest()
-    assert by_name["mic_plate.csv"]["sha256"] == hashlib.sha256(run["plate_bytes"]).hexdigest()
+    assert by_name["gentamicin.xlsx"]["sha256"] == hashlib.sha256(run["plate_bytes"]).hexdigest()
     assert zf.read("raw/ftir/pla_film.csv") == run["ftir_bytes"]
     assert zf.read("raw/lcms/run1.mzML") == run["lcms_bytes"]
-    assert {r["kind"] for r in manifest["results"]} >= {"peaks", "fit", "mic", "deconvolution", "feature_table"}
+    assert {r["kind"] for r in manifest["results"]} >= {"peaks", "fit", "mic_plate", "deconvolution", "feature_table"}
     assert manifest["app_version"].startswith("0.1.0+")
 
 

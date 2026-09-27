@@ -12,6 +12,7 @@ import logging
 import os
 import sqlite3
 import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -105,6 +106,17 @@ def _init_db_locked(conn: sqlite3.Connection) -> None:
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_results_session ON analysis_results(session_id)")
+
+        # Plate-reader layouts saved by name; shared by the whole lab.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plate_templates (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                layout_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
 
         # Ensure experiment_tag column exists in sessions
         cols = [r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()]
@@ -547,5 +559,48 @@ def get_workspace_state(workspace_id: str, module: str) -> Optional[Dict[str, An
             if not row:
                 return None
             return json.loads(row["state_json"])
+        finally:
+            conn.close()
+
+
+def list_plate_templates() -> List[Dict[str, Any]]:
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            rows = conn.execute("SELECT id, name, layout_json, updated_at FROM plate_templates ORDER BY name").fetchall()
+            return [{"id": r["id"], "name": r["name"], "layout": json.loads(r["layout_json"]), "updated_at": r["updated_at"]} for r in rows]
+        finally:
+            conn.close()
+
+
+def save_plate_template(name: str, layout: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a template, or replace the layout of the one with the same name."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            with conn:
+                row = conn.execute("SELECT id FROM plate_templates WHERE name = ?", (name,)).fetchone()
+                tid = row["id"] if row else uuid.uuid4().hex
+                conn.execute(
+                    """
+                    INSERT INTO plate_templates (id, name, layout_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET layout_json = excluded.layout_json, updated_at = excluded.updated_at
+                    """,
+                    (tid, name, json.dumps(layout), now, now),
+                )
+            return {"id": tid, "name": name, "layout": layout, "updated_at": now}
+        finally:
+            conn.close()
+
+
+def delete_plate_template(template_id: str) -> bool:
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            with conn:
+                cur = conn.execute("DELETE FROM plate_templates WHERE id = ?", (template_id,))
+            return cur.rowcount > 0
         finally:
             conn.close()
