@@ -29,6 +29,5 @@ lxml>=5.0
 httpx>=0.27
 openai>=1.40
 
-# --- Publication & Figure Engine ---
-reportlab>=4.0
+# --- Images (desktop app; shared lab_gui code) ---
 pillow>=10.0

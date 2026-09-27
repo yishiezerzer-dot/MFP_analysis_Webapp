@@ -241,7 +241,6 @@ def build_si_package(
     *,
     experiment_tag: str,
     include_raw_files: bool,
-    figure_pdf: Optional[bytes] = None,
 ) -> bytes:
     version = app_version()
     now = datetime.now(timezone.utc)
@@ -304,9 +303,6 @@ def build_si_package(
         zf.writestr(f"{stem}_Data_Tables.xlsx", xlsx.getvalue())
         zf.writestr(f"{stem}_Methods.md", _methods(sel, sessions, version).encode("utf-8"))
         zf.writestr("manifest.json", json.dumps(manifest, indent=2, default=str))
-        if figure_pdf:
-            zf.writestr(f"figures/{stem}_Figure.pdf", figure_pdf)
-            readme.append("figures/                  assembled figure (PDF; panels embedded as images)")
         if include_raw_files:
             missing = []
             used: set = set()

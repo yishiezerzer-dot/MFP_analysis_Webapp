@@ -667,87 +667,6 @@ export interface FTIRFitResponse {
   converged?: boolean;
   fit_error?: string | null;
 }
-
-// --- Data Studio types ---
-
-export interface DSSessionSummary {
-  session_id: string;
-  display_name: string;
-  experiment_tag?: string;
-  sheets: string[];
-  sheet_name: string | null;
-  header_row: number;
-  decimal_comma: boolean;
-  shape: [number, number] | null;
-}
-
-export interface DSSchema {
-  columns: string[];
-  dtypes: string[];
-  numeric_columns: string[];
-  n_rows: number;
-  n_cols: number;
-  schema_hash: string;
-}
-
-export interface DSTransformStep {
-  type:
-    | "select_columns"
-    | "rename"
-    | "to_numeric"
-    | "fillna"
-    | "normalize"
-    | "baseline"
-    | "log"
-    | "rolling_mean";
-  columns?: string[];
-  mode?: string;
-  mapping?: Record<string, string>;
-  errors?: string;
-  value?: unknown;
-  method?: string;
-  range?: [number, number];
-  base?: number;
-  offset?: number;
-  window?: number;
-  center?: boolean;
-}
-
-export interface DSPreview {
-  columns: string[];
-  rows: (string | number | null)[][];
-  n_rows_preview: number;
-  n_rows_total: number;
-  n_cols_total: number;
-  schema: DSSchema;
-  warnings: string[];
-}
-
-export type DSNormMode = "none" | "minmax" | "zscore";
-
-export interface DSPlotResponse {
-  x: (number | string | null)[] | null;
-  series: { name: string; y: (number | null)[] }[];
-  meta: {
-    x_col: string | null;
-    x_is_numeric?: boolean;
-    n_series: number;
-    n_points_full?: number;
-    n_points_returned?: number;
-  };
-}
-
-export interface DSHistResponse {
-  series: { name: string; counts: number[]; edges: number[] }[];
-  meta: { bins: number };
-}
-
-export interface DSLoadOptions {
-  sheet_name?: string | null;
-  header_row: number;
-  decimal_comma: boolean;
-}
-
 // --- AI Assistant types ---
 
 export type AIProvider = "demo" | "openai" | "anthropic" | "ollama";
@@ -834,57 +753,6 @@ export const api = {
       }).then((r) => handle<AIChatResponse>(r)),
   },
 
-  dataStudio: {
-    upload: (file: File) =>
-      postFileUpload("/api/data-studio/sessions", file).then((r) => handle<DSSessionSummary>(r)),
-    list: () =>
-      apiFetch("/api/data-studio/sessions").then((r) => handle<DSSessionSummary[]>(r)),
-    get: (sid: string) =>
-      apiFetch(`/api/data-studio/sessions/${sid}`).then((r) => handle<DSSessionSummary>(r)),
-    remove: (sid: string) =>
-      apiFetch(`/api/data-studio/sessions/${sid}`, { method: "DELETE" }).then((r) =>
-        handle<{ deleted: boolean }>(r),
-      ),
-    updateLoad: (sid: string, body: DSLoadOptions) =>
-      apiFetch(`/api/data-studio/sessions/${sid}/load`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }).then((r) => handle<DSSessionSummary>(r)),
-    schema: (sid: string) =>
-      apiFetch(`/api/data-studio/sessions/${sid}/schema`).then((r) => handle<DSSchema>(r)),
-    preview: (sid: string, body: { transforms: DSTransformStep[]; max_rows?: number }) =>
-      apiFetch(`/api/data-studio/sessions/${sid}/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }).then((r) => handle<DSPreview>(r)),
-    plot: (
-      sid: string,
-      body: {
-        transforms: DSTransformStep[];
-        x_col: string | null;
-        y_cols: string[];
-        y_normalize?: DSNormMode;
-        x_normalize?: DSNormMode;
-        max_points?: number;
-      },
-    ) =>
-      apiFetch(`/api/data-studio/sessions/${sid}/plot`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }).then((r) => handle<DSPlotResponse>(r)),
-    histogram: (
-      sid: string,
-      body: { transforms: DSTransformStep[]; y_cols: string[]; bins?: number },
-    ) =>
-      apiFetch(`/api/data-studio/sessions/${sid}/histogram`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }).then((r) => handle<DSHistResponse>(r)),
-  },
 
   ftir: {
     // Without yMode the backend detects absorbance/transmittance from the file.
@@ -1175,15 +1043,6 @@ export const api = {
       apiFetch(`/api/experiments/sessions/${sessionId}`).then((r) => handle<SessionExperimentInfo>(r)),
   },
   publication: {
-    renderFigurePdf: async (req: FigureRenderRequest): Promise<Blob> => {
-      const res = await apiFetch("/api/publication/render-figure-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(req),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return res.blob();
-    },
     downloadSIPackage: async (req: SIPackageRequest): Promise<Blob> => {
       const res = await apiFetch("/api/publication/si-package", {
         method: "POST",
@@ -1196,35 +1055,16 @@ export const api = {
   },
 };
 
-export interface FigurePanelSpec {
-  panel_label: string;
-  title?: string;
-  image_data?: string;
-  caption?: string;
-  source_module?: string;
-}
-
-export interface FigureRenderRequest {
-  title?: string;
-  journal_preset?: "acs_single" | "acs_double" | "nature_single" | "nature_double" | "rsc_single" | "rsc_double" | "custom";
-  width_mm?: number;
-  height_mm?: number;
-  layout_columns?: number;
-  font_family?: string;
-  panels: FigurePanelSpec[];
-}
-
 export interface SIPackageRequest {
   experiment_tag?: string;
   session_ids?: string[];
   include_raw_files?: boolean;
-  figures?: FigurePanelSpec[];
 }
 
 export interface LinkedSessionItem {
   session_id: string;
   workspace_id: string;
-  module: "lcms" | "ftir" | "plate_reader" | "data_studio";
+  module: "lcms" | "ftir" | "plate_reader";
   display_name: string;
   file_path: string;
   experiment_tag: string;
@@ -1240,7 +1080,6 @@ export interface ExperimentBundle {
     lcms: number;
     ftir: number;
     plate_reader: number;
-    data_studio: number;
   };
 }
 

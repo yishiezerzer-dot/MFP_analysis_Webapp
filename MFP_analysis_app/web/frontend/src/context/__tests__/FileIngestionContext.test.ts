@@ -32,12 +32,10 @@ describe("FileIngestionContext", () => {
     expect(classifyFile(file2)).toBe("/plate-reader");
   });
 
-  it("classifies JSON and Parquet to Data Studio", () => {
-    const file1 = new File(["dummy"], "dataset.json");
-    const file2 = new File(["dummy"], "table.parquet");
-
-    expect(classifyFile(file1)).toBe("/data-studio");
-    expect(classifyFile(file2)).toBe("/data-studio");
+  it("has no destination for JSON, Parquet or unknown files", () => {
+    expect(classifyFile(new File(["dummy"], "dataset.json"))).toBeNull();
+    expect(classifyFile(new File(["dummy"], "table.parquet"))).toBeNull();
+    expect(classifyFile(new File(["dummy"], "notes.docx"))).toBeNull();
   });
 
   it("handles contextual classification for CSV files", () => {
@@ -45,8 +43,8 @@ describe("FileIngestionContext", () => {
 
     // Defaults to /ftir when out of context
     expect(classifyFile(csvFile)).toBe("/ftir");
-    // Respects current route if in Data Studio
-    expect(classifyFile(csvFile, "/data-studio")).toBe("/data-studio");
+    // Respects current route if in Plate Reader
+    expect(classifyFile(csvFile, "/plate-reader")).toBe("/plate-reader");
     // Respects current route if in FTIR
     expect(classifyFile(csvFile, "/ftir")).toBe("/ftir");
   });
@@ -55,6 +53,6 @@ describe("FileIngestionContext", () => {
     expect(ROUTING_RULES["/lcms"].badge).toBe("LCMS");
     expect(ROUTING_RULES["/ftir"].badge).toBe("FTIR");
     expect(ROUTING_RULES["/plate-reader"].badge).toBe("Plate");
-    expect(ROUTING_RULES["/data-studio"].badge).toBe("Studio");
+    expect(Object.keys(ROUTING_RULES)).toEqual(["/lcms", "/ftir", "/plate-reader"]);
   });
 });

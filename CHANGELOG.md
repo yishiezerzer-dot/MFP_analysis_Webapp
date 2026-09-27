@@ -89,6 +89,10 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Removed
 
+- **Data Studio tab** (table import, transforms, plots): its page, API (`/api/data-studio`) and web service. Older Data Studio sessions stay in the database and are still listed in experiment bundles and SI packages, but can no longer be opened. The shared `lab_gui` table code used by the desktop app is unchanged.
+- **Figures & SI tab** and the multi-panel figure PDF builder (`/api/publication/render-figure-pdf`, `reportlab` dependency). **The SI package is kept:** download it from the experiment-tag button on the LCMS and FTIR pages.
+- Old links to `/data-studio` or `/figures` now open LCMS. Dropping a `.json` or `.parquet` file shows a "no module opens this file" message instead of opening Data Studio.
+
 - FTIR "MSC" normalisation: the single-spectrum version regressed the spectrum on its own polynomial fit, which always returns it unchanged (a no-op). Saved settings using it switch to *none* (plan 1.8).
 
 - The old SI package export wrote placeholder numbers and a fixed methods text instead of real results. **Any SI package downloaded before this version should not be used.**

@@ -15,7 +15,6 @@ export const GlobalDropOverlay: React.FC = () => {
     "/lcms",
     "/ftir",
     "/plate-reader",
-    "/data-studio",
   ];
 
   return (

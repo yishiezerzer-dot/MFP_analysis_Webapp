@@ -1,6 +1,6 @@
 # MFP Analysis App
 
-Full-stack laboratory data analysis platform for mass spectrometry (LCMS), FTIR spectroscopy, plate-reader MIC assays, flexible tabular plotting (Data Studio), and an AI assistant that can reason over your active sessions. The web app reuses the same pure-Python analysis code as the original desktop application, so results stay consistent across interfaces.
+Full-stack laboratory data analysis platform for mass spectrometry (LCMS), FTIR spectroscopy, plate-reader MIC assays, and an AI assistant that can reason over your active sessions. The web app reuses the same pure-Python analysis code as the original desktop application, so results stay consistent across interfaces.
 
 **Live development URLs**
 
@@ -36,15 +36,9 @@ All frontend `/api/*` requests are proxied to the backend on port 8000.
 - MIC (minimum inhibitory concentration) wizard: define sample/control/blank rows, choose plot types, and visualize dose–response style results.
 - Publication figure export for MIC charts.
 
-### Data Studio
-
-- Import CSV or Excel tables (including multi-sheet workbooks).
-- Build a transform pipeline (column select/rename, numeric coercion, fill-NA, normalize, baseline, log, rolling mean).
-- Create line, scatter, bar, area, step, and histogram plots from transformed data.
-
 ### AI Assistant
 
-- Chat interface with context from your active LCMS / FTIR / Plate Reader / Data Studio sessions.
+- Chat interface with context from your active LCMS / FTIR / Plate Reader sessions.
 - **Providers:**
   - **Demo** — always available; canned responses, no network.
   - **OpenAI** — requires `OPENAI_API_KEY` and the `openai` Python package (included in requirements).
@@ -72,7 +66,7 @@ The original Tkinter + Matplotlib desktop GUI lives in `MFP_analysis_app/lab_gui
                            │  /api/*  (Vite proxy)
 ┌──────────────────────────▼──────────────────────────────────┐
 │  FastAPI backend  →  uvicorn on :8000                       │
-│  Routers: lcms | ftir | plate-reader | data-studio | ai     │
+│  Routers: lcms | ftir | plate-reader | ai | publication     │
 │           automation                                        │
 └──────────────────────────┬──────────────────────────────────┘
                            │  imports
@@ -104,7 +98,7 @@ The original Tkinter + Matplotlib desktop GUI lives in `MFP_analysis_app/lab_gui
     ├── web/
     │   ├── frontend/                  ← React SPA (Vite)
     │   │   ├── package.json
-    │   │   └── src/views/           ← LCMS, FTIR, PlateReader, DataStudio, AI
+    │   │   └── src/views/           ← LCMS, FTIR, PlateReader, AI
     │   ├── backend/
     │   │   ├── requirements.txt       ← Canonical backend Python deps
     │   │   └── app/
@@ -221,9 +215,9 @@ There are **two** Python requirements files:
 
 ### Verdict for running the **web app**
 
-**Yes — the Python requirements are sufficient for the web backend and all five analysis modules**, provided you also install Node dependencies for the frontend.
+**Yes — the Python requirements are sufficient for the web backend and all analysis modules**, provided you also install Node dependencies for the frontend.
 
-Verified against actual imports in `web/backend/app/` and the `lab_gui` modules the backend uses (`lcms_io`, `ftir_analysis`, `plate_reader_io`, `data_studio_io`, `ai_assistant`, etc.):
+Verified against actual imports in `web/backend/app/` and the `lab_gui` modules the backend uses (`lcms_io`, `ftir_analysis`, `plate_reader_io`, `ai_assistant`, etc.):
 
 | Dependency | In requirements? | Used by web backend? |
 | --- | --- | --- |
@@ -231,7 +225,7 @@ Verified against actual imports in `web/backend/app/` and the `lab_gui` modules 
 | numpy / pandas | ✓ | All modules |
 | scipy | ✓ | FTIR peak picking, Savitzky–Golay, baselines (`ftir_analysis.py`) |
 | pyteomics / psims | ✓ | mzML (LCMS) |
-| openpyxl | ✓ | `.xlsx` in Data Studio & Plate Reader |
+| openpyxl | ✓ | `.xlsx` in Plate Reader; SI package tables |
 | xlrd | ✓ | Legacy `.xls` in `load_table` / plate reader |
 | lxml | ✓ | Not directly imported; safe optional pandas extra |
 | httpx / openai | ✓ | AI assistant |
@@ -337,7 +331,7 @@ Three visual themes: **day**, **night**, and **night-vision**, toggled via `data
 | `/api/lcms` | LCMS sessions, TIC, EIC, spectra, polymer search, exports |
 | `/api/ftir` | FTIR load, preprocess, peaks, assignment, matching, fit |
 | `/api/plate-reader` | Plate import, MIC analysis, plotting |
-| `/api/data-studio` | Table load, transforms, plot generation |
+| `/api/publication` | SI package (supplementary information) from recorded results |
 | `/api/ai` | Chat, provider status, context snapshot |
 | `/api/automation` | Action catalog, preview/execute, browser WebSocket bridge |
 
