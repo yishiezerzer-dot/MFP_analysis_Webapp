@@ -39,7 +39,7 @@ const colOf = (well: PlateWell) => Number(well.slice(1)) - 1;
 
 // Indices along the axis the compounds are laid out on, and along the dilution axis.
 export const lineAxis = (d: PlateDilution): Axis => (d.direction === "columns" ? "row" : "col");
-export const posAxis =(d: PlateDilution): Axis => (d.direction === "columns" ? "col" : "row");
+export const posAxis = (d: PlateDilution): Axis => (d.direction === "columns" ? "col" : "row");
 const axisSize = (axis: Axis) => (axis === "row" ? ROWS.length : COLS.length);
 
 function wellAt(line: number, pos: number, d: PlateDilution): PlateWell {
@@ -123,6 +123,11 @@ export function concentrationAt(well: PlateWell, d: PlateDilution): number | nul
 
 export function formatConcentration(v: number): string {
   return String(Number(v.toPrecision(v >= 1 ? 4 : 3)));
+}
+
+// Whole percent; a value just below the blank shows as 0%, not -0%.
+export function formatPercent(v: number | null | undefined): string {
+  return v == null ? "–" : `${Math.round(v) || 0}%`;
 }
 
 export interface FormProblem {

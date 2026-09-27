@@ -1,0 +1,607 @@
+{
+ "layout": {
+  "dilution": {
+   "top": 1024,
+   "unit": "µg/mL",
+   "factor": 2,
+   "direction": "columns",
+   "first": 1,
+   "last": 11
+  },
+  "groups": [
+   {
+    "id": "g1",
+    "name": "Gentamicin",
+    "kind": "reference",
+    "wells": [
+     "A1",
+     "A2",
+     "A3",
+     "A4",
+     "A5",
+     "A6",
+     "A7",
+     "A8",
+     "A9",
+     "A10",
+     "A11",
+     "B1",
+     "B2",
+     "B3",
+     "B4",
+     "B5",
+     "B6",
+     "B7",
+     "B8",
+     "B9",
+     "B10",
+     "B11",
+     "C1",
+     "C2",
+     "C3",
+     "C4",
+     "C5",
+     "C6",
+     "C7",
+     "C8",
+     "C9",
+     "C10",
+     "C11"
+    ],
+    "colour": null
+   }
+  ],
+  "growth_control": [
+   "A12",
+   "B12",
+   "C12"
+  ],
+  "blank": [
+   "D1",
+   "D2",
+   "D3",
+   "D4",
+   "D5",
+   "D6",
+   "D7",
+   "D8",
+   "D9",
+   "D10",
+   "D11",
+   "D12",
+   "E1",
+   "E2",
+   "E3",
+   "E4",
+   "E5",
+   "E6",
+   "E7",
+   "E8",
+   "E9",
+   "E10",
+   "E11",
+   "E12",
+   "F1",
+   "F2",
+   "F3",
+   "F4",
+   "F5",
+   "F6",
+   "F7",
+   "F8",
+   "F9",
+   "F10",
+   "F11",
+   "F12",
+   "G1",
+   "G2",
+   "G3",
+   "G4",
+   "G5",
+   "G6",
+   "G7",
+   "G8",
+   "G9",
+   "G10",
+   "G11",
+   "G12",
+   "H1",
+   "H2",
+   "H3",
+   "H4",
+   "H5",
+   "H6",
+   "H7",
+   "H8",
+   "H9",
+   "H10",
+   "H11",
+   "H12"
+  ],
+  "excluded": [
+   "B12"
+  ]
+ },
+ "analysis": {
+  "blank": {
+   "used": true,
+   "mean": 0.04775,
+   "sd": 0.0013976372313688826,
+   "n": 60,
+   "wells": [
+    "D1",
+    "D2",
+    "D3",
+    "D4",
+    "D5",
+    "D6",
+    "D7",
+    "D8",
+    "D9",
+    "D10",
+    "D11",
+    "D12",
+    "E1",
+    "E2",
+    "E3",
+    "E4",
+    "E5",
+    "E6",
+    "E7",
+    "E8",
+    "E9",
+    "E10",
+    "E11",
+    "E12",
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G5",
+    "G6",
+    "G7",
+    "G8",
+    "G9",
+    "G10",
+    "G11",
+    "G12",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7",
+    "H8",
+    "H9",
+    "H10",
+    "H11",
+    "H12"
+   ]
+  },
+  "unit": "µg/mL",
+  "groups": [
+   {
+    "id": "g1",
+    "name": "Gentamicin",
+    "kind": "reference",
+    "colour": null,
+    "growth_control": {
+     "wells": [
+      "A12",
+      "C12"
+     ],
+     "all_wells": [
+      "A12",
+      "B12",
+      "C12"
+     ],
+     "source": "own",
+     "mean": 1.34475,
+     "sd": 0.007778174593051951,
+     "cv": 0.5784104549583158
+    },
+    "points": [
+     {
+      "concentration": 1024.0,
+      "n": 3,
+      "mean": -0.005416666666666667,
+      "sd": 0.002309401076758501,
+      "cv": 42.635096801695404,
+      "percent_growth": -0.4028010162979489,
+      "wells": [
+       {
+        "well": "A1",
+        "raw": 0.041,
+        "value": -0.006749999999999999,
+        "percent_growth": -0.501952035694367,
+        "excluded": false
+       },
+       {
+        "well": "B1",
+        "raw": 0.041,
+        "value": -0.006749999999999999,
+        "percent_growth": -0.501952035694367,
+        "excluded": false
+       },
+       {
+        "well": "C1",
+        "raw": 0.045,
+        "value": -0.0027500000000000024,
+        "percent_growth": -0.20449897750511267,
+        "excluded": false
+       }
+      ]
+     },
+     {
+      "concentration": 512.0,
+      "n": 3,
+      "mean": -0.006416666666666665,
+      "sd": 0.0005773502691896262,
+      "cv": 8.997666532825345,
+      "percent_growth": -0.47716428084526236,
+      "wells": [
+       {
+        "well": "A2",
+        "raw": 0.042,
+        "value": -0.005749999999999998,
+        "percent_growth": -0.4275887711470533,
+        "excluded": false
+       },
+       {
+        "well": "B2",
+        "raw": 0.041,
+        "value": -0.006749999999999999,
+        "percent_growth": -0.501952035694367,
+        "excluded": false
+       },
+       {
+        "well": "C2",
+        "raw": 0.041,
+        "value": -0.006749999999999999,
+        "percent_growth": -0.501952035694367,
+        "excluded": false
+       }
+      ]
+     },
+     {
+      "concentration": 256.0,
+      "n": 3,
+      "mean": -0.005416666666666667,
+      "sd": 0.0005773502691896222,
+      "cv": 10.658774200423794,
+      "percent_growth": -0.4028010162979489,
+      "wells": [
+       {
+        "well": "A3",
+        "raw": 0.042,
+        "value": -0.005749999999999998,
+        "percent_growth": -0.4275887711470533,
+        "excluded": false
+       },
+       {
+        "well": "B3",
+        "raw": 0.042,
+        "value": -0.005749999999999998,
+        "percent_growth": -0.4275887711470533,
+        "excluded": false
+       },
+       {
+        "well": "C3",
+        "raw": 0.043,
+        "value": -0.004750000000000004,
+        "percent_growth": -0.35322550659974006,
+        "excluded": false
+       }
+      ]
+     },
+     {
+      "concentration": 128.0,
+      "n": 3,
+      "mean": -0.002416666666666669,
+      "sd": 0.0005773502691896262,
+      "cv": 23.89035596646727,
+      "percent_growth": -0.1797112226560081,
+      "wells": [
+       {
+        "well": "A4",
+        "raw": 0.046,
+        "value": -0.0017500000000000016,
+        "percent_growth": -0.13013571295779897,
+        "excluded": false
+       },
+       {
+        "well": "B4",
+        "raw": 0.045,
+        "value": -0.0027500000000000024,
+        "percent_growth": -0.20449897750511267,
+        "excluded": false
+       },
+       {
+        "well": "C4",
+        "raw": 0.045,
+        "value": -0.0027500000000000024,
+        "percent_growth": -0.20449897750511267,
+        "excluded": false
+       }
+      ]
+     },
+     {
+      "concentration": 64.0,
+      "n": 3,
+      "mean": -0.004750000000000004,
+      "sd": 0.0,
+      "cv": 0.0,
+      "percent_growth": -0.35322550659974006,
+      "wells": [
+       {
+        "well": "A5",
+        "raw": 0.043,
+        "value": -0.004750000000000004,
+        "percent_growth": -0.35322550659974006,
+        "excluded": false
+       },
+       {
+        "well": "B5",
+        "raw": 0.043,
+        "value": -0.004750000000000004,
+        "percent_growth": -0.35322550659974006,
+        "excluded": false
+       },
+       {
+        "well": "C5",
+        "raw": 0.043,
+        "value": -0.004750000000000004,
+        "percent_growth": -0.35322550659974006,
+        "excluded": false
+       }
+      ]
+     },
+     {
+      "concentration": 32.0,
+      "n": 3,
+      "mean": -0.005083333333333333,
+      "sd": 0.0011547005383792486,
+      "cv": 22.71542042713276,
+      "percent_growth": -0.3780132614488443,
+      "wells": [
+       {
+        "well": "A6",
+        "raw": 0.042,
+        "value": -0.005749999999999998,
+        "percent_growth": -0.4275887711470533,
+        "excluded": false
+       },
+       {
+        "well": "B6",
+        "raw": 0.044,
+        "value": -0.0037500000000000033,
+        "percent_growth": -0.2788622420524264,
+        "excluded": false
+       },
+       {
+        "well": "C6",
+        "raw": 0.042,
+        "value": -0.005749999999999998,
+        "percent_growth": -0.4275887711470533,
+        "excluded": false
+       }
+      ]
+     },
+     {
+      "concentration": 16.0,
+      "n": 3,
+      "mean": -0.005416666666666667,
+      "sd": 0.0005773502691896222,
+      "cv": 10.658774200423794,
+      "percent_growth": -0.4028010162979489,
+      "wells": [
+       {
+        "well": "A7",
+        "raw": 0.042,
+        "value": -0.005749999999999998,
+        "percent_growth": -0.4275887711470533,
+        "excluded": false
+       },
+       {
+        "well": "B7",
+        "raw": 0.042,
+        "value": -0.005749999999999998,
+        "percent_growth": -0.4275887711470533,
+        "excluded": false
+       },
+       {
+        "well": "C7",
+        "raw": 0.043,
+        "value": -0.004750000000000004,
+        "percent_growth": -0.35322550659974006,
+        "excluded": false
+       }
+      ]
+     },
+     {
+      "concentration": 8.0,
+      "n": 3,
+      "mean": -0.0057500000000000025,
+      "sd": 0.0017320508075688748,
+      "cv": 30.122622740328243,
+      "percent_growth": -0.4275887711470536,
+      "wells": [
+       {
+        "well": "A8",
+        "raw": 0.04,
+        "value": -0.00775,
+        "percent_growth": -0.5763153002416807,
+        "excluded": false
+       },
+       {
+        "well": "B8",
+        "raw": 0.043,
+        "value": -0.004750000000000004,
+        "percent_growth": -0.35322550659974006,
+        "excluded": false
+       },
+       {
+        "well": "C8",
+        "raw": 0.043,
+        "value": -0.004750000000000004,
+        "percent_growth": -0.35322550659974006,
+        "excluded": false
+       }
+      ]
+     },
+     {
+      "concentration": 4.0,
+      "n": 3,
+      "mean": -0.005083333333333333,
+      "sd": 0.0030550504633038923,
+      "cv": 60.09935337647001,
+      "percent_growth": -0.3780132614488443,
+      "wells": [
+       {
+        "well": "A9",
+        "raw": 0.042,
+        "value": -0.005749999999999998,
+        "percent_growth": -0.4275887711470533,
+        "excluded": false
+       },
+       {
+        "well": "B9",
+        "raw": 0.04,
+        "value": -0.00775,
+        "percent_growth": -0.5763153002416807,
+        "excluded": false
+       },
+       {
+        "well": "C9",
+        "raw": 0.046,
+        "value": -0.0017500000000000016,
+        "percent_growth": -0.13013571295779897,
+        "excluded": false
+       }
+      ]
+     },
+     {
+      "concentration": 2.0,
+      "n": 3,
+      "mean": 0.2975833333333333,
+      "sd": 0.5288537920194326,
+      "cv": 177.71620006253687,
+      "percent_growth": 22.12926814153808,
+      "wells": [
+       {
+        "well": "A10",
+        "raw": 0.041,
+        "value": -0.006749999999999999,
+        "percent_growth": -0.501952035694367,
+        "excluded": false
+       },
+       {
+        "well": "B10",
+        "raw": 0.039,
+        "value": -0.00875,
+        "percent_growth": -0.6506785647889943,
+        "excluded": false
+       },
+       {
+        "well": "C10",
+        "raw": 0.956,
+        "value": 0.90825,
+        "percent_growth": 67.54043502509761,
+        "excluded": false
+       }
+      ]
+     },
+     {
+      "concentration": 1.0,
+      "n": 3,
+      "mean": 0.6129166666666667,
+      "sd": 0.5366659420284963,
+      "cv": 87.55936511681787,
+      "percent_growth": 45.57848422879098,
+      "wells": [
+       {
+        "well": "A11",
+        "raw": 0.966,
+        "value": 0.91825,
+        "percent_growth": 68.28406767057075,
+        "excluded": false
+       },
+       {
+        "well": "B11",
+        "raw": 0.041,
+        "value": -0.006749999999999999,
+        "percent_growth": -0.501952035694367,
+        "excluded": false
+       },
+       {
+        "well": "C11",
+        "raw": 0.975,
+        "value": 0.92725,
+        "percent_growth": 68.95333705149658,
+        "excluded": false
+       }
+      ]
+     }
+    ],
+    "fit": null
+   }
+  ],
+  "checks": [
+   {
+    "id": "blank",
+    "level": "ok",
+    "message": "Blank 0.048 ± 0.001 over 60 wells is low and even"
+   },
+   {
+    "id": "reader_range",
+    "level": "ok",
+    "message": "No OD above the reader's reliable range (2.5)"
+   },
+   {
+    "id": "growth_control_grew",
+    "level": "ok",
+    "group": "Gentamicin",
+    "message": "Gentamicin: growth control 1.345 above blank"
+   },
+   {
+    "id": "growth_control_agreement",
+    "level": "ok",
+    "group": "Gentamicin",
+    "message": "Gentamicin: growth-control wells CV 1%"
+   },
+   {
+    "id": "replicate_agreement",
+    "level": "warn",
+    "group": "Gentamicin",
+    "message": "Gentamicin: replicates disagree at 1024 and 128 and 32 and 8 and 4 and 2 and 1 µg/mL (CV 23–178%, limit 20%): row C deviates most (on average 103% higher than the other rows)"
+   },
+   {
+    "id": "mic_in_range",
+    "level": "info",
+    "group": "Gentamicin",
+    "message": "Gentamicin: growth below 10% down to 4 µg/mL"
+   },
+   {
+    "id": "excluded",
+    "level": "info",
+    "message": "Excluded wells: B12"
+   }
+  ],
+  "excluded": [
+   "B12"
+  ]
+ }
+}

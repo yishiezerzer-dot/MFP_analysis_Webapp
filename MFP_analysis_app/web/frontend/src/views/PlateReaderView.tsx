@@ -14,6 +14,7 @@ import { ICON_PROPS } from "../components/common/ChartCardParts";
 import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
 import { BLANK_RING, GC_RING, PlateGrid } from "../components/plate/PlateGrid";
 import { LayoutPanel, type SaveState } from "../components/plate/LayoutPanel";
+import { ResultsTab } from "../components/plate/ResultsTab";
 import { useStoredState } from "../hooks/useStoredState";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
@@ -336,10 +337,10 @@ export function PlateReaderView() {
                   onToggleExcluded={onToggleExcluded}
                   onPaint={onPaint}
                 />
+              ) : tab === "results" ? (
+                <ResultsTab plate={active} layout={layout} />
               ) : (
-                <div className="card p-8 text-center text-sm text-ink-500">
-                  {tab === "results" ? "Results" : "Experiment"} view is being built.
-                </div>
+                <div className="card p-8 text-center text-sm text-ink-500">Experiment view is being built.</div>
               )}
             </main>
             {tab === "map" && (
