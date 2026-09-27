@@ -36,7 +36,7 @@ def test_experiment_tagging_db():
     assert bundle["counts"]["lcms"] == 1
     assert bundle["counts"]["ftir"] == 1
     assert bundle["counts"]["plate_reader"] == 1
-    assert bundle["counts"]["data_studio"] == 0
+    assert set(bundle["counts"]) == {"lcms", "ftir", "plate_reader"}
 
 
 def test_experiment_router_endpoints():
@@ -62,7 +62,7 @@ def test_experiment_router_endpoints():
 
     # Batch tag endpoint
     save_session_record("sid_batch_1", "general", "ftir", "Batch1.csv", "p1")
-    save_session_record("sid_batch_2", "general", "data_studio", "Batch2.csv", "p2")
+    save_session_record("sid_batch_2", "general", "plate_reader", "Batch2.csv", "p2")
 
     batch_resp = client.post(
         "/api/experiments/batch-tag",

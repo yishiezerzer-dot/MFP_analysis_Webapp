@@ -57,8 +57,8 @@ export const aiHelpModule: HelpModule = {
           </DocP>
           <DocH4>Active module focus</DocH4>
           <DocP>
-            Narrows contextual hints to LCMS vs FTIR vs Plate Reader vs Data Studio so answers reference the right
-            vocabulary (RT, wavenumber, wells, columns).
+            Narrows contextual hints to LCMS vs FTIR vs Plate Reader so answers reference the right vocabulary (RT,
+            wavenumber, wells).
           </DocP>
           <DocH4>Session checkboxes</DocH4>
           <DocP>

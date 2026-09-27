@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.db import save_session_record
 from app.main import app
-from app.services import data_studio_service, ftir_service, lcms_service, plate_reader_service
+from app.services import ftir_service, lcms_service, plate_reader_service
 
 client = TestClient(app)
 WS = "ws_restore_errors"
@@ -12,7 +12,6 @@ REGISTRIES = {
     "lcms": lcms_service.registry,
     "ftir": ftir_service.registry,
     "plate_reader": plate_reader_service.registry,
-    "data_studio": data_studio_service.registry,
 }
 
 

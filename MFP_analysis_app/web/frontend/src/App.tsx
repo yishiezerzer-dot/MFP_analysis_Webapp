@@ -6,9 +6,7 @@ import clsx from "clsx";
 
 const LCMSView = lazy(() => import("./views/LCMSView").then((m) => ({ default: m.LCMSView })));
 const PlateReaderView = lazy(() => import("./views/PlateReaderView").then((m) => ({ default: m.PlateReaderView })));
-const DataStudioView = lazy(() => import("./views/DataStudioView").then((m) => ({ default: m.DataStudioView })));
 const FTIRView = lazy(() => import("./views/FTIRView").then((m) => ({ default: m.FTIRView })));
-const FigureBuilderView = lazy(() => import("./views/FigureBuilderView").then((m) => ({ default: m.FigureBuilderView })));
 const AIView = lazy(() => import("./views/AIView").then((m) => ({ default: m.AIView })));
 import type { PageHeaderContextValue } from "./layout/PageHeader";
 import { UserMenu, type AppUser } from "./layout/UserMenu";
@@ -39,8 +37,6 @@ const TABS: TabDef[] = [
   { to: "/lcms", label: "LCMS", hint: "mzML viewer", status: "ready", icon: IconLCMS },
   { to: "/ftir", label: "FTIR", hint: "spectra + peaks", status: "ready", icon: IconFTIR },
   { to: "/plate-reader", label: "Plate Reader", hint: "MIC wizard", status: "ready", icon: IconPlate },
-  { to: "/data-studio", label: "Data Studio", hint: "plot builder", status: "ready", icon: IconTable },
-  { to: "/figures", label: "Figures & SI", hint: "paper figure engine", status: "ready", icon: IconFigures },
   { to: "/ai", label: "AI Assistant", hint: "analysis helper", status: "ready", icon: IconSparkle },
 ];
 
@@ -420,9 +416,9 @@ export default function App() {
               <Route path="/lcms" element={<LCMSView />} />
               <Route path="/ftir" element={<FTIRView />} />
               <Route path="/plate-reader" element={<PlateReaderView />} />
-              <Route path="/data-studio" element={<DataStudioView />} />
-              <Route path="/figures" element={<FigureBuilderView />} />
               <Route path="/ai" element={<AIView />} />
+            {/* Old links (e.g. the removed /data-studio and /figures tabs) land on LCMS instead of a blank page. */}
+            <Route path="*" element={<Navigate to="/lcms" replace />} />
             </Route>
           </Routes>
         </Suspense>
@@ -477,16 +473,6 @@ function IconPlate({ className }: { className?: string }) {
   );
 }
 
-function IconTable({ className }: { className?: string }) {
-  return (
-    <svg {...svgProps(className)}>
-      <path d="M3 21h18" />
-      <rect x="5" y="12" width="3" height="7" />
-      <rect x="10.5" y="8" width="3" height="11" />
-      <rect x="16" y="14" width="3" height="5" />
-    </svg>
-  );
-}
 
 function IconSparkle({ className }: { className?: string }) {
   return (
@@ -497,16 +483,6 @@ function IconSparkle({ className }: { className?: string }) {
   );
 }
 
-function IconFigures({ className }: { className?: string }) {
-  return (
-    <svg {...svgProps(className)}>
-      <rect x="3" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="3" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
-    </svg>
-  );
-}
 
 function IconPin({ pinned, className }: { pinned: boolean; className?: string }) {
   // Thumbtack icons modelled on Lucide's `Pin` / `PinOff`. When pinned, a

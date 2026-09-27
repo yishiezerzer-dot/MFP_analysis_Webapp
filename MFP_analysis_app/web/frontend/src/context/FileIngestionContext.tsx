@@ -7,8 +7,9 @@ import React, {
   useState,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useToast } from "../components/Toast";
 
-export type IngestionRoute = "/lcms" | "/ftir" | "/plate-reader" | "/data-studio";
+export type IngestionRoute = "/lcms" | "/ftir" | "/plate-reader";
 
 export interface FileRoutingRule {
   route: IngestionRoute;
@@ -40,16 +41,10 @@ export const ROUTING_RULES: Record<IngestionRoute, FileRoutingRule> = {
     description: "96/384-well absorbance & 4PL sigmoidal IC50 fits",
     extensions: [".xlsx", ".xls"],
   },
-  "/data-studio": {
-    route: "/data-studio",
-    label: "Data Studio",
-    badge: "Studio",
-    description: "Tabular datasets, transforms & publication charts",
-    extensions: [".json", ".parquet", ".csv", ".tsv"],
-  },
 };
 
-export function classifyFile(file: File, currentRoute?: string): IngestionRoute {
+// null = no module accepts this file type.
+export function classifyFile(file: File, currentRoute?: string): IngestionRoute | null {
   const name = file.name.toLowerCase();
 
   // Explicit LC-MS
@@ -67,21 +62,15 @@ export function classifyFile(file: File, currentRoute?: string): IngestionRoute 
     return "/ftir";
   }
 
-  // Explicit Data Studio JSON / Parquet
-  if (name.endsWith(".json") || name.endsWith(".parquet")) {
-    return "/data-studio";
-  }
-
   // Ambiguous text/tabular formats (.csv, .tsv, .txt)
   if (name.endsWith(".csv") || name.endsWith(".tsv") || name.endsWith(".txt")) {
-    if (currentRoute === "/data-studio") return "/data-studio";
     if (currentRoute === "/ftir") return "/ftir";
     if (currentRoute === "/plate-reader") return "/plate-reader";
-    // Default ambiguous CSVs to FTIR for spectral data or Data Studio
+    // Default ambiguous CSVs to FTIR (spectral data)
     return "/ftir";
   }
 
-  return "/data-studio";
+  return null;
 }
 
 type IngestHandler = (files: File[]) => void | Promise<void>;
@@ -103,6 +92,7 @@ export const FileIngestionProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const location = useLocation();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const handlersRef = useRef<Map<IngestionRoute, IngestHandler>>(new Map());
   const pendingFilesRef = useRef<Map<IngestionRoute, File[]>>(new Map());
@@ -144,11 +134,20 @@ export const FileIngestionProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Otherwise classify each file
       const grouped = new Map<IngestionRoute, File[]>();
+      const unsupported: string[] = [];
       for (const file of files) {
         const route = classifyFile(file, currentPath);
+        if (!route) {
+          unsupported.push(file.name);
+          continue;
+        }
         const group = grouped.get(route) || [];
         group.push(file);
         grouped.set(route, group);
+      }
+
+      if (unsupported.length > 0) {
+        toast(`No module opens ${unsupported.join(", ")}. Supported: mzML, FTIR spectra (CSV/TXT/JDX/SPA/SPC), plate reader (XLSX/XLS/CSV).`, "warning");
       }
 
       // Execute each group
@@ -163,7 +162,7 @@ export const FileIngestionProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
     },
-    [location.pathname, navigate],
+    [location.pathname, navigate, toast],
   );
 
   useEffect(() => {

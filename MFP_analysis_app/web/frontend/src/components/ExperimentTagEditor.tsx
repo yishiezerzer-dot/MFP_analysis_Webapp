@@ -7,7 +7,7 @@ import { Tooltip } from "./Tooltip";
 interface ExperimentTagEditorProps {
   sessionId: string | null;
   currentTag?: string;
-  module: "lcms" | "ftir" | "plate-reader" | "data-studio";
+  module: "lcms" | "ftir" | "plate-reader";
   onTagUpdated?: (newTag: string) => void;
   className?: string;
 }
@@ -211,6 +211,7 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
               <div className="max-h-40 overflow-y-auto space-y-1">
                 {bundle.sessions.map((item) => {
                   const isCurrent = item.session_id === sessionId;
+                  // Sessions from removed modules (e.g. Data Studio) stay listed but have no page to open.
                   const route =
                     item.module === "lcms"
                       ? "/lcms"
@@ -218,22 +219,15 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
                       ? "/ftir"
                       : item.module === "plate_reader"
                       ? "/plate-reader"
-                      : "/data-studio";
-
-                  const icon =
-                    item.module === "lcms"
-                      ? "🔬"
-                      : item.module === "ftir"
-                      ? "〰️"
-                      : item.module === "plate_reader"
-                      ? "🧫"
-                      : "📊";
+                      : null;
+                  const moduleLabel =
+                    item.module === "lcms" ? "LCMS" : item.module === "ftir" ? "FTIR" : item.module === "plate_reader" ? "Plate" : "Other";
 
                   return (
                     <div
                       key={item.session_id}
                       onClick={() => {
-                        if (!isCurrent) {
+                        if (!isCurrent && route) {
                           setIsOpen(false);
                           navigate(route);
                         }
@@ -246,7 +240,7 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
                       )}
                     >
                       <span className="flex items-center gap-1.5 truncate">
-                        <span>{icon}</span>
+                        <span className="w-10 shrink-0 text-ink-500">{moduleLabel}</span>
                         <span className="truncate max-w-[160px]">{item.display_name}</span>
                       </span>
                       {isCurrent ? (
@@ -262,21 +256,11 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
               <div className="mt-2.5 flex items-center gap-1.5 pt-2 border-t border-ink-100 dark:border-ink-800">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsOpen(false);
-                    navigate(`/figures?experiment=${encodeURIComponent(currentTag)}`);
-                  }}
-                  className="flex-1 rounded border border-ink-200 bg-surface px-2 py-1 text-[11px] font-medium text-ink-700 hover:bg-ink-100 dark:border-ink-700 dark:text-ink-200"
-                >
-                  Assemble Figure 🎨
-                </button>
-                <button
-                  type="button"
                   onClick={() => void handleDownloadSI()}
                   disabled={isDownloadingSI}
                   className="flex-1 rounded bg-brand-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
                 >
-                  {isDownloadingSI ? "Packaging…" : "Download SI 📦"}
+                  {isDownloadingSI ? "Packaging…" : "Download SI package"}
                 </button>
               </div>
             </div>

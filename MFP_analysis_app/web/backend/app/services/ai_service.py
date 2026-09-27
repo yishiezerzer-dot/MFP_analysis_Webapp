@@ -127,7 +127,6 @@ def context_snapshot() -> Dict[str, Any]:
         "LCMS": _snapshot_lcms(),
         "FTIR": _snapshot_ftir(),
         "Plate Reader": _snapshot_plate(),
-        "Data Studio": _snapshot_ds(),
     }
 
 
@@ -201,10 +200,6 @@ def _snapshot_plate() -> Dict[str, Any]:
     return _snapshot(
         "plate_reader", "Plate Reader has {n} plate session(s) loaded.", "Plate Reader module is available; no plates loaded."
     )
-
-
-def _snapshot_ds() -> Dict[str, Any]:
-    return _snapshot("data_studio", "Data Studio has {n} table session(s) loaded.", "Data Studio is available; no tables loaded.")
 
 
 # ------------------------------ chat ------------------------------

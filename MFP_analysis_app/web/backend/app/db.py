@@ -396,7 +396,6 @@ def get_experiment_bundle(tag: str, workspace_id: Optional[str] = None) -> Dict[
                     "lcms": sum(1 for s in items if s["module"] == "lcms"),
                     "ftir": sum(1 for s in items if s["module"] == "ftir"),
                     "plate_reader": sum(1 for s in items if s["module"] == "plate_reader"),
-                    "data_studio": sum(1 for s in items if s["module"] == "data_studio"),
                 },
             }
         finally:

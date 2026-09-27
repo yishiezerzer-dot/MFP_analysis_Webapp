@@ -705,7 +705,7 @@ export function AIView() {
   usePageHeader(
     <PageHeaderContent
       title="AI Assistant"
-      subtitle="Ask about FTIR, LCMS, plate reader, data studio workflows, or let the assistant run approved automation actions."
+      subtitle="Ask about FTIR, LCMS or plate reader workflows, or let the assistant run approved automation actions."
       actions={
         <>
           <HelpOpenButton onClick={() => setHelpOpen(true)} />
@@ -1201,7 +1201,7 @@ function ContextCard(props: {
           <div className="rounded border border-dashed border-ink-200 px-2 py-3 text-[11px] text-ink-500">
             No datasets loaded yet. Open another tab to upload a file, then Refresh here.
             <p className="mt-2 text-center text-[11px] text-ink-500">
-              Open LCMS, FTIR, Plate Reader, or Data Studio to upload files.
+              Open LCMS, FTIR or Plate Reader to upload files.
             </p>
           </div>
         ) : (

@@ -1,14 +1,14 @@
 # MFP Analysis App — Lab Data Analysis Webapp
 
 Full-stack scientific analysis tool: React 18 + TypeScript frontend, Python FastAPI backend.
-Five analysis modules: LCMS, FTIR, Plate Reader, Data Studio, AI Assistant.
+Analysis modules: LCMS, FTIR, Plate Reader, AI Assistant (Data Studio and the Figures tab were removed 2026-09).
 
 ## Repository Layout
 
 MFP_analysis_app/web/
 ├── frontend/                   # React 18 + TypeScript + Vite + Tailwind
 │   └── src/
-│       ├── views/              # Five tab views (LCMS, FTIR, PlateReader, DataStudio, AI)
+│       ├── views/              # Tab views (LCMS, FTIR, PlateReader, AI)
 │       ├── components/         # Shared UI (EmptyState, Tooltip, Toast, SectionDivider)
 │       ├── layout/             # PageHeader, UserMenu
 │       ├── store/              # RTK slices + store (create here when needed)
@@ -16,7 +16,7 @@ MFP_analysis_app/web/
 │       └── api.ts              # Typed fetch wrapper — all backend calls go through here
 └── backend/
     └── app/
-        ├── routers/            # One router per module (lcms, ftir, plate_reader, data_studio, ai)
+        ├── routers/            # One router per module (lcms, ftir, plate_reader, ai) + experiments, publication
         └── services/           # Business logic per module
 
 ## Dev Commands

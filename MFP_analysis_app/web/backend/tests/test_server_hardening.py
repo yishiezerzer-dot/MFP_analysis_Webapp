@@ -51,8 +51,6 @@ def test_summaries_do_not_expose_server_paths(lcms_sid, tmp_path):
     _no_server_paths(ftir.json(), [data_dir])
     plate = client.post("/api/plate-reader/sessions", files={"file": ("p.csv", b"a,b\n1,2\n3,4\n", "text/csv")})
     _no_server_paths(plate.json(), [data_dir])
-    ds = client.post("/api/data-studio/sessions", files={"file": ("d.csv", b"a,b\n1,2\n3,4\n", "text/csv")})
-    _no_server_paths(ds.json(), [data_dir])
 
 
 def test_ollama_base_url_cannot_be_set_by_request():
@@ -61,7 +59,7 @@ def test_ollama_base_url_cannot_be_set_by_request():
     assert "ollama_base_url" not in ChatRequest.model_fields
 
 
-@pytest.mark.parametrize("route", ["/api/lcms/sessions", "/api/ftir/sessions", "/api/plate-reader/sessions", "/api/data-studio/sessions"])
+@pytest.mark.parametrize("route", ["/api/lcms/sessions", "/api/ftir/sessions", "/api/plate-reader/sessions"])
 def test_uploads_require_a_file_and_never_fetch_urls(route, monkeypatch):
     import httpx
 

@@ -25,7 +25,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from .automation import router as automation  # noqa: E402
 from .backup import start_nightly_backups  # noqa: E402
 from .db import init_db  # noqa: E402
-from .routers import ai, data_studio, experiments, ftir, lcms, plate_reader, publication, workspaces  # noqa: E402
+from .routers import ai, experiments, ftir, lcms, plate_reader, publication, workspaces  # noqa: E402
 
 init_db()
 
@@ -83,7 +83,6 @@ def health() -> dict[str, str]:
 
 app.include_router(lcms.router, prefix="/api/lcms", tags=["lcms"])
 app.include_router(plate_reader.router, prefix="/api/plate-reader", tags=["plate-reader"])
-app.include_router(data_studio.router, prefix="/api/data-studio", tags=["data-studio"])
 app.include_router(ftir.router, prefix="/api/ftir", tags=["ftir"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(workspaces.router, prefix="/api/workspaces", tags=["workspaces"])
