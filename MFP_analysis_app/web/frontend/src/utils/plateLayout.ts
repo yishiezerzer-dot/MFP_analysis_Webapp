@@ -221,7 +221,10 @@ export function formFromLayout(layout: PlateLayout): LayoutForm {
   return {
     dilution: { ...d },
     compounds,
-    control: formatSpec(layout.growth_control.map((w) => positionOf(w, d)), pa),
+    // With no growth control yet, the usual column 12 (row H) is filled in rather than left blank.
+    control: layout.growth_control.length
+      ? formatSpec(layout.growth_control.map((w) => positionOf(w, d)), pa)
+      : d.direction === "columns" ? "12" : "H",
     blank: formatSpec(layout.blank.map((w) => lineOf(w, d)), la),
   };
 }

@@ -79,6 +79,15 @@ describe("buildLayout", () => {
     expect(buildLayout(form, layout.excluded)).toEqual(layout);
   });
 
+  it("fills in growth-control column 12 for a plate without a layout, without marking it changed", () => {
+    const empty: PlateLayout = { dilution: { ...DEFAULT_DILUTION }, groups: [], growth_control: [], blank: [], excluded: [] };
+    const form = formFromLayout(empty);
+    expect(form.control).toBe("12");
+    expect(formsEqual(form, formFromLayout(buildLayout(form)))).toBe(true);
+    const withCompound = { ...form, compounds: [{ id: "g", name: "Gentamicin", kind: "reference" as const, lines: "A–C", colour: "#405a9c" }] };
+    expect(buildLayout(withCompound).growth_control).toEqual(["A12", "B12", "C12"]);
+  });
+
   it("supports dilutions down rows", () => {
     const rows = buildLayout({
       dilution: { ...DEFAULT_DILUTION, direction: "rows", first: 1, last: 7 },
