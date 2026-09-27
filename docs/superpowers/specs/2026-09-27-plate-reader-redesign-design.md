@@ -1,6 +1,6 @@
 # Plate Reader redesign (MIC first)
 
-Date: 2026-09-27 · Status: approved in brainstorming, awaiting spec review
+Date: 2026-09-27 · Status: approved by the user (2026-09-27)
 
 ## Goal
 
@@ -154,7 +154,7 @@ Opening it in Excel recomputes everything from the raw numbers.
 
 ## 8. Testing
 
-- **Gen5 reader:** fixtures shaped like the two exports provided (metadata block, grid with trailing wavelength column, notes). The fixtures are synthetic copies with altered numbers unless the user approves committing the real files. Tests:
+- **Gen5 reader:** fixtures shaped like the two exports provided (metadata block, grid with trailing wavelength column, notes). The fixtures are the two real exports (user approved 2026-09-27), stored in `web/backend/tests/fixtures/plate_reader/`. Tests:
   - metadata;
   - all 96 values;
   - wavelength;
