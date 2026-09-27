@@ -23,6 +23,13 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **Plate Reader redesigned for MIC plates.** The MIC wizard (row-role buttons, concentration columns, typed tick labels) is replaced by a plate map.
+  - **Import:** BioTek Gen5 exports (reader, date, read type, wavelength, temperature) or any sheet with an 8×12 block labelled A–H / 1–12. Notes typed under the plate in Gen5 (e.g. "A-C - LacGlyDOH 5:1:1") fill in the layout.
+  - **Plate map:** each well shows its OD. A form sets the dilution series (column 1 = top concentration, default 1024 µg/mL, ÷2 to column 11), the compound rows, the growth-control column and optional blank rows. Drag across wells to reassign them; click a well to exclude it. Layouts save automatically; templates are shared by the lab.
+  - **Calculation:** each compound is compared with the growth-control wells in its own rows: % growth = 100 × (mean OD − blank) ÷ (growth control − blank). Automatic checks flag a growth control that did not grow or looks inhibited, a high or uneven blank, disagreeing replicates (naming the row), readings above 2.5 and whether growth falls below 10%.
+  - **Results:** heatmap, dose–response (mean ± SD, log₂ axis), % growth, stick plot, optional 4PL IC₅₀ and a results table, all on one page. Each has "How is this calculated?" with this plate's wells and numbers and the Excel steps. The calculation workbook redoes every step with live formulas.
+  - **Experiment:** plates with the same experiment tag (e.g. samples and a gentamicin plate) are combined in a % growth chart and a MIC reading grid, with *Export all (Excel)* and the SI package.
+  - **Old sessions** open in the new view; set their layout once. Old MIC results stay in the SI package.
 - **UI refresh, stage 2 (FTIR).**
   - **Analysis panel:** 360 px wide with a 2×2 section switcher, so there is no sideways scrolling and the page no longer shifts. Settings sit 2 per row with labels above, so values such as baseline lambda (100000) are no longer cut off. Presets are one dropdown, undo/redo use icons, and the constraint lists are readable.
   - **Chart:** a title plus one grey status line. The peak tool (Inspect / Add / Delete) moved into the chart toolbar, and the duplicate "Manual peak edit" controls were removed from the panel. The plot now fills the card, and chart text is readable in night mode.

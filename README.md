@@ -32,9 +32,10 @@ All frontend `/api/*` requests are proxied to the backend on port 8000.
 
 ### Plate Reader
 
-- Import plate-reader Excel or delimited files.
-- MIC (minimum inhibitory concentration) wizard: define sample/control/blank rows, choose plot types, and visualize dose–response style results.
-- Publication figure export for MIC charts.
+- Import BioTek Gen5 exports or any Excel/CSV sheet with an 8×12 plate block; Gen5 notes pre-fill the layout.
+- Plate map: dilution series, compound rows, growth control and blank; paint wells, exclude bad wells, shared layout templates.
+- MIC results: heatmap, dose–response, % growth, stick plot, optional 4PL IC₅₀ and a results table, each with a "How is this calculated?" panel and automatic checks.
+- Calculation workbook (Excel, live formulas) per plate; Experiment view combining plates with the same tag, with a MIC reading grid and publication figure export.
 
 ### AI Assistant
 
@@ -330,7 +331,7 @@ Three visual themes: **day**, **night**, and **night-vision**, toggled via `data
 | --- | --- |
 | `/api/lcms` | LCMS sessions, TIC, EIC, spectra, polymer search, exports |
 | `/api/ftir` | FTIR load, preprocess, peaks, assignment, matching, fit |
-| `/api/plate-reader` | Plate import, MIC analysis, plotting |
+| `/api/plate-reader` | Plate import, layouts and templates, MIC analysis, calculation workbooks, experiments |
 | `/api/publication` | SI package (supplementary information) from recorded results |
 | `/api/ai` | Chat, provider status, context snapshot |
 | `/api/automation` | Action catalog, preview/execute, browser WebSocket bridge |
