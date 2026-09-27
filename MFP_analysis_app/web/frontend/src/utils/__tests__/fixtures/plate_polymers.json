@@ -1100,7 +1100,7 @@
     "id": "replicate_agreement",
     "level": "warn",
     "group": "LacGlyDOH 5:1:1",
-    "message": "LacGlyDOH 5:1:1: replicates disagree at 256 and 128 µg/mL (CV 22–23%, limit 20%): row A deviates most (on average 31% higher than the other rows)"
+    "message": "LacGlyDOH 5:1:1: replicates disagree at 256 and 128 µg/mL (CV 22–23%, limit 20%): row A reads higher than the other rows (by 29 % growth points on average)"
    },
    {
     "id": "mic_in_range",
@@ -1124,7 +1124,7 @@
     "id": "replicate_agreement",
     "level": "ok",
     "group": "LacGlyDOH 1:1:1",
-    "message": "LacGlyDOH 1:1:1: replicates agree (CV ≤ 20%)"
+    "message": "LacGlyDOH 1:1:1: replicates agree (CV ≤ 20% where there is growth)"
    },
    {
     "id": "mic_in_range",

@@ -20,6 +20,7 @@ MAX_BLANK_OD = 0.1
 MAX_READER_OD = 2.5          # above this absorbance readers are no longer linear
 INHIBITED_GC_FRACTION = 0.5  # a growth-control well below half of its partners looks inhibited
 NO_GROWTH_PERCENT = 10.0     # "no growth" for the MIC-in-range note
+MIN_NOISE_OD = 0.05          # without a growth control, means below this count as no growth
 
 
 def _split(well: str) -> tuple:
@@ -216,19 +217,36 @@ def analyse_plate(
                 "id": "growth_control_agreement", "level": "warn" if gc_cv > MAX_CV_PERCENT else "ok", "group": g.name,
                 "message": f"{g.name}: growth-control wells CV {gc_cv:.0f}%" + (f" (limit {MAX_CV_PERCENT:g}%)" if gc_cv > MAX_CV_PERCENT else ""),
             })
-        noisy = [p for p in points if p["cv"] is not None and p["cv"] > MAX_CV_PERCENT and p["n"] > 1]
+        # Where nothing grew the mean is ~0 OD, so CV explodes on tiny differences: skip those points.
+        def grows(p: Dict[str, Any]) -> bool:
+            if p["mean"] is None:
+                return False
+            return p["mean"] >= (NO_GROWTH_PERCENT / 100 * gc_mean if gc_mean else MIN_NOISE_OD)
+
+        growing = [p for p in points if grows(p)]
+        noisy = [p for p in growing if p["cv"] is not None and p["cv"] > MAX_CV_PERCENT and p["n"] > 1]
         if noisy:
-            row_dev: Dict[str, List[float]] = {}
-            for p in points:
-                vals = {_split(x["well"])[0]: x["value"] for x in p["wells"] if not x["excluded"] and x["value"] is not None}
-                for r, val in vals.items():
-                    others = [o for rr, o in vals.items() if rr != r]
-                    if others and st.mean(others) > 0:
-                        row_dev.setdefault(r, []).append(val / st.mean(others) - 1)
-            worst_row, worst = max(((r, st.mean(d)) for r, d in row_dev.items()), key=lambda t: abs(t[1]), default=(None, 0.0))
+            # At each disagreeing concentration, the replicate row farthest from the median.
+            by_row = layout.dilution.direction == "columns"
+            rep = "row" if by_row else "column"
+            outliers = []
+            for p in noisy:
+                vals = {_split(x["well"])[0 if by_row else 1]: x["value"] for x in p["wells"] if not x["excluded"] and x["value"] is not None}
+                med = st.median(vals.values())
+                out_key, out_val = max(vals.items(), key=lambda kv: abs(kv[1] - med))
+                outliers.append((p["concentration"], out_key, out_val - med))
+            scale = (lambda d: f"{abs(d) / gc_mean * 100:.0f} % growth points") if gc_mean else (lambda d: f"{abs(d):.3f} OD")
+            rows_out = {r for _, r, _ in outliers}
+            if len(rows_out) == 1:
+                diffs = [d for _, _, d in outliers]
+                avg = st.mean(diffs)
+                detail = (f": {rep} {outliers[0][1]} reads {'higher' if avg > 0 else 'lower'} than the other {rep}s "
+                          f"(by {scale(avg)} on average)")
+            else:
+                detail = ": " + "; ".join(
+                    f"at {_fmt(c)} {layout.dilution.unit} {rep} {r} is {'higher' if d > 0 else 'lower'}" for c, r, d in outliers
+                )
             cvs = [p["cv"] for p in noisy]
-            detail = (f": row {worst_row} deviates most (on average {abs(worst) * 100:.0f}% "
-                      f"{'higher' if worst > 0 else 'lower'} than the other rows)") if worst_row else ""
             checks.append({
                 "id": "replicate_agreement", "level": "warn", "group": g.name,
                 "message": (f"{g.name}: replicates disagree at {' and '.join(_fmt(p['concentration']) for p in noisy)} "
@@ -236,7 +254,7 @@ def analyse_plate(
             })
         else:
             checks.append({"id": "replicate_agreement", "level": "ok", "group": g.name,
-                           "message": f"{g.name}: replicates agree (CV ≤ {MAX_CV_PERCENT:g}%)"})
+                           "message": f"{g.name}: replicates agree (CV ≤ {MAX_CV_PERCENT:g}% where there is growth)"})
         pcts = [p["percent_growth"] for p in points if p["percent_growth"] is not None]
         if pcts:
             no_growth = [p["concentration"] for p in points if p["percent_growth"] is not None and p["percent_growth"] < NO_GROWTH_PERCENT]

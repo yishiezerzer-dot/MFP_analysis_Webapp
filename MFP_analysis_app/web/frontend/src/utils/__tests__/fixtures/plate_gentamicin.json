@@ -586,7 +586,7 @@
     "id": "replicate_agreement",
     "level": "warn",
     "group": "Gentamicin",
-    "message": "Gentamicin: replicates disagree at 1024 and 128 and 32 and 8 and 4 and 2 and 1 µg/mL (CV 23–178%, limit 20%): row C deviates most (on average 103% higher than the other rows)"
+    "message": "Gentamicin: replicates disagree at 2 and 1 µg/mL (CV 88–178%, limit 20%): at 2 µg/mL row C is higher; at 1 µg/mL row B is lower"
    },
    {
     "id": "mic_in_range",

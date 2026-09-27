@@ -40,7 +40,7 @@ describe("explainPlateChart on the polymer plate", () => {
   });
 
   it("carries the row-A replicate warning", () => {
-    expect(dose.checks.find((c) => c.level === "warn")?.message).toMatch(/row A deviates most/);
+    expect(dose.checks.find((c) => c.level === "warn")?.message).toMatch(/row A reads higher/);
   });
 
   it("works a % growth example with this plate's numbers", () => {

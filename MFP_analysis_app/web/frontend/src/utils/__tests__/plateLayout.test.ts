@@ -86,6 +86,8 @@ describe("buildLayout", () => {
     expect(formsEqual(form, formFromLayout(buildLayout(form)))).toBe(true);
     const withCompound = { ...form, compounds: [{ id: "g", name: "Gentamicin", kind: "reference" as const, lines: "A–C", colour: "#405a9c" }] };
     expect(buildLayout(withCompound).growth_control).toEqual(["A12", "B12", "C12"]);
+    const noControl = { ...buildLayout(withCompound), growth_control: [] };
+    expect(formFromLayout(noControl).control).toBe("");
   });
 
   it("supports dilutions down rows", () => {

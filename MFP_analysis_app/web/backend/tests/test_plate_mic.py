@@ -117,3 +117,14 @@ def test_optional_4pl_fit_is_off_by_default():
     assert group(analyse_plate(GENT.values, layout), "Gentamicin")["fit"] is None
     fit = group(analyse_plate(GENT.values, layout, fit_4pl=True), "Gentamicin")["fit"]
     assert fit is None or fit["ic50"] > 0
+
+
+def test_replicate_check_ignores_concentrations_without_growth():
+    # Gentamicin with B12 excluded: 1024-4 µg/mL read ~0 OD (CV meaningless); at 2 and 1 µg/mL
+    # row B stays clear while rows A and C regrow, which is a real disagreement.
+    layout = layout_from_suggestions([{"name": "Gentamicin", "rows": list("ABC")}], blank_rows=list("DEFGH"), excluded=["B12"])
+    warn = check(analyse_plate(GENT.values, layout), "replicate_agreement")[0]
+    assert warn["level"] == "warn"
+    assert "disagree at 2 and 1 µg/mL" in warn["message"]
+    assert "1024" not in warn["message"]
+    assert warn["message"].endswith("at 2 µg/mL row C is higher; at 1 µg/mL row B is lower")
