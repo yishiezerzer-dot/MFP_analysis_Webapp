@@ -1,1629 +1,514 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Plot from "react-plotly.js";
-import Plotly from "plotly.js-dist-min";
-import type { Data, PlotlyHTMLElement } from "plotly.js";
 import clsx from "clsx";
 import { useLocation } from "react-router-dom";
-import {
-  api,
-  MICControlStyle,
-  MICPlotType,
-  MICResult,
-  PlatePreview,
-  PlateSessionSummary,
-} from "../api";
+import { Grid3X3, X } from "lucide-react";
+import { api, type PlateLayout, type PlateMetadata, type PlateSummary, type PlateTemplate, type PlateWell } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton, HelpShell } from "../help/HelpShell";
 import { getHelpModule } from "../help/registry";
-import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
-import { Tooltip } from "../components/Tooltip";
-import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
+import { useToast } from "../components/Toast";
+import { SideRail } from "../components/common/SideRail";
+import { SegmentedControl } from "../components/common/SegmentedControl";
+import { ICON_PROPS } from "../components/common/ChartCardParts";
+import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
+import { BLANK_RING, GC_RING, PlateGrid } from "../components/plate/PlateGrid";
+import { LayoutPanel, type SaveState } from "../components/plate/LayoutPanel";
 import { useStoredState } from "../hooks/useStoredState";
-import { useUndoRedo } from "../hooks/useUndoRedo";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
-import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
 import {
-  exportPlotlyPublicationImage,
-  PublicationExportFormat,
-  PublicationExportSettings,
-  publicationFilenameSuffix,
-} from "../utils/publicationPlotExport";
+  buildLayout,
+  DEFAULT_DILUTION,
+  formFromLayout,
+  formsEqual,
+  layoutsEqual,
+  paintWells,
+  toggleExcluded,
+  validateForm,
+  withColours,
+  type LayoutForm,
+  type PaintTarget,
+} from "../utils/plateLayout";
 
-type RowRole = "none" | "sample" | "control" | "blank";
+const STORAGE = "mfp.plateReader";
+const SAVE_DELAY_MS = 400;
 
-interface MICChartSettings {
-  sampleColor: string;
-  controlColor: string;
-  blankColor: string;
-  lineWidth: number;
-  markerSize: number;
-  barWidth: number;
-  height: number;
-  showGrid: boolean;
-  showLegend: boolean;
+type PlateTab = "map" | "results" | "experiment";
+
+function plateDate(meta: PlateMetadata): string | null {
+  const d = meta.date;
+  return typeof d === "string" ? d.slice(0, 10) : null;
 }
 
-const DEFAULT_MIC_CHART_SETTINGS: MICChartSettings = {
-  sampleColor: "#5573b9",
-  controlColor: "#1e2636",
-  blankColor: "#a16207",
-  lineWidth: 1.8,
-  markerSize: 7,
-  barWidth: 0.26,
-  height: 380,
-  showGrid: true,
-  showLegend: true,
-};
-
-const PLATE_STORAGE_PREFIX = "mfp.plateReader";
-
-function mergeChartSettings(value: Partial<MICChartSettings> | null | undefined): MICChartSettings {
-  return { ...DEFAULT_MIC_CHART_SETTINGS, ...(value ?? {}) };
+function plateCaption(meta: PlateMetadata, label: string | null): string {
+  const read = typeof meta.read_type === "string" ? meta.read_type.toLowerCase() : null;
+  const wl = meta.wavelength ?? label;
+  return [
+    meta.reader_type,
+    [read, wl && `${wl} nm`].filter(Boolean).join(" "),
+    typeof meta.temperature === "number" && `${meta.temperature} °C`,
+    plateDate(meta),
+  ].filter(Boolean).join(" · ");
 }
 
-function isPlotType(value: unknown): value is MICPlotType {
-  return value === "bar" || value === "line" || value === "scatter";
-}
-
-function isControlStyle(value: unknown): value is MICControlStyle {
-  return value === "bars" || value === "line";
-}
-
-interface PlateWorkspaceEnvelope {
-  version: 1;
-  module: "Plate Reader";
-  createdAt: string;
-  sessions: PlateSessionSummary[];
-  sessionNames: Record<string, string>;
-  activeSessionId: string | null;
-  viewState: {
-    sheet: string | null;
-    useHeader: boolean;
-    rowRoles: Record<number, RowRole>;
-    concCols: string[];
-    tickText: string;
-    autoPow2: boolean;
-    subtractBlank: boolean;
-    title: string;
-    xLabel: string;
-    yLabel: string;
-    plotType: MICPlotType;
-    controlStyle: MICControlStyle;
-    chartSettings: MICChartSettings;
-  };
-  analysisState: {
-    mic: MICResult | null;
-  };
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function downloadJson(value: unknown, filename: string) {
-  downloadBlob(
-    new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }),
-    filename,
-  );
-}
-
-function readJsonFile<T>(file: File): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        resolve(JSON.parse(String(reader.result)) as T);
-      } catch (err) {
-        reject(err);
-      }
-    };
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file."));
-    reader.readAsText(file);
-  });
-}
-
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const text = String(value);
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-function downloadCsv(rows: unknown[][], filename: string) {
-  const text = rows.map((row) => row.map(csvCell).join(",")).join("\n");
-  downloadBlob(new Blob([text], { type: "text/csv;charset=utf-8" }), filename);
+function emptyLayout(top: number): PlateLayout {
+  return { dilution: { ...DEFAULT_DILUTION, top }, groups: [], growth_control: [], blank: [], excluded: [] };
 }
 
 export function PlateReaderView() {
-  const { activeWorkspaceId } = useWorkspace();
-  const [sessions, setSessions] = useState<PlateSessionSummary[]>([]);
-  const [sessionNames, setSessionNames] = useStoredState<Record<string, string>>(
-    `${PLATE_STORAGE_PREFIX}.sessionNames`,
-    {},
-    (value) => (value && typeof value === "object" ? value : {}),
-  );
-  const [activeSid, setActiveSid] = useStoredState<string | null>(
-    `${PLATE_STORAGE_PREFIX}.activeSessionId`,
-    null,
-    (value) => (typeof value === "string" ? value : null),
-  );
-  const [sheet, setSheet] = useStoredState<string | null>(
-    `${PLATE_STORAGE_PREFIX}.sheet`,
-    null,
-    (value) => (typeof value === "string" ? value : null),
-  );
-  const [useHeader, setUseHeader] = useStoredState(`${PLATE_STORAGE_PREFIX}.useHeader`, true);
-  const [preview, setPreview] = useState<PlatePreview | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  // Wizard state
-  const [storedRowRoles, setStoredRowRoles] = useStoredState<Record<number, RowRole>>(
-    `${PLATE_STORAGE_PREFIX}.rowRoles`,
-    {},
-    (value) => (value && typeof value === "object" ? value : {}),
-  );
-  const {
-    state: rowRoles,
-    set: setRowRoles,
-    undo: undoRowRoles,
-    redo: redoRowRoles,
-    canUndo: canUndoRowRoles,
-    canRedo: canRedoRowRoles,
-  } = useUndoRedo<Record<number, RowRole>>(storedRowRoles, { enableKeyShortcuts: true });
-
-  useEffect(() => {
-    setStoredRowRoles(rowRoles);
-  }, [rowRoles, setStoredRowRoles]);
-  const [concCols, setConcCols] = useStoredState<string[]>(
-    `${PLATE_STORAGE_PREFIX}.concCols`,
-    [],
-    (value) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []),
-  );
-  // Concentrations belong to a specific plate; keep them per session so they don't carry over.
-  const [tickTextBySession, setTickTextBySession] = useStoredState<Record<string, string>>(
-    `${PLATE_STORAGE_PREFIX}.tickTextBySession`,
-    {},
-    (value) => (value && typeof value === "object" ? (value as Record<string, string>) : {}),
-  );
-  const tickText = (activeSid && tickTextBySession[activeSid]) || "";
-  const setTickTextFor = useCallback(
-    (sid: string | null, text: string) => {
-      if (!sid) return;
-      setTickTextBySession((prev) => ({ ...prev, [sid]: text }));
-    },
-    [setTickTextBySession],
-  );
-  const setTickText = useCallback((text: string) => setTickTextFor(activeSid, text), [activeSid, setTickTextFor]);
-  const [autoPow2, setAutoPow2] = useStoredState(`${PLATE_STORAGE_PREFIX}.autoPow2`, true);
-  const [subtractBlank, setSubtractBlank] = useStoredState(`${PLATE_STORAGE_PREFIX}.subtractBlank`, false);
-  const [title, setTitle] = useStoredState(`${PLATE_STORAGE_PREFIX}.title`, "MIC");
-  const [xLabel, setXLabel] = useStoredState(`${PLATE_STORAGE_PREFIX}.xLabel`, "Concentration (µg/mL)");
-  const [yLabel, setYLabel] = useStoredState(`${PLATE_STORAGE_PREFIX}.yLabel`, "OD₆₀₀");
-  const [plotType, setPlotType] = useStoredState<MICPlotType>(
-    `${PLATE_STORAGE_PREFIX}.plotType`,
-    "bar",
-    (value) => (isPlotType(value) ? value : "bar"),
-  );
-  const [controlStyle, setControlStyle] = useStoredState<MICControlStyle>(
-    `${PLATE_STORAGE_PREFIX}.controlStyle`,
-    "bars",
-    (value) => (isControlStyle(value) ? value : "bars"),
-  );
-  const [mic, setMic] = useStoredState<MICResult | null>(`${PLATE_STORAGE_PREFIX}.mic`, null);
-  const [chartSettings, setChartSettings] = useStoredState<MICChartSettings>(
-    `${PLATE_STORAGE_PREFIX}.chartSettings`,
-    DEFAULT_MIC_CHART_SETTINGS,
-    mergeChartSettings,
-  );
-
-  const fileRef = useRef<HTMLInputElement>(null);
-  const workspaceFileRef = useRef<HTMLInputElement>(null);
-  const plotRef = useRef<PlotlyHTMLElement | null>(null);
-  const previewKeyRef = useRef<string | null>(null);
-
   const location = useLocation();
+  const { toast } = useToast();
+  const { activeWorkspaceId } = useWorkspace();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [plates, setPlates] = useState<PlateSummary[]>([]);
+  const [activeSid, setActiveSid] = useStoredState<string | null>(`${STORAGE}.activeSid`, null);
+  const [tab, setTab] = useStoredState<PlateTab>(`${STORAGE}.tab`, "map");
+  const [lastTop, setLastTop] = useStoredState<number>(`${STORAGE}.lastTop`, DEFAULT_DILUTION.top);
+  const [lastTemplateId, setLastTemplateId] = useStoredState<string | null>(`${STORAGE}.lastTemplate`, null);
+  const [templates, setTemplates] = useState<PlateTemplate[]>([]);
+  const [layout, setLayout] = useState<PlateLayout | null>(null);
+  const [form, setForm] = useState<LayoutForm | null>(null);
+  const [paint, setPaint] = useState<PaintTarget | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
+  const pendingSave = useRef<{ sid: string; layout: PlateLayout; timer: number } | null>(null);
 
-  const active = useMemo(
-    () => sessions.find((s) => s.session_id === activeSid) ?? null,
-    [sessions, activeSid],
-  );
-  const displayNameFor = useCallback(
-    (session: PlateSessionSummary) => sessionNames[session.session_id] || session.display_name,
-    [sessionNames],
-  );
+  const active = plates.find((p) => p.session_id === activeSid) ?? null;
 
   useEffect(() => {
+    let cancelled = false;
     api.plateReader
       .list()
       .then((list) => {
-        setSessions(list);
-        setSessionNames((prev) => ({
-          ...Object.fromEntries(list.map((session) => [session.session_id, session.display_name])),
-          ...prev,
-        }));
-        setActiveSid((current) =>
-          current && list.some((session) => session.session_id === current)
-            ? current
-            : list[0]?.session_id ?? null,
+        if (cancelled) return;
+        setPlates(list);
+        setActiveSid((sid) => (list.some((p) => p.session_id === sid) ? sid : list[0]?.session_id ?? null));
+      })
+      .catch((e) => !cancelled && setError(String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, setActiveSid]);
+
+  useEffect(() => {
+    api.plateReader.templates().then(setTemplates).catch((e) => setError(String(e)));
+  }, []);
+
+  const flushSave = useCallback(() => {
+    const p = pendingSave.current;
+    if (!p) return;
+    window.clearTimeout(p.timer);
+    pendingSave.current = null;
+    setSaveState("saving");
+    api.plateReader
+      .saveLayout(p.sid, p.layout)
+      .then(() => {
+        setSaveState("saved");
+        setPlates((prev) =>
+          prev.map((x) => (x.session_id === p.sid ? { ...x, layout: p.layout, layout_source: "saved" } : x)),
         );
       })
-      .catch((err) => setError(String(err)));
-  }, [activeWorkspaceId]); // eslint-disable-line
+      .catch((e) => {
+        setSaveState("error");
+        toast(`Layout not saved: ${String(e)}`, "error");
+      });
+  }, [toast]);
 
+  useEffect(() => flushSave, [flushSave]);
+
+  const commitLayout = useCallback(
+    (sid: string, next: PlateLayout, syncForm = true) => {
+      setLayout(next);
+      if (syncForm) setForm(formFromLayout(next));
+      if (pendingSave.current) window.clearTimeout(pendingSave.current.timer);
+      pendingSave.current = { sid, layout: next, timer: window.setTimeout(flushSave, SAVE_DELAY_MS) };
+      setSaveState("saving");
+    },
+    [flushSave],
+  );
+
+  // Opening a plate: its saved layout, else the Gen5-notes layout (with the remembered top
+  // concentration), else the last template used.
+  const activeKey = active?.session_id ?? null;
   useEffect(() => {
-    if (!active) return;
-    setSheet((current) => (current && active.sheets.includes(current) ? current : active.sheets[0] ?? null));
-  }, [active?.session_id]); // eslint-disable-line
+    flushSave();
+    setPaint(null);
+    setSaveState("idle");
+    if (!active) {
+      setLayout(null);
+      setForm(null);
+      return;
+    }
+    const server = withColours(active.layout);
+    let initial = server;
+    if (active.layout_source === "notes") {
+      initial = { ...server, dilution: { ...server.dilution, top: lastTop } };
+    } else if (active.layout_source === "empty") {
+      const t = templates.find((x) => x.id === lastTemplateId);
+      initial = t ? withColours({ ...t.layout, excluded: [] }) : emptyLayout(lastTop);
+    }
+    if (layoutsEqual(initial, active.layout)) {
+      setLayout(initial);
+      setForm(formFromLayout(initial));
+    } else {
+      commitLayout(active.session_id, initial);
+    }
+    // Only when the plate changes; later edits go through commitLayout.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeKey]);
 
-  const loadPreview = useCallback(async () => {
-    if (!activeSid) return;
-    const previewKey = `${activeSid}:${sheet ?? ""}:${useHeader ? "1" : "0"}`;
+  const problems = useMemo(() => (form ? validateForm(form) : []), [form]);
+  const dirty = useMemo(
+    () => Boolean(form && layout && !formsEqual(form, formFromLayout(layout))),
+    [form, layout],
+  );
+
+  const onUpload = async (files: File[]) => {
+    if (files.length === 0) return;
     setBusy(true);
     setError(null);
-    try {
-      const p = await api.plateReader.loadSheet(activeSid, {
-        sheet_name: sheet ?? null,
-        use_first_row_as_header: useHeader,
-        max_rows: 500,
-      });
-      setPreview(p);
-      if (previewKeyRef.current !== null && previewKeyRef.current !== previewKey) {
-        setMic(null);
-        setRowRoles({});
-        setConcCols([]);
+    const added: PlateSummary[] = [];
+    for (const file of files) {
+      try {
+        added.push(await api.plateReader.upload(file));
+      } catch (e) {
+        toast(String(e).replace(/^Error: HTTP \d+: /, ""), "error");
       }
-      previewKeyRef.current = previewKey;
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
     }
-  }, [activeSid, sheet, useHeader]);
+    if (added.length) {
+      setPlates((prev) => [...prev, ...added]);
+      setActiveSid(added[added.length - 1].session_id);
+      setTab("map");
+    }
+    setBusy(false);
+  };
 
-  useEffect(() => {
-    if (activeSid) void loadPreview();
-  }, [activeSid, sheet, useHeader]); // eslint-disable-line
+  useRegisterFileIngest("/plate-reader", onUpload);
 
   const onRemove = async (sid: string) => {
-    await api.plateReader.remove(sid).catch((e) => setError(String(e)));
-    setSessions((prev) => prev.filter((s) => s.session_id !== sid));
-    setSessionNames((prev) => {
-      const next = { ...prev };
-      delete next[sid];
-      return next;
-    });
-    if (activeSid === sid) {
-      setActiveSid(null);
-      setPreview(null);
-      setMic(null);
-    }
-  };
-
-  const setRole = (idx: number, role: RowRole) => {
-    setRowRoles((prev) => {
-      const copy = { ...prev };
-      if (role === "none") delete copy[idx];
-      else copy[idx] = role;
-      return copy;
-    });
-  };
-
-  const toggleConcCol = (col: string) => {
-    setConcCols((prev) => (prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]));
-  };
-
-  const moveConcCol = (col: string, dir: -1 | 1) => {
-    setConcCols((prev) => {
-      const idx = prev.indexOf(col);
-      if (idx < 0) return prev;
-      const newIdx = idx + dir;
-      if (newIdx < 0 || newIdx >= prev.length) return prev;
-      const next = [...prev];
-      [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
-      return next;
-    });
-  };
-
-  const onUpload = async (file: File) => {
-    const baseName = file.name.replace(/\.[^.]+$/, "");
-    setTitle(baseName || "MIC");
-    setBusy(true);
-    setError(null);
     try {
-      const s = await api.plateReader.upload(file);
-      setSessions((prev) => [...prev, s]);
-      setSessionNames((prev) => ({ ...prev, [s.session_id]: s.display_name }));
-      setActiveSid(s.session_id);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
+      await api.plateReader.remove(sid);
+    } catch (e) {
+      setError(String(e));
+      return;
     }
+    const rest = plates.filter((p) => p.session_id !== sid);
+    setPlates(rest);
+    if (sid === activeSid) setActiveSid(rest[0]?.session_id ?? null);
   };
 
-  useRegisterFileIngest("/plate-reader", (files) => {
-    if (files[0]) void onUpload(files[0]);
-  });
+  const onApply = () => {
+    if (!active || !form || !layout) return;
+    setLastTop(form.dilution.top);
+    commitLayout(active.session_id, buildLayout(form, layout.excluded));
+  };
 
-  const sampleRows = useMemo(
-    () =>
-      Object.entries(rowRoles)
-        .filter(([, r]) => r === "sample")
-        .map(([i]) => Number(i))
-        .sort((a, b) => a - b),
-    [rowRoles],
-  );
-  const controlRows = useMemo(
-    () =>
-      Object.entries(rowRoles)
-        .filter(([, r]) => r === "control")
-        .map(([i]) => Number(i))
-        .sort((a, b) => a - b),
-    [rowRoles],
-  );
-  const blankRows = useMemo(
-    () =>
-      Object.entries(rowRoles)
-        .filter(([, r]) => r === "blank")
-        .map(([i]) => Number(i))
-        .sort((a, b) => a - b),
-    [rowRoles],
+  const onToggleExcluded = useCallback(
+    (well: PlateWell) => {
+      if (active && layout) commitLayout(active.session_id, toggleExcluded(layout, well), false);
+    },
+    [active, layout, commitLayout],
   );
 
-  const canRun = activeSid && sampleRows.length > 0 && concCols.length > 0;
+  const onPaint = useCallback(
+    (wells: PlateWell[]) => {
+      if (active && layout && paint) commitLayout(active.session_id, paintWells(layout, wells, paint));
+    },
+    [active, layout, paint, commitLayout],
+  );
 
-  const autoPickNumericColumns = () => {
-    if (!preview) return;
-    const roleRows = [...sampleRows, ...controlRows, ...blankRows];
-    const rowsToScan = roleRows.length > 0 ? roleRows : preview.rows.map((_, idx) => idx);
-    const numericColumns = preview.columns.filter((_, colIdx) =>
-      rowsToScan.some((rowIdx) => {
-        const raw = preview.rows[rowIdx]?.[colIdx];
-        if (raw === undefined || raw === null || String(raw).trim() === "") return false;
-        return Number.isFinite(Number(String(raw).replace(",", ".")));
-      }),
-    );
-    setConcCols(numericColumns);
+  const onLoadTemplate = (t: PlateTemplate) => {
+    if (!active || !layout) return;
+    setLastTemplateId(t.id);
+    setLastTop(t.layout.dilution.top);
+    commitLayout(active.session_id, withColours({ ...t.layout, excluded: layout.excluded }));
   };
 
-  const clearSelections = () => {
-    setRowRoles({});
-    setConcCols([]);
-    setMic(null);
-  };
-
-  const runMIC = async () => {
-    if (!activeSid) return;
-    setBusy(true);
-    setError(null);
+  const onSaveTemplate = async (name: string) => {
+    if (!layout) return;
     try {
-      const res = await api.plateReader.runMIC(activeSid, {
-        sheet_name: sheet ?? null,
-        use_first_row_as_header: useHeader,
-        sample_rows: sampleRows,
-        control_rows: controlRows,
-        blank_rows: blankRows,
-        subtract_blank: subtractBlank,
-        concentration_columns: concCols,
-        tick_text: tickText,
-        auto_tick_labels_power2: autoPow2,
-        title,
-        x_label: xLabel,
-        y_label: yLabel,
-        plot_type: plotType,
-        control_style: controlStyle,
-      });
-      setMic(res);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
+      const saved = await api.plateReader.saveTemplate(name, { ...layout, excluded: [] });
+      setTemplates((prev) => [...prev.filter((t) => t.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name)));
+      setLastTemplateId(saved.id);
+      toast(`Template "${saved.name}" saved`, "success");
+    } catch (e) {
+      toast(String(e), "error");
     }
   };
 
-  const renameSession = (session: PlateSessionSummary) => {
-    const nextName = window.prompt("Session name", displayNameFor(session));
-    if (!nextName?.trim()) return;
-    setSessionNames((prev) => ({ ...prev, [session.session_id]: nextName.trim() }));
-  };
-
-  const clearSessions = async () => {
-    if (sessions.length === 0) return;
-    if (!window.confirm("Clear all Plate Reader sessions?")) return;
-    await Promise.all(sessions.map((session) => api.plateReader.remove(session.session_id).catch(() => null)));
-    setSessions([]);
-    setSessionNames({});
-    setActiveSid(null);
-    setPreview(null);
-    setMic(null);
-    setRowRoles({});
-    setConcCols([]);
-    setSubtractBlank(false);
-  };
-
-  const saveWorkspace = () => {
-    const workspace: PlateWorkspaceEnvelope = {
-      version: 1,
-      module: "Plate Reader",
-      createdAt: new Date().toISOString(),
-      sessions,
-      sessionNames,
-      activeSessionId: activeSid,
-      viewState: {
-        sheet,
-        useHeader,
-        rowRoles,
-        concCols,
-        tickText,
-        autoPow2,
-        subtractBlank,
-        title,
-        xLabel,
-        yLabel,
-        plotType,
-        controlStyle,
-        chartSettings,
-      },
-      analysisState: {
-        mic,
-      },
-    };
-    downloadJson(workspace, "plate-reader.workspace.json");
-  };
-
-  const loadWorkspaceFile = async (file: File) => {
-    setBusy(true);
-    setError(null);
+  const onDeleteTemplate = async (t: PlateTemplate) => {
     try {
-      const workspace = await readJsonFile<PlateWorkspaceEnvelope>(file);
-      if (workspace.module !== "Plate Reader") {
-        throw new Error("This is not a Plate Reader workspace file.");
-      }
-      const availableIds = new Set(sessions.map((session) => session.session_id));
-      const missing = workspace.sessions.filter((session) => !availableIds.has(session.session_id));
-      setSessionNames((prev) => ({ ...prev, ...(workspace.sessionNames ?? {}) }));
-      setSheet(workspace.viewState.sheet ?? null);
-      setUseHeader(workspace.viewState.useHeader ?? true);
-      setRowRoles(workspace.viewState.rowRoles ?? {});
-      setConcCols(workspace.viewState.concCols ?? []);
-      setTickTextFor(workspace.activeSessionId, workspace.viewState.tickText ?? "");
-      setAutoPow2(workspace.viewState.autoPow2 ?? true);
-      setSubtractBlank(workspace.viewState.subtractBlank ?? false);
-      setTitle(workspace.viewState.title ?? "MIC");
-      setXLabel(workspace.viewState.xLabel ?? "Concentration");
-      setYLabel(workspace.viewState.yLabel ?? "OD 600nm");
-      setPlotType(workspace.viewState.plotType ?? "bar");
-      setControlStyle(workspace.viewState.controlStyle ?? "bars");
-      setChartSettings({
-        ...DEFAULT_MIC_CHART_SETTINGS,
-        ...(workspace.viewState.chartSettings ?? {}),
-      });
-      setMic(workspace.analysisState.mic ?? null);
-      const restoredActive =
-        workspace.activeSessionId && availableIds.has(workspace.activeSessionId)
-          ? workspace.activeSessionId
-          : workspace.sessions.find((session) => availableIds.has(session.session_id))?.session_id;
-      if (restoredActive) {
-        setActiveSid(restoredActive);
-      }
-      if (missing.length > 0) {
-        setError(
-          `Loaded workspace settings, but ${missing.length} source session(s) are not loaded in the current server.`,
-        );
-      }
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
+      await api.plateReader.deleteTemplate(t.id);
+      setTemplates((prev) => prev.filter((x) => x.id !== t.id));
+      toast(`Template "${t.name}" deleted`, "info");
+    } catch (e) {
+      toast(String(e), "error");
     }
-  };
-
-  const exportMICCsv = () => {
-    if (!mic) return;
-    const rows: unknown[][] = [
-      [
-        "concentration",
-        "tick_label",
-        "sample_mean",
-        "sample_std",
-        "control_mean",
-        "control_std",
-        "blank_mean",
-        "blank_std",
-      ],
-    ];
-    mic.result.concentrations.forEach((conc, idx) => {
-      rows.push([
-        conc,
-        mic.result.x_tick_labels[idx] ?? "",
-        mic.result.sample_mean[idx],
-        mic.result.sample_std[idx],
-        mic.result.control_mean?.[idx] ?? "",
-        mic.result.control_std?.[idx] ?? "",
-        mic.result.blank_mean?.[idx] ?? "",
-        mic.result.blank_std?.[idx] ?? "",
-      ]);
-    });
-    downloadCsv(rows, "plate-reader-mic.csv");
-  };
-
-  const exportMICJson = () => {
-    if (!mic) return;
-    downloadJson(
-      {
-        exportedAt: new Date().toISOString(),
-        activeSession: active,
-        displayName: active ? displayNameFor(active) : null,
-        chartSettings,
-        mic,
-      },
-      "plate-reader-mic.json",
-    );
-  };
-
-  const exportPlotImage = (format: "png" | "svg") => {
-    if (!plotRef.current) return;
-    void Plotly.downloadImage(plotRef.current, {
-      format,
-      filename: `plate-reader-mic.${format}`,
-      width: 1100,
-      height: chartSettings.height,
-    });
-  };
-
-  const exportPlotImagePaper = (format: PublicationExportFormat, exportSettings: PublicationExportSettings) => {
-    if (!plotRef.current) return;
-    void exportPlotlyPublicationImage(plotRef.current, {
-      format,
-      filename: `plate-reader-mic_${publicationFilenameSuffix(exportSettings, format)}`,
-      ...exportSettings,
-    }, {
-      layoutOverrides: {
-        font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
-        margin: { l: 58, r: 18, t: 18, b: 50 },
-      },
-    });
   };
 
   usePageHeader(
     <PageHeaderContent
       title="Plate Reader"
-      subtitle="MIC wizard — upload a plate, mark sample/control rows, pick concentration columns, run"
+      subtitle="MIC · plate maps, % growth, dose–response"
       actions={
         <>
           <HelpOpenButton onClick={() => setHelpOpen(true)} />
           <input
             ref={fileRef}
             type="file"
-            accept=".xlsx,.xlsm,.xls,.csv,.tsv,.txt"
+            accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv"
+            multiple
             className="hidden"
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onUpload(f);
+              const files = e.target.files ? Array.from(e.target.files) : [];
+              if (files.length > 0) void onUpload(files);
               e.target.value = "";
             }}
           />
-          <input
-            ref={workspaceFileRef}
-            type="file"
-            accept=".json,.plate_reader.workspace.json"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void loadWorkspaceFile(f);
-              e.target.value = "";
-            }}
-          />
-          <button className="btn-ghost" disabled={busy} onClick={() => workspaceFileRef.current?.click()}>
-            Load workspace
-          </button>
-          <button className="btn-ghost" disabled={busy || sessions.length === 0} onClick={saveWorkspace}>
-            Save workspace
-          </button>
-          <button className="btn-ghost" disabled={busy || sessions.length === 0} onClick={clearSessions}>
-            Clear
-          </button>
           <button className="btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}>
-            {busy ? "Working…" : "Open plate…"}
+            {busy ? "Opening…" : "Open plate…"}
           </button>
         </>
       }
     />,
   );
 
-  const handleTagUpdated = (newTag: string) => {
-    setSessions((prev) =>
-      prev.map((s) => (s.session_id === activeSid ? { ...s, experiment_tag: newTag } : s)),
-    );
-  };
-
   return (
     <div className="flex h-full flex-col">
       {error && (
-        <AlertBanner
-          kind="error"
-          message={error}
-          onDismiss={() => setError(null)}
-          className="border-b"
-        />
+        <AlertBanner kind="error" message={error} onDismiss={() => setError(null)} className="mx-6 mb-2 mt-2" />
       )}
-
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-64 shrink-0 flex-col gap-1 border-r border-ink-200 bg-ink-50/50 p-3">
-          <div className="label px-2 pb-1">Sessions</div>
-          {sessions.length === 0 && (
-            <div className="px-2 text-xs text-ink-500">No plate loaded.</div>
+        <PlatesRail plates={plates} activeSid={activeSid} onSelect={setActiveSid} onRemove={onRemove} />
+        {!active || !layout || !form ? (
+          <div className="flex min-w-0 flex-1 flex-col overflow-auto p-6">
+            <div className="card flex flex-col items-center justify-center gap-3 p-12 text-center">
+              <Grid3X3 size={40} strokeWidth={1.5} className="text-ink-500" aria-hidden />
+              <div className="text-card-title">Open a plate</div>
+              <div className="max-w-md text-sm text-ink-500">
+                A BioTek Gen5 Excel export, or any sheet or CSV with an 8×12 block labelled A–H and 1–12. Notes
+                typed under the plate in Gen5 (e.g. "A-C - compound") fill in the layout.
+              </div>
+              <button className="btn-primary mt-2" onClick={() => fileRef.current?.click()}>
+                Choose file(s)…
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <main className="flex min-w-0 flex-1 flex-col gap-3 overflow-auto p-4">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-1">
+                <span className="text-card-title max-w-[28rem] truncate" title={active.display_name}>
+                  {active.display_name}
+                </span>
+                <span className="text-caption">{plateCaption(active.metadata, active.label)}</span>
+                <ExperimentTagEditor
+                  sessionId={active.session_id}
+                  currentTag={active.experiment_tag}
+                  module="plate-reader"
+                  onTagUpdated={(tag) =>
+                    setPlates((prev) => prev.map((p) => (p.session_id === active.session_id ? { ...p, experiment_tag: tag } : p)))
+                  }
+                />
+                <span className="flex-1" />
+                <SegmentedControl<PlateTab>
+                  ariaLabel="Plate view"
+                  size="md"
+                  value={tab}
+                  onChange={setTab}
+                  options={[
+                    { value: "map", label: "Plate map" },
+                    { value: "results", label: "Results" },
+                    { value: "experiment", label: "Experiment", disabled: !active.experiment_tag, title: active.experiment_tag ? undefined : "Give plates the same experiment tag to combine them" },
+                  ]}
+                />
+              </div>
+              {tab === "map" ? (
+                <PlateMapCard
+                  plate={active}
+                  layout={layout}
+                  paint={paint}
+                  onPaintTarget={setPaint}
+                  onToggleExcluded={onToggleExcluded}
+                  onPaint={onPaint}
+                />
+              ) : (
+                <div className="card p-8 text-center text-sm text-ink-500">
+                  {tab === "results" ? "Results" : "Experiment"} view is being built.
+                </div>
+              )}
+            </main>
+            {tab === "map" && (
+              <LayoutPanel
+                form={form}
+                onFormChange={setForm}
+                problems={problems}
+                dirty={dirty}
+                onApply={onApply}
+                notes={active.notes}
+                layoutSource={active.layout_source}
+                templates={templates}
+                onLoadTemplate={onLoadTemplate}
+                onSaveTemplate={onSaveTemplate}
+                onDeleteTemplate={onDeleteTemplate}
+                saveState={saveState}
+              />
+            )}
+          </>
+        )}
+      </div>
+      {helpModule ? <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} /> : null}
+    </div>
+  );
+}
+
+function PlateMapCard({
+  plate,
+  layout,
+  paint,
+  onPaintTarget,
+  onToggleExcluded,
+  onPaint,
+}: {
+  plate: PlateSummary;
+  layout: PlateLayout;
+  paint: PaintTarget | null;
+  onPaintTarget: (t: PaintTarget | null) => void;
+  onToggleExcluded: (well: PlateWell) => void;
+  onPaint: (wells: PlateWell[]) => void;
+}) {
+  const targets: { id: PaintTarget; label: string; ring: string | null; count: number }[] = [
+    ...layout.groups.map((g) => ({ id: g.id, label: g.name, ring: g.colour || "#405a9c", count: g.wells.length })),
+    { id: "growth_control", label: "Growth control", ring: GC_RING, count: layout.growth_control.length },
+    { id: "blank", label: "Blank", ring: BLANK_RING, count: layout.blank.length },
+    { id: "none", label: "Unassigned", ring: null, count: 0 },
+  ];
+  return (
+    <div className="card flex flex-col gap-3 p-4">
+      <div className="overflow-x-auto">
+        <PlateGrid
+          values={plate.values}
+          layout={layout}
+          onToggleExcluded={onToggleExcluded}
+          onPaint={paint ? onPaint : undefined}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Paint wells as">
+        {targets.map((t) => {
+          const on = paint === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={on}
+              title={on ? "Stop painting" : `Drag across wells to make them ${t.label}`}
+              onClick={() => onPaintTarget(on ? null : t.id)}
+              className={clsx(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] transition-colors",
+                on ? "border-brand-500 bg-brand-50 text-brand-800" : "border-ink-200 text-ink-700 hover:bg-ink-100",
+              )}
+            >
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={t.ring ? { boxShadow: `0 0 0 2px ${t.ring}` } : { border: "1px dashed rgb(var(--ink-400))" }}
+                aria-hidden
+              />
+              {t.label}
+              {t.count > 0 && <span className="text-ink-500">{t.count}</span>}
+            </button>
+          );
+        })}
+        <span className="inline-flex items-center gap-1.5 px-1 text-[12px] text-ink-700">
+          <span className="plate-well-excluded h-2.5 w-2.5 rounded-full" aria-hidden />
+          Excluded {layout.excluded.length > 0 && <span className="text-ink-500">({layout.excluded.join(", ")})</span>}
+        </span>
+      </div>
+      <p className="text-caption">
+        {paint
+          ? "Drag across wells to assign them · Esc cancels · click a well to exclude or include it"
+          : "Click a well to exclude or include it · pick a group above, then drag across wells to move them"}
+      </p>
+    </div>
+  );
+}
+
+function PlatesRail({
+  plates,
+  activeSid,
+  onSelect,
+  onRemove,
+}: {
+  plates: PlateSummary[];
+  activeSid: string | null;
+  onSelect: (sid: string) => void;
+  onRemove: (sid: string) => void;
+}) {
+  return (
+    <SideRail
+      label="Plates"
+      rail={plates.map((p, idx) => (
+        <button
+          key={p.session_id}
+          type="button"
+          onClick={() => onSelect(p.session_id)}
+          title={p.display_name}
+          className={clsx(
+            "flex h-7 w-8 shrink-0 items-center justify-center rounded-md border text-[12px] font-semibold transition-colors",
+            p.session_id === activeSid
+              ? "border-brand-500 bg-surface text-brand-700 shadow-card"
+              : "border-transparent text-ink-500 hover:border-ink-200 hover:bg-surface",
           )}
-          {sessions.map((s) => {
-            const isActive = s.session_id === activeSid;
+        >
+          {idx + 1}
+        </button>
+      ))}
+    >
+      {(close) => (
+        <>
+          {plates.length === 0 && <div className="text-caption px-2">No plates open.</div>}
+          {plates.map((p) => {
+            const isActive = p.session_id === activeSid;
+            const sub = [p.metadata.plate_number, plateDate(p.metadata), p.label && `OD${p.label}`].filter(Boolean).join(" · ");
             return (
               <div
-                key={s.session_id}
+                key={p.session_id}
                 className={clsx(
-                  "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm",
+                  "group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5",
                   isActive ? "bg-surface shadow-card" : "hover:bg-ink-100",
                 )}
-                onClick={() => setActiveSid(s.session_id)}
+                onClick={() => {
+                  onSelect(p.session_id);
+                  close();
+                }}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{displayNameFor(s)}</div>
-                  <div className="text-[11px] text-ink-500">
-                    {s.sheets.length
-                      ? `${s.sheets.length} sheet${s.sheets.length === 1 ? "" : "s"}`
-                      : "CSV"}
+                  <div className="truncate text-[13px] font-medium" title={p.display_name}>
+                    {p.display_name.replace(/\.(xlsx|xlsm|xls|csv|txt|tsv)$/i, "")}
                   </div>
+                  {sub && <div className="text-caption truncate">{sub}</div>}
+                  {p.experiment_tag && <div className="text-caption truncate">Experiment: {p.experiment_tag}</div>}
                 </div>
                 <button
-                  className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 group-hover:visible"
+                  type="button"
+                  className="btn-ghost invisible px-1.5 py-0.5 group-hover:visible focus-visible:visible"
                   onClick={(e) => {
                     e.stopPropagation();
-                    renameSession(s);
+                    onRemove(p.session_id);
                   }}
-                  title="Rename"
-                >
-                  Rename
-                </button>
-                <button
-                  className="inline-flex min-h-6 min-w-6 items-center justify-center invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 group-hover:visible"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove(s.session_id);
-                  }}
+                  aria-label={`Remove ${p.display_name}`}
                   title="Remove"
                 >
-                  ✕
+                  <X {...ICON_PROPS} />
                 </button>
               </div>
             );
           })}
-        </aside>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-6">
-          {!active && <EmptyState onPick={() => fileRef.current?.click()} />}
-
-          {active && (
-            <>
-              <LoadControls
-                active={active}
-                displayName={displayNameFor(active)}
-                sheet={sheet}
-                setSheet={setSheet}
-                useHeader={useHeader}
-                setUseHeader={setUseHeader}
-                onTagUpdated={handleTagUpdated}
-              />
-
-              {preview && (
-                <PreviewTable
-                  preview={preview}
-                  rowRoles={rowRoles}
-                  concCols={concCols}
-                  onSetRole={setRole}
-                  onToggleCol={toggleConcCol}
-                  onMoveConcCol={moveConcCol}
-                  onUndoRoles={undoRowRoles}
-                  onRedoRoles={redoRowRoles}
-                  canUndoRoles={canUndoRowRoles}
-                  canRedoRoles={canRedoRowRoles}
-                />
-              )}
-
-              {preview && (
-                <WizardForm
-                  sampleRows={sampleRows}
-                  controlRows={controlRows}
-                  blankRows={blankRows}
-                  concCols={concCols}
-                  tickText={tickText}
-                  setTickText={setTickText}
-                  autoPow2={autoPow2}
-                  setAutoPow2={setAutoPow2}
-                  subtractBlank={subtractBlank}
-                  setSubtractBlank={setSubtractBlank}
-                  title={title}
-                  setTitle={setTitle}
-                  xLabel={xLabel}
-                  setXLabel={setXLabel}
-                  yLabel={yLabel}
-                  setYLabel={setYLabel}
-                  plotType={plotType}
-                  setPlotType={setPlotType}
-                  controlStyle={controlStyle}
-                  setControlStyle={setControlStyle}
-                  canRun={!!canRun}
-                  busy={busy}
-                  onRun={runMIC}
-                  onAutoPickNumericCols={autoPickNumericColumns}
-                  onReverseConcCols={() => setConcCols((prev) => [...prev].reverse())}
-                  onClearSelections={clearSelections}
-                />
-              )}
-
-              {mic && (
-                <div className="card shrink-0 border-brand-200 bg-brand-50/50 px-4 py-3">
-                  <div className="text-heading mb-2">MIC Analysis Complete</div>
-                  <div className="flex flex-wrap gap-4 text-sm">
-                    <span>
-                      <span className="font-medium text-ink-600">Sample rows:</span>{" "}
-                      <span className="font-mono text-brand-700">{sampleRows.length}</span>
-                    </span>
-                    <span>
-                      <span className="font-medium text-ink-600">Control rows:</span>{" "}
-                      <span className="font-mono text-brand-700">{controlRows.length}</span>
-                    </span>
-                    <span>
-                      <span className="font-medium text-ink-600">Blank rows:</span>{" "}
-                      <span className="font-mono text-brand-700">{blankRows.length}</span>
-                    </span>
-                    <span>
-                      <span className="font-medium text-ink-600">Concentrations:</span>{" "}
-                      <span className="font-mono text-brand-700">{concCols.length}</span>
-                    </span>
-                    {blankRows.length > 0 && subtractBlank && (
-                      <span className="text-amber-700">Blank-subtracted</span>
-                    )}
-                    {mic.result.x_tick_labels.length > 0 && (
-                      <span>
-                        <span className="font-medium text-ink-600">Range:</span>{" "}
-                        <span className="font-mono text-brand-700">
-                          {mic.result.x_tick_labels[0]} – {mic.result.x_tick_labels[mic.result.x_tick_labels.length - 1]}
-                        </span>
-                      </span>
-                    )}
-                    <FitSummary mic={mic} xLabel={mic.config.x_label} />
-                    {mic.sample_nan_ratio > 0 && (
-                      <span className="text-amber-700">
-                        ⚠ {(mic.sample_nan_ratio * 100).toFixed(1)}% non-numeric cells ignored
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-              {mic && (
-                <>
-                  <ChartControls
-                    settings={chartSettings}
-                    setSettings={setChartSettings}
-                    onExportCsv={exportMICCsv}
-                    onExportJson={exportMICJson}
-                    onExportPng={() => exportPlotImage("png")}
-                    onExportSvg={() => exportPlotImage("svg")}
-                    onPaperPlotExport={(format, dpi) => exportPlotImagePaper(format, dpi)}
-                  />
-                  <MICChart
-                    mic={mic}
-                    settings={chartSettings}
-                    onReady={(plot) => {
-                      plotRef.current = plot;
-                    }}
-                  />
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-      {helpModule ? (
-        <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
-      ) : null}
-    </div>
-  );
-}
-
-// ---------------------------- components ----------------------------
-
-function LoadControls(props: {
-  active: PlateSessionSummary;
-  displayName: string;
-  sheet: string | null;
-  setSheet: (s: string | null) => void;
-  useHeader: boolean;
-  setUseHeader: (b: boolean) => void;
-  onTagUpdated?: (newTag: string) => void;
-}) {
-  const hasSheets = props.active.sheets.length > 0;
-  return (
-    <div className="card flex shrink-0 flex-wrap items-end gap-4 px-4 py-3">
-      <div>
-        <div className="label">File</div>
-        <div className="text-sm font-medium">{props.displayName}</div>
-      </div>
-      <div>
-        <div className="label">Experiment Tag</div>
-        <div className="mt-1">
-          <ExperimentTagEditor
-            sessionId={props.active.session_id}
-            currentTag={props.active.experiment_tag}
-            module="plate-reader"
-            onTagUpdated={props.onTagUpdated}
-          />
-        </div>
-      </div>
-      {hasSheets && (
-        <div>
-          <div className="label">Sheet</div>
-          <select
-            className="mt-1 rounded border border-ink-200 bg-surface px-2 py-1 text-sm"
-            value={props.sheet ?? ""}
-            onChange={(e) => props.setSheet(e.target.value || null)}
-          >
-            {props.active.sheets.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
+        </>
       )}
-      <label className="flex cursor-pointer select-none items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={props.useHeader}
-          onChange={(e) => props.setUseHeader(e.target.checked)}
-        />
-        First row is column headers
-      </label>
-    </div>
-  );
-}
-
-function roleName(role: RowRole): string {
-  return role === "none" ? "unassigned" : role;
-}
-
-function roleLabel(role: RowRole) {
-  if (role === "sample") return "S";
-  if (role === "control") return "C";
-  if (role === "blank") return "B";
-  return "-";
-}
-
-function activeRoleClass(role: RowRole) {
-  if (role === "sample") return "bg-brand-500 text-white";
-  if (role === "control") return "bg-ink-800 text-white";
-  if (role === "blank") return "bg-amber-500 text-white";
-  return "bg-ink-200 text-ink-600";
-}
-
-function PreviewTable(props: {
-  preview: PlatePreview;
-  rowRoles: Record<number, RowRole>;
-  concCols: string[];
-  onSetRole: (idx: number, role: RowRole) => void;
-  onToggleCol: (col: string) => void;
-  onMoveConcCol: (col: string, dir: -1 | 1) => void;
-  onUndoRoles?: () => void;
-  onRedoRoles?: () => void;
-  canUndoRoles?: boolean;
-  canRedoRoles?: boolean;
-}) {
-  const { preview, rowRoles, concCols } = props;
-  return (
-    <div className="card shrink-0">
-      <div className="flex items-baseline justify-between border-b border-ink-200 px-4 py-2">
-        <h3 className="text-sm font-semibold">Plate preview</h3>
-        <div className="flex items-center gap-2">
-          {props.onUndoRoles && (
-            <div className="flex items-center gap-0.5 mr-2">
-              <Tooltip content="Undo role assignment (Ctrl+Z)" placement="bottom">
-                <button
-                  type="button"
-                  className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
-                  disabled={!props.canUndoRoles}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    props.onUndoRoles?.();
-                  }}
-                  title="Undo role (Ctrl+Z)"
-                >
-                  ↩
-                </button>
-              </Tooltip>
-              <Tooltip content="Redo role assignment (Ctrl+Y)" placement="bottom">
-                <button
-                  type="button"
-                  className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 text-xs text-ink-600 hover:bg-ink-100 disabled:opacity-30 dark:border-ink-700 dark:text-ink-300"
-                  disabled={!props.canRedoRoles}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    props.onRedoRoles?.();
-                  }}
-                  title="Redo role (Ctrl+Y)"
-                >
-                  ↪
-                </button>
-              </Tooltip>
-            </div>
-          )}
-          <div className="text-xs text-ink-500">
-            {preview.n_rows_preview.toLocaleString()} of{" "}
-            {preview.n_rows_total.toLocaleString()} rows · {preview.n_cols_total} cols
-            <span className="ml-3 text-ink-400">Click column headers to mark concentration. Use row buttons to assign roles.</span>
-          </div>
-        </div>
-      </div>
-
-      {concCols.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-ink-100 bg-ink-50/50 px-4 py-2 text-xs">
-          <span className="text-ink-500">Concentration columns (ordered):</span>
-          {concCols.map((c, i) => (
-            <span
-              key={c}
-              className="inline-flex items-center gap-0.5 rounded-full bg-surface px-2 py-0.5 font-medium ring-1 ring-ink-200"
-            >
-              <span className="text-[10px] text-ink-400 mr-0.5">{i + 1}</span>
-              <span>{c}</span>
-              <button
-                className="px-0.5 text-ink-400 hover:text-ink-900 disabled:opacity-30"
-                onClick={() => props.onMoveConcCol(c, -1)}
-                disabled={i === 0}
-                title="Move left"
-              >↑</button>
-              <button
-                className="px-0.5 text-ink-400 hover:text-ink-900 disabled:opacity-30"
-                onClick={() => props.onMoveConcCol(c, 1)}
-                disabled={i === concCols.length - 1}
-                title="Move right"
-              >↓</button>
-              <button
-                className="inline-flex min-h-6 min-w-6 items-center justify-center ml-1 text-ink-300 hover:text-red-500"
-                onClick={() => props.onToggleCol(c)}
-                title="Remove"
-              >✕</button>
-            </span>
-          ))}
-        </div>
-      )}
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-separate border-spacing-0 text-xs">
-          <thead className="bg-surface">
-            <tr>
-              <th className="border-b border-ink-200 bg-ink-50 px-2 py-1.5 text-left font-medium text-ink-500">
-                #
-              </th>
-              {preview.columns.map((c) => {
-                const active = concCols.includes(c);
-                return (
-                  <th
-                    key={c}
-                    onClick={() => props.onToggleCol(c)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        props.onToggleCol(c);
-                      }
-                    }}
-                    tabIndex={0}
-                    aria-pressed={active}
-                    className={clsx(
-                      "cursor-pointer select-none border-b border-ink-200 px-2 py-1.5 text-left font-medium",
-                      active ? "bg-brand-500 text-white" : "bg-ink-50 text-ink-700 hover:bg-ink-100",
-                    )}
-                    title={active ? "Remove from concentration columns" : "Add as concentration column"}
-                  >
-                    {c}
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {preview.rows.map((row, i) => {
-              const role = rowRoles[i] ?? "none";
-              return (
-                <tr key={i} className="even:bg-ink-50/50">
-                  <td className="border-b border-ink-100 px-1 py-0.5 whitespace-nowrap">
-                    <div className="flex items-center gap-1">
-                      <span className="w-5 shrink-0 text-right text-[10px] text-ink-400">{i + 1}</span>
-                      {(["none", "sample", "control", "blank"] as RowRole[]).map((r) => (
-                        <button
-                          key={r}
-                          type="button"
-                          onClick={() => props.onSetRole(i, r)}
-                          aria-label={`Mark row ${i + 1} as ${roleName(r)}`}
-                          aria-pressed={role === r}
-                          title={`Mark row ${i + 1} as ${roleName(r)}`}
-                          className={clsx(
-                            "min-h-6 min-w-6 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
-                            role === r ? activeRoleClass(r) : "border border-ink-200 bg-surface text-ink-400 hover:bg-ink-100",
-                          )}
-                        >
-                          {roleLabel(r)}
-                        </button>
-                      ))}
-                    </div>
-                  </td>
-                  {row.map((cell, j) => (
-                    <td
-                      key={j}
-                      className={clsx(
-                        "whitespace-nowrap border-b border-ink-100 px-2 py-1 font-mono text-[11px]",
-                        concCols.includes(preview.columns[j]) && "bg-ink-50",
-                      )}
-                    >
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function WizardForm(props: {
-  sampleRows: number[];
-  controlRows: number[];
-  blankRows: number[];
-  concCols: string[];
-  tickText: string;
-  setTickText: (s: string) => void;
-  autoPow2: boolean;
-  setAutoPow2: (b: boolean) => void;
-  subtractBlank: boolean;
-  setSubtractBlank: (b: boolean) => void;
-  title: string;
-  setTitle: (s: string) => void;
-  xLabel: string;
-  setXLabel: (s: string) => void;
-  yLabel: string;
-  setYLabel: (s: string) => void;
-  plotType: MICPlotType;
-  setPlotType: (t: MICPlotType) => void;
-  controlStyle: MICControlStyle;
-  setControlStyle: (s: MICControlStyle) => void;
-  canRun: boolean;
-  busy: boolean;
-  onRun: () => void;
-  onAutoPickNumericCols: () => void;
-  onReverseConcCols: () => void;
-  onClearSelections: () => void;
-}) {
-  return (
-    <div className="card shrink-0 p-4">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold">MIC wizard</h3>
-        <div className="text-xs text-ink-500">
-          <span className="mr-3">
-            Sample rows: <b>{props.sampleRows.length}</b>
-          </span>
-          <span className="mr-3">
-            Control rows: <b>{props.controlRows.length}</b>
-          </span>
-          <span className="mr-3">
-            Blank rows: <b>{props.blankRows.length}</b>
-          </span>
-          <span>
-            Conc. columns: <b>{props.concCols.length}</b>
-          </span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Field label="Title">
-          <input
-            className="input"
-            value={props.title}
-            onChange={(e) => props.setTitle(e.target.value)}
-          />
-        </Field>
-        <Field label="X label">
-          <input
-            className="input"
-            value={props.xLabel}
-            onChange={(e) => props.setXLabel(e.target.value)}
-          />
-        </Field>
-        <Field label="Y label">
-          <input
-            className="input"
-            value={props.yLabel}
-            onChange={(e) => props.setYLabel(e.target.value)}
-          />
-        </Field>
-        <Field label="Tick labels (comma-sep)">
-          <input
-            className="input"
-            placeholder={props.autoPow2 ? "auto: 1024, 512, …, 0" : "e.g. 1024, 512, 256, 0"}
-            value={props.tickText}
-            onChange={(e) => props.setTickText(e.target.value)}
-          />
-        </Field>
-        <Field label="Plot type">
-          <Segmented
-            value={props.plotType}
-            options={["bar", "line", "scatter"] as MICPlotType[]}
-            onChange={props.setPlotType}
-          />
-        </Field>
-        <Field label="Control style">
-          <Segmented
-            value={props.controlStyle}
-            options={["bars", "line"] as MICControlStyle[]}
-            onChange={props.setControlStyle}
-          />
-        </Field>
-        <Field label="Auto tick labels (2^n … 0)">
-          <label className="mt-1.5 inline-flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={props.autoPow2}
-              onChange={(e) => props.setAutoPow2(e.target.checked)}
-            />
-            Enabled (used when tick labels field is empty)
-          </label>
-        </Field>
-        <Field label="Blank subtraction">
-          <label className="mt-1.5 inline-flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={props.subtractBlank}
-              disabled={props.blankRows.length === 0}
-              onChange={(e) => props.setSubtractBlank(e.target.checked)}
-            />
-            Subtract blank row mean
-          </label>
-        </Field>
-        <div className="flex flex-wrap items-end gap-2">
-          <button className="btn-ghost" type="button" onClick={props.onAutoPickNumericCols}>
-            Auto numeric cols
-          </button>
-          <button
-            className="btn-ghost"
-            type="button"
-            disabled={props.concCols.length < 2}
-            onClick={props.onReverseConcCols}
-          >
-            Reverse cols
-          </button>
-          <button className="btn-ghost" type="button" onClick={props.onClearSelections}>
-            Clear picks
-          </button>
-        </div>
-        <div className="flex items-end">
-          <button
-            className="btn-primary w-full justify-center"
-            disabled={!props.canRun || props.busy}
-            onClick={props.onRun}
-          >
-            {props.busy ? "Running…" : "Run MIC"}
-          </button>
-        </div>
-      </div>
-      {!props.canRun && (
-        <AlertBanner
-          kind="info"
-          message="Select at least one sample row and one or more concentration columns to run MIC analysis."
-          className="mt-3"
-        />
-      )}
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col text-xs text-ink-600">
-      <span className="label mb-1">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function Segmented<T extends string>(props: {
-  value: T;
-  options: T[];
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="mt-1 inline-flex rounded-md border border-ink-200 bg-surface p-0.5 text-xs">
-      {props.options.map((o) => (
-        <button
-          key={o}
-          className={clsx(
-            "rounded px-2 py-1",
-            props.value === o ? "bg-brand-500 text-white" : "text-ink-600 hover:bg-ink-100",
-          )}
-          onClick={() => props.onChange(o)}
-        >
-          {o}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function ChartControls(props: {
-  settings: MICChartSettings;
-  setSettings: React.Dispatch<React.SetStateAction<MICChartSettings>>;
-  onExportCsv: () => void;
-  onExportJson: () => void;
-  onExportPng: () => void;
-  onExportSvg: () => void;
-  onPaperPlotExport: (format: PublicationExportFormat, settings: PublicationExportSettings) => void;
-}) {
-  const setNumber = (key: keyof MICChartSettings, value: string, min: number, max: number) => {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return;
-    props.setSettings((prev) => ({ ...prev, [key]: Math.min(max, Math.max(min, parsed)) }));
-  };
-
-  return (
-    <div className="card shrink-0 p-4">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold">MIC plot and exports</h3>
-        <div className="flex flex-wrap gap-2">
-          <Tooltip content="Export MIC data as CSV">
-            <button className="btn-ghost" onClick={props.onExportCsv}>CSV</button>
-          </Tooltip>
-          <Tooltip content="Export full result as JSON">
-            <button className="btn-ghost" onClick={props.onExportJson}>JSON</button>
-          </Tooltip>
-          <Tooltip content="Export chart as PNG image">
-            <button className="btn-ghost" onClick={props.onExportPng}>PNG</button>
-          </Tooltip>
-          <Tooltip content="Export chart as SVG vector">
-            <button className="btn-ghost" onClick={props.onExportSvg}>SVG</button>
-          </Tooltip>
-          <PaperFigureExportToolbar onExport={props.onPaperPlotExport} />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Field label="Sample color">
-          <input
-            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-surface p-1"
-            type="color"
-            value={props.settings.sampleColor}
-            onChange={(e) => props.setSettings((prev) => ({ ...prev, sampleColor: e.target.value }))}
-          />
-        </Field>
-        <Field label="Control color">
-          <input
-            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-surface p-1"
-            type="color"
-            value={props.settings.controlColor}
-            onChange={(e) => props.setSettings((prev) => ({ ...prev, controlColor: e.target.value }))}
-          />
-        </Field>
-        <Field label="Blank color">
-          <input
-            className="h-9 w-full cursor-pointer rounded border border-ink-200 bg-surface p-1"
-            type="color"
-            value={props.settings.blankColor}
-            onChange={(e) => props.setSettings((prev) => ({ ...prev, blankColor: e.target.value }))}
-          />
-        </Field>
-        <Field label="Line width">
-          <input
-            className="input"
-            type="number"
-            min={0.2}
-            max={10}
-            step={0.1}
-            value={props.settings.lineWidth}
-            onChange={(e) => setNumber("lineWidth", e.target.value, 0.2, 10)}
-          />
-        </Field>
-        <Field label="Marker size">
-          <input
-            className="input"
-            type="number"
-            min={1}
-            max={30}
-            step={1}
-            value={props.settings.markerSize}
-            onChange={(e) => setNumber("markerSize", e.target.value, 1, 30)}
-          />
-        </Field>
-        <Field label="Bar width">
-          <input
-            className="input"
-            type="number"
-            min={0.05}
-            max={0.9}
-            step={0.05}
-            value={props.settings.barWidth}
-            onChange={(e) => setNumber("barWidth", e.target.value, 0.05, 0.9)}
-          />
-        </Field>
-        <Field label="Height">
-          <input
-            className="input"
-            type="number"
-            min={260}
-            max={900}
-            step={20}
-            value={props.settings.height}
-            onChange={(e) => setNumber("height", e.target.value, 260, 900)}
-          />
-        </Field>
-        <Field label="Layout">
-          <div className="mt-1.5 flex flex-wrap gap-3 text-sm">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={props.settings.showGrid}
-                onChange={(e) => props.setSettings((prev) => ({ ...prev, showGrid: e.target.checked }))}
-              />
-              Grid
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={props.settings.showLegend}
-                onChange={(e) => props.setSettings((prev) => ({ ...prev, showLegend: e.target.checked }))}
-              />
-              Legend
-            </label>
-          </div>
-        </Field>
-      </div>
-    </div>
-  );
-}
-
-function MICChart({
-  mic,
-  settings,
-  onReady,
-}: {
-  mic: MICResult;
-  settings: MICChartSettings;
-  onReady: (plot: PlotlyHTMLElement) => void;
-}) {
-  const pt = usePlotlyTheme();
-  const { config, result, sample_nan_ratio } = mic;
-  const controlColor = themeTraceColor(settings.controlColor, pt.theme);
-  // x_positions puts bars and the fitted curve on one axis (log2 concentration); older saved
-  // results only have column indices.
-  const xs = result.x_positions ?? result.concentrations;
-  const labels = result.x_tick_labels;
-  const nHover = result.sample_n?.map((n) => `n = ${n}`);
-  const hasControl =
-    result.control_mean !== null &&
-    Array.isArray(result.control_mean) &&
-    result.control_mean.length === result.sample_mean.length;
-  const hasBlank =
-    Array.isArray(result.blank_mean) &&
-    result.blank_mean.length === result.sample_mean.length;
-
-  const errBars = (arr: number[] | null | undefined) => ({
-    type: "data" as const,
-    array: (arr ?? []) as number[],
-    visible: true,
-    thickness: Math.max(0.8, settings.lineWidth * 0.55),
-  });
-
-  const data: Data[] = [];
-  if (config.plot_type === "bar") {
-    if (hasControl && config.control_style === "bars") {
-      data.push({
-        type: "bar",
-        name: "Sample",
-        x: xs,
-        y: result.sample_mean,
-        hovertext: nHover,
-        error_y: errBars(result.sample_std),
-        marker: { color: settings.sampleColor },
-        width: settings.barWidth,
-        offsetgroup: "sample",
-      } as unknown as Data);
-      data.push({
-        type: "bar",
-        name: "Control",
-        x: xs,
-        y: result.control_mean!,
-        error_y: errBars(result.control_std),
-        marker: { color: controlColor },
-        ...exportColorMeta(settings.controlColor),
-        width: settings.barWidth,
-        offsetgroup: "control",
-      } as unknown as Data);
-    } else {
-      data.push({
-        type: "bar",
-        name: "Sample",
-        x: xs,
-        y: result.sample_mean,
-        hovertext: nHover,
-        error_y: errBars(result.sample_std),
-        marker: { color: settings.sampleColor },
-        width: settings.barWidth,
-      });
-      if (hasControl) {
-        data.push({
-          type: "scatter",
-          mode: "lines+markers",
-          name: "Control",
-          x: xs,
-          y: result.control_mean!,
-          error_y: errBars(result.control_std),
-          line: { color: controlColor, width: settings.lineWidth },
-          marker: { color: controlColor, size: settings.markerSize },
-          ...exportColorMeta(settings.controlColor),
-        });
-      }
-    }
-  } else {
-    const mode = config.plot_type === "scatter" ? "markers" : "lines+markers";
-    data.push({
-      type: "scatter",
-      mode,
-      name: "Sample",
-      x: xs,
-      y: result.sample_mean,
-      hovertext: nHover,
-      error_y: errBars(result.sample_std),
-      line: { color: settings.sampleColor, width: settings.lineWidth },
-      marker: { color: settings.sampleColor, size: settings.markerSize },
-    });
-    if (hasControl) {
-      data.push({
-        type: "scatter",
-        mode,
-        name: "Control",
-        x: xs,
-        y: result.control_mean!,
-        error_y: errBars(result.control_std),
-        line: { color: controlColor, width: settings.lineWidth },
-        marker: { color: controlColor, size: settings.markerSize },
-        ...exportColorMeta(settings.controlColor),
-      });
-    }
-  }
-  if (hasBlank) {
-    data.push({
-      type: "scatter",
-      mode: "lines+markers",
-      name: config.subtract_blank ? "Blank baseline" : "Blank",
-      x: xs,
-      y: result.blank_mean!,
-      error_y: errBars(result.blank_std),
-      line: { color: settings.blankColor, width: settings.lineWidth, dash: "dot" },
-      marker: { color: settings.blankColor, size: Math.max(4, settings.markerSize - 1) },
-    });
-  }
-
-  if (result.four_pl?.curve_x_positions) {
-    data.push({
-      type: "scatter",
-      mode: "lines",
-      name: `4PL fit (IC₅₀ ${result.four_pl.ic50.toPrecision(3)}, R² ${result.four_pl.r_squared.toFixed(3)})`,
-      x: result.four_pl.curve_x_positions,
-      y: result.four_pl.curve_y,
-      line: { color: settings.sampleColor, width: Math.max(1.8, settings.lineWidth), dash: "dash" },
-      hoverinfo: "y+name",
-    });
-  }
-
-  return (
-    <div className="card shrink-0 p-3">
-      <div className="flex items-baseline justify-between px-1 pb-1">
-        <h3 className="text-sm font-semibold">{config.title || "MIC"}</h3>
-        <div className="text-xs text-ink-500">
-          {sample_nan_ratio > 0 && (
-            <span className="mr-3 text-amber-700">
-              {(sample_nan_ratio * 100).toFixed(1)}% of sample cells were non-numeric (treated as
-              NaN)
-            </span>
-          )}
-          <span>
-            {labels.join(", ")}
-          </span>
-        </div>
-      </div>
-      <Plot
-        data={data}
-        layout={{
-          height: settings.height,
-          margin: { l: 60, r: 20, t: 20, b: 50 },
-          barmode: "group",
-          bargap: 0.25,
-          xaxis: {
-            title: { text: config.x_label || "Concentration" },
-            tickmode: "array",
-            tickvals: xs,
-            ticktext: labels,
-            autorange: config.invert_x ? "reversed" : true,
-            showgrid: settings.showGrid,
-          },
-          yaxis: {
-            title: { text: config.y_label || "OD 600nm" },
-            rangemode: "tozero",
-            showgrid: settings.showGrid,
-          },
-          plot_bgcolor: pt.plot_bgcolor,
-          paper_bgcolor: pt.paper_bgcolor,
-          showlegend: settings.showLegend,
-          legend: { orientation: "h", y: -0.2 },
-        }}
-        config={{ responsive: true, displaylogo: false }}
-        style={{ width: "100%" }}
-        useResizeHandler
-        onInitialized={(_, graphDiv) => onReady(graphDiv as PlotlyHTMLElement)}
-        onUpdate={(_, graphDiv) => onReady(graphDiv as PlotlyHTMLElement)}
-      />
-    </div>
-  );
-}
-
-function unitFromAxisLabel(label: string): string {
-  const match = /\(([^()]+)\)\s*$/.exec(label ?? "");
-  return match ? match[1] : "";
-}
-
-function FitSummary({ mic, xLabel }: { mic: MICResult; xLabel: string }) {
-  const fit = mic.result.four_pl;
-  // Fits saved by older versions were computed on placeholder x values and can't be trusted.
-  if (fit && !fit.curve_x_positions) {
-    return <span className="text-amber-700">⚠ Saved fit is from an older version — re-run MIC.</span>;
-  }
-  if (!fit) {
-    return mic.result.four_pl_skipped_reason ? (
-      <span className="text-ink-500">{mic.result.four_pl_skipped_reason}</span>
-    ) : null;
-  }
-  const unit = unitFromAxisLabel(xLabel);
-  return (
-    <span className="rounded border border-brand-200 bg-brand-50 px-2 py-0.5 text-brand-800">
-      <span className="font-semibold">4PL fit:</span> IC₅₀ ={" "}
-      <span className="font-mono font-bold">{fit.ic50.toPrecision(3)}</span>
-      {fit.ic50_se != null && <span className="font-mono"> ± {fit.ic50_se.toPrecision(2)}</span>}
-      {unit && ` ${unit}`} | R² = <span className="font-mono font-bold">{fit.r_squared.toFixed(3)}</span> (Hill ={" "}
-      {fit.hill_slope.toFixed(2)})
-      {fit.ic50_in_range === false && (
-        <span className="ml-1 text-amber-700">⚠ IC₅₀ is outside the tested concentration range</span>
-      )}
-    </span>
-  );
-}
-
-function EmptyState(props: { onPick: () => void }) {
-  return (
-    <div className="card flex shrink-0 flex-col items-center justify-center gap-3 p-12 text-center">
-      <div className="text-4xl">🧫</div>
-      <div>
-        <div className="text-lg font-semibold">Open a plate file to begin</div>
-        <div className="text-sm text-ink-500">
-          Supported: .xlsx, .xlsm, .xls, .csv, .tsv, .txt
-        </div>
-      </div>
-      <button className="btn-primary" onClick={props.onPick}>
-        Open plate…
-      </button>
-    </div>
+    </SideRail>
   );
 }

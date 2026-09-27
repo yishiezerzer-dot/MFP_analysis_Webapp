@@ -355,39 +355,66 @@ async function handleBlob(res: Response): Promise<Blob> {
 
 // --- Plate Reader types ---
 
-export interface PlateSessionSummary {
+export type PlateWell = string;
+export type PlateLayoutSource = "saved" | "notes" | "empty";
+export type PlateMetadata = Record<string, string | number | null>;
+export type PlateGroupKind = "sample" | "reference";
+
+export interface PlateDilution {
+  top: number;
+  unit: string;
+  factor: number;
+  direction: "columns" | "rows";
+  first: number;
+  last: number;
+}
+
+export interface PlateGroup {
+  id: string;
+  name: string;
+  kind: PlateGroupKind;
+  wells: PlateWell[];
+  colour?: string | null;
+}
+
+export interface PlateLayout {
+  dilution: PlateDilution;
+  groups: PlateGroup[];
+  growth_control: PlateWell[];
+  blank: PlateWell[];
+  excluded: PlateWell[];
+}
+
+export interface PlateSummary {
   session_id: string;
+  workspace_id: string;
   display_name: string;
-  experiment_tag?: string;
-  sheets: string[];
+  experiment_tag: string;
+  uploaded_at: string | null;
+  metadata: PlateMetadata;
+  notes: string[];
+  label: string | null;
+  values: Record<PlateWell, number | null>;
+  layout: PlateLayout;
+  layout_source: PlateLayoutSource;
 }
 
-export interface PlatePreview {
-  columns: string[];
-  rows: string[][];
-  n_rows_total: number;
-  n_cols_total: number;
-  n_rows_preview: number;
+export interface PlateWellValue {
+  well: PlateWell;
+  raw: number | null;
+  value: number | null;
+  percent_growth: number | null;
+  excluded: boolean;
 }
 
-export type MICPlotType = "bar" | "line" | "scatter";
-export type MICControlStyle = "bars" | "line";
-
-export interface MICRequestBody {
-  sheet_name?: string | null;
-  use_first_row_as_header: boolean;
-  sample_rows: number[];
-  control_rows: number[];
-  blank_rows?: number[];
-  subtract_blank?: boolean;
-  concentration_columns: string[];
-  tick_text: string;
-  auto_tick_labels_power2: boolean;
-  title: string;
-  x_label: string;
-  y_label: string;
-  plot_type: MICPlotType;
-  control_style: MICControlStyle;
+export interface PlatePoint {
+  concentration: number;
+  n: number;
+  mean: number | null;
+  sd: number | null;
+  cv: number | null;
+  percent_growth: number | null;
+  wells: PlateWellValue[];
 }
 
 export interface FourPLFit {
@@ -398,49 +425,63 @@ export interface FourPLFit {
   r_squared: number;
   curve_x: number[];
   curve_y: number[];
-  // Absent in results saved by older versions.
   bottom_se?: number | null;
   top_se?: number | null;
   ic50_se?: number | null;
   hill_slope_se?: number | null;
   ic50_in_range?: boolean;
-  curve_x_positions?: number[];
 }
 
-export interface MICResult {
-  config: {
-    use_first_row_as_header: boolean;
-    sample_rows: number[];
-    control_rows: number[];
-    blank_rows?: number[];
-    subtract_blank?: boolean;
-    concentration_columns: string[];
-    tick_labels: string[];
-    auto_tick_labels_power2: boolean;
-    title: string;
-    x_label: string;
-    y_label: string;
-    plot_type: MICPlotType;
-    control_style: MICControlStyle;
-    invert_x: boolean;
-    sample_color: string;
-    control_color: string;
+export interface PlateGroupResult {
+  id: string;
+  name: string;
+  kind: PlateGroupKind;
+  colour: string | null;
+  growth_control: {
+    wells: PlateWell[];
+    all_wells: PlateWell[];
+    source: "own" | "plate";
+    mean: number | null;
+    sd: number | null;
+    cv: number | null;
   };
-  result: {
-    concentrations: number[];
-    x_tick_labels: string[];
-    sample_mean: number[];
-    sample_std: number[];
-    control_mean: number[] | null;
-    control_std: number[] | null;
-    blank_mean?: number[] | null;
-    blank_std?: number[] | null;
-    four_pl?: FourPLFit | null;
-    four_pl_skipped_reason?: string | null;
-    x_positions?: number[];
-    sample_n?: number[];
-  };
-  sample_nan_ratio: number;
+  points: PlatePoint[];
+  fit: FourPLFit | null;
+}
+
+export interface PlateCheck {
+  id: string;
+  level: "ok" | "warn" | "info";
+  message: string;
+  group?: string;
+  well?: PlateWell;
+}
+
+export interface PlateAnalysis {
+  blank: { used: boolean; mean: number | null; sd: number | null; n: number; wells: PlateWell[] };
+  unit: string;
+  groups: PlateGroupResult[];
+  checks: PlateCheck[];
+  excluded: PlateWell[];
+}
+
+export interface PlateTemplate {
+  id: string;
+  name: string;
+  layout: PlateLayout;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlateExperiment {
+  experiment_tag: string;
+  plates: {
+    session_id: string;
+    display_name: string;
+    metadata: PlateMetadata;
+    layout_source: PlateLayoutSource;
+    analysis: PlateAnalysis;
+  }[];
 }
 
 // --- FTIR types ---
@@ -817,27 +858,39 @@ export const api = {
 
   plateReader: {
     upload: (file: File) =>
-      postFileUpload("/api/plate-reader/sessions", file).then((r) =>
-        handle<PlateSessionSummary>(r),
-      ),
-    list: () => apiFetch("/api/plate-reader/sessions").then((r) => handle<PlateSessionSummary[]>(r)),
+      postFileUpload("/api/plate-reader/sessions", file).then((r) => handle<PlateSummary>(r)),
+    list: () => apiFetch("/api/plate-reader/sessions").then((r) => handle<PlateSummary[]>(r)),
     get: (sid: string) =>
-      apiFetch(`/api/plate-reader/sessions/${sid}`).then((r) => handle<PlateSessionSummary>(r)),
-    loadSheet: (
-      sid: string,
-      body: { sheet_name?: string | null; use_first_row_as_header: boolean; max_rows?: number },
-    ) =>
-      apiFetch(`/api/plate-reader/sessions/${sid}/load`, {
+      apiFetch(`/api/plate-reader/sessions/${sid}`).then((r) => handle<PlateSummary>(r)),
+    saveLayout: (sid: string, layout: PlateLayout) =>
+      apiFetch(`/api/plate-reader/sessions/${sid}/layout`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(layout),
+      }).then((r) => handle<PlateLayout>(r)),
+    analyse: (sid: string, body: { layout?: PlateLayout; subtract_blank: boolean; fit_4pl: boolean }) =>
+      apiFetch(`/api/plate-reader/sessions/${sid}/analysis`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      }).then((r) => handle<PlatePreview>(r)),
-    runMIC: (sid: string, body: MICRequestBody) =>
-      apiFetch(`/api/plate-reader/sessions/${sid}/mic`, {
+      }).then((r) => handle<PlateAnalysis>(r)),
+    workbook: (sid: string, subtractBlank: boolean) =>
+      apiFetch(`/api/plate-reader/sessions/${sid}/workbook?subtract_blank=${subtractBlank}`).then(handleBlob),
+    templates: () => apiFetch("/api/plate-reader/templates").then((r) => handle<PlateTemplate[]>(r)),
+    saveTemplate: (name: string, layout: PlateLayout) =>
+      apiFetch("/api/plate-reader/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }).then((r) => handle<MICResult>(r)),
+        body: JSON.stringify({ name, layout }),
+      }).then((r) => handle<PlateTemplate>(r)),
+    deleteTemplate: (id: string) =>
+      apiFetch(`/api/plate-reader/templates/${id}`, { method: "DELETE" }).then((r) =>
+        handle<{ deleted: boolean }>(r),
+      ),
+    experiment: (tag: string, subtractBlank: boolean) =>
+      apiFetch(
+        `/api/plate-reader/experiments/${encodeURIComponent(tag)}?subtract_blank=${subtractBlank}`,
+      ).then((r) => handle<PlateExperiment>(r)),
     remove: (sid: string) =>
       apiFetch(`/api/plate-reader/sessions/${sid}`, { method: "DELETE" }).then((r) =>
         handle<{ deleted: boolean }>(r),

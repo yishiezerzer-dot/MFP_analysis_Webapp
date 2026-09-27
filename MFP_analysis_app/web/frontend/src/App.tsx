@@ -36,7 +36,7 @@ interface TabDef {
 const TABS: TabDef[] = [
   { to: "/lcms", label: "LCMS", hint: "mzML viewer", status: "ready", icon: IconLCMS },
   { to: "/ftir", label: "FTIR", hint: "spectra + peaks", status: "ready", icon: IconFTIR },
-  { to: "/plate-reader", label: "Plate Reader", hint: "MIC wizard", status: "ready", icon: IconPlate },
+  { to: "/plate-reader", label: "Plate Reader", hint: "MIC plate maps", status: "ready", icon: IconPlate },
   { to: "/ai", label: "AI Assistant", hint: "analysis helper", status: "ready", icon: IconSparkle },
 ];
 
