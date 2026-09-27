@@ -22,7 +22,7 @@ from ..provenance import app_version, session_input_sha256
 
 # Kinds where only the latest result per session is meaningful (a re-run supersedes it);
 # fits, integrations and deconvolutions of different regions are all kept.
-_LATEST_ONLY = {"peaks", "mic", "feature_table"}
+_LATEST_ONLY = {"peaks", "mic", "mic_plate", "feature_table"}
 _BOLD = Font(bold=True)
 
 
@@ -134,6 +134,24 @@ def _tables(wb: openpyxl.Workbook, sel: Dict[str, List[Dict[str, Any]]]) -> None
                     "IC50 within tested range", "Blank subtracted", "No fit because"], fit_rows)
         _add_table(wb, "Plate_Means", "Plate reader replicate means",
                    ["File", "Concentration", "Mean", "SD", "n"], mean_rows)
+    if sel.get("mic_plate"):
+        rows, fit_rows = [], []
+        for r in sel["mic_plate"]:
+            res, p = r["result"], r["params"]
+            excluded = ", ".join(res.get("excluded") or [])
+            for g in res["groups"]:
+                for pt in g["points"]:
+                    rows.append([name(r), g["name"], pt["concentration"], res.get("unit"), pt["n"], pt["mean"], pt["sd"],
+                                 pt["percent_growth"], g["growth_control"]["mean"], bool(res["blank"]["used"]), excluded])
+                fit = g.get("fit")
+                if fit:
+                    fit_rows.append([name(r), g["name"], fit.get("ic50"), fit.get("ic50_se"), res.get("unit"),
+                                     fit.get("hill_slope"), fit.get("r_squared"), fit.get("ic50_in_range")])
+        _add_table(wb, "Plate_MIC", "Plate reader MIC plates: mean OD and % growth per concentration (MIC read by eye)",
+                   ["File", "Compound", "Concentration", "Unit", "n", "Mean OD", "SD", "% growth",
+                    "Growth control (mean OD)", "Blank subtracted", "Excluded wells"], rows)
+        _add_table(wb, "Plate_MIC_4PL", "Optional 4PL fits on MIC plates",
+                   ["File", "Compound", "IC50", "IC50 SE", "Unit", "Hill slope", "R²", "IC50 within tested range"], fit_rows)
 
 
 def _distinct(values: Iterable[str]) -> List[str]:
@@ -207,6 +225,20 @@ def _methods(sel: Dict[str, List[Dict[str, Any]]], sessions: List[Dict[str, Any]
             else:
                 line += f"no dose-response fit ({res.get('four_pl_skipped_reason')})."
             out.append(line)
+        out.append("")
+    if sel.get("mic_plate"):
+        out += ["## Plate reader (MIC plates)", ""]
+        for r in sel["mic_plate"]:
+            p, res = r["params"], r["result"]
+            d = p["layout"]["dilution"]
+            blank = (f"the mean of {res['blank']['n']} blank wells was subtracted from every well; " if res["blank"]["used"]
+                     else "no blank was subtracted; ")
+            excl = f" Excluded wells: {', '.join(res['excluded'])}." if res.get("excluded") else ""
+            out.append(
+                f"{r['input_name']}: {len(res['groups'])} compound(s), {d['factor']:g}-fold dilution from {d['top']:g} {d['unit']}; "
+                f"{blank}replicate wells were averaged per concentration (SD with n − 1) and % growth was calculated "
+                f"as 100 × mean / mean of the compound's growth control wells. The MIC was read by eye.{excl}"
+            )
         out.append("")
     if sel.get("feature_table") or sel.get("deconvolution"):
         out += ["## LC-MS", ""]

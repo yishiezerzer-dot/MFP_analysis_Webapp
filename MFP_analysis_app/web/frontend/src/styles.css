@@ -420,3 +420,10 @@ select.input:disabled {
   content: '';
   @apply absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-brand-500;
 }
+
+/* Plate map: an excluded well stays visible but hatched and struck through */
+.plate-well-excluded {
+  background: repeating-linear-gradient(45deg, rgb(var(--ink-100)), rgb(var(--ink-100)) 4px, rgb(var(--ink-200)) 4px, rgb(var(--ink-200)) 8px);
+  color: rgb(var(--ink-500));
+  text-decoration: line-through;
+}
