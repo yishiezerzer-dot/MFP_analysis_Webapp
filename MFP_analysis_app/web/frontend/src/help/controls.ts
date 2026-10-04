@@ -64,6 +64,31 @@ export const CONTROLS: ControlHint[] = [
     keywords: ["save", "image", "png", "svg", "publication", "download"],
   },
 
+  { id: "app.workspace", tab: "app", label: "Lab member profile", what: "Each lab member's workspace keeps its own open files and settings. Switch to yours, or add a new member.", keywords: ["workspace", "user", "profile", "switch", "member"] },
+  { id: "app.userMenu", tab: "app", label: "Profile menu", what: "Your profile, switching lab member, and the colour theme (day, night, night vision).", keywords: ["account", "settings", "menu"] },
+  { id: "app.theme", tab: "app", label: "Theme", what: "Day, night or night-vision colours for the whole app; charts follow the theme on screen, exports stay white.", typical: "Day", keywords: ["dark mode", "night", "colours", "appearance"], panel: "app.menu" },
+  { id: "app.pinSidebar", tab: "app", label: "Pin sidebar", what: "Keeps the navigation sidebar open; unpinned it collapses to icons and opens on hover.", keywords: ["navigation", "collapse"] },
+
+  // AI Assistant
+  { id: "ai.provider", tab: "ai", label: "Provider", what: "Which AI answers: Demo (offline keyword matching, no real model), OpenAI, Anthropic, or a local Ollama model.", typical: "Demo until a key or Ollama is set up", keywords: ["openai", "anthropic", "claude", "ollama", "model", "llm"], helpTopic: "providers" },
+  { id: "ai.model", tab: "ai", label: "Model", what: "Model name for the chosen provider; leave the suggested one unless you know you need another.", keywords: ["gpt", "claude", "llama"], helpTopic: "providers" },
+  { id: "ai.apiKey", tab: "ai", label: "API key", what: "Your provider key. It is kept in this browser in plain text and sent straight to the provider; use a key with a low spending cap.", keywords: ["key", "token", "secret"], helpTopic: "providers" },
+  { id: "ai.ollamaUrl", tab: "ai", label: "Ollama URL", what: "Address of a local Ollama server, for models that run on your own computer.", typical: "http://127.0.0.1:11434", keywords: ["local model", "offline"], helpTopic: "providers" },
+  { id: "ai.test", tab: "ai", label: "Test connection", what: "Checks that the provider, model and key work before you chat.", keywords: ["check", "verify"] },
+  { id: "ai.includeContext", tab: "ai", label: "Include app context", what: "Sends a short summary of your open files and settings with each message, so answers refer to your data.", typical: "On", keywords: ["context", "data"], helpTopic: "context" },
+  { id: "ai.focusModule", tab: "ai", label: "Focus module", what: "Which tab's context to send: automatic, or LCMS, FTIR or Plate Reader only.", typical: "auto", helpTopic: "context" },
+  { id: "ai.sessions", tab: "ai", label: "Loaded sessions", what: "Tick files to narrow the context to them; with none ticked, all loaded files are included. Refresh re-reads the list after you open new files.", keywords: ["files", "select data", "refresh"], helpTopic: "context" },
+  { id: "ai.autoExecute", tab: "ai", label: "Auto-execute safe actions", what: "Lets the assistant run harmless actions (open a dialog, make an EIC) without asking; risky ones still need your approval.", typical: "Off until you trust it", keywords: ["automation", "approve", "tools"] },
+  { id: "ai.toolTrace", tab: "ai", label: "Show tool-call trace", what: "Shows each action the assistant ran, with its inputs, under the reply.", keywords: ["debug", "actions"] },
+  { id: "ai.fallback", tab: "ai", label: "Provider fallback", what: "If the chosen provider fails, tries the next configured provider instead of stopping.", keywords: ["backup", "retry"] },
+  { id: "ai.actionLog", tab: "ai", label: "Action log", what: "History of every action run by the assistant or macros, with filters by status, actor and time.", keywords: ["history", "audit"] },
+  { id: "ai.savedPrompts", tab: "ai", label: "Saved prompts", what: "Questions you ask often: save the current message, then use it again or run it in one click.", keywords: ["templates", "favourites"] },
+  { id: "ai.macros", tab: "ai", label: "Macros", what: "Record the actions the assistant runs, save them under a name, and replay them later without the AI.", keywords: ["record", "replay", "automation", "workflow"] },
+  { id: "ai.starters", tab: "ai", label: "Example questions", what: "Click one to send it, e.g. make an EIC or open the Kendrick plot.", keywords: ["examples", "starter", "ideas"], helpTopic: "starter-prompts" },
+  { id: "ai.message", tab: "ai", label: "Message", what: "Ask about your data or the app, or ask it to do something (e.g. \"create an EIC for m/z 150.1\"). Enter sends, Shift+Enter adds a line.", keywords: ["chat", "ask", "question"] },
+  { id: "ai.export", tab: "ai", label: "Export conversation", what: "Saves this chat as a text file.", keywords: ["download", "save chat"] },
+  { id: "ai.clear", tab: "ai", label: "Clear chat", what: "Removes all messages from this conversation.", keywords: ["reset", "new chat"] },
+
   // Plate Reader
   {
     id: "plate.open",

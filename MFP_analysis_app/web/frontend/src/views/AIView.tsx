@@ -52,6 +52,7 @@ import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton } from "../help/HelpShell";
+import { Hint } from "../components/Hint";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 
 const BUILT_IN_PROMPTS: SavedPrompt[] = [
@@ -799,7 +800,7 @@ export function AIView() {
             </div>
             <div className="flex items-center gap-2">
               {turns.length > 0 && (
-                <Tooltip content="Export conversation as text file">
+                <Hint id="ai.export">
                   <button
                     type="button"
                     className="btn-ghost text-xs"
@@ -818,9 +819,9 @@ export function AIView() {
                   >
                     <DownloadIcon className="h-3.5 w-3.5" />
                   </button>
-                </Tooltip>
+                </Hint>
               )}
-              <Tooltip content="Clear all messages">
+              <Hint id="ai.clear">
                 <button
                   type="button"
                   className="btn-ghost text-xs"
@@ -829,7 +830,7 @@ export function AIView() {
                 >
                   Clear chat
                 </button>
-              </Tooltip>
+              </Hint>
             </div>
           </div>
 
@@ -962,111 +963,119 @@ function ProviderCard(props: {
   return (
     <div className="card shrink-0 p-4">
       <div className="label mb-2">Provider</div>
-      <div className="grid grid-cols-2 gap-2">
-        {(
-          [
-            { id: "demo", label: "Demo", enabled: true, hint: "No API calls" },
-            {
-              id: "openai",
-              label: "OpenAI",
-              enabled: !!status?.openai.available,
-              hint: status?.openai.available
-                ? "Live"
-                : status?.openai.sdk
-                  ? "No key"
-                  : "No SDK",
-            },
-            {
-              id: "anthropic",
-              label: "Anthropic",
-              enabled: true,
-              hint: "Live",
-            },
-            {
-              id: "ollama",
-              label: "Ollama",
-              enabled: true,
-              hint: "Local",
-            },
-          ] as { id: AIProvider; label: string; enabled: boolean; hint: string }[]
-        ).map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => onProviderChange(p.id)}
-            className={clsx(
-              "rounded-md border px-2 py-2 text-left text-xs transition-colors",
-              provider === p.id
-                ? "border-brand-500 bg-brand-500 text-white"
-                : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-50",
-              !p.enabled && provider !== p.id && "opacity-70",
-            )}
-          >
-            <div className="font-semibold">{p.label}</div>
-            <div
+      <Hint id="ai.provider" className="w-full">
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              { id: "demo", label: "Demo", enabled: true, hint: "No API calls" },
+              {
+                id: "openai",
+                label: "OpenAI",
+                enabled: !!status?.openai.available,
+                hint: status?.openai.available
+                  ? "Live"
+                  : status?.openai.sdk
+                    ? "No key"
+                    : "No SDK",
+              },
+              {
+                id: "anthropic",
+                label: "Anthropic",
+                enabled: true,
+                hint: "Live",
+              },
+              {
+                id: "ollama",
+                label: "Ollama",
+                enabled: true,
+                hint: "Local",
+              },
+            ] as { id: AIProvider; label: string; enabled: boolean; hint: string }[]
+          ).map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onProviderChange(p.id)}
               className={clsx(
-                "text-[10px]",
-                provider === p.id ? "text-white/80" : "text-ink-500",
+                "rounded-md border px-2 py-2 text-left text-xs transition-colors",
+                provider === p.id
+                  ? "border-brand-500 bg-brand-500 text-white"
+                  : "border-ink-200 bg-surface text-ink-700 hover:bg-ink-50",
+                !p.enabled && provider !== p.id && "opacity-70",
               )}
             >
-              {p.hint}
-            </div>
-          </button>
-        ))}
-      </div>
+              <div className="font-semibold">{p.label}</div>
+              <div
+                className={clsx(
+                  "text-[10px]",
+                  provider === p.id ? "text-white/80" : "text-ink-500",
+                )}
+              >
+                {p.hint}
+              </div>
+            </button>
+          ))}
+        </div>
+      </Hint>
 
       {provider !== "demo" && (
-        <div className="mt-3">
-          <label className="label mb-1 block">Model</label>
-          <input
-            className="input w-full"
-            value={model}
-            onChange={(e) => onModelChange(e.target.value)}
-            placeholder={
-              provider === "openai"
-                ? status?.openai.default_model
-                : provider === "anthropic"
-                  ? status?.anthropic?.default_model || "claude-sonnet-4-20250514"
-                : status?.ollama.default_model
-            }
-            spellCheck={false}
-          />
-        </div>
+        <Hint id="ai.model" className="w-full">
+          <div className="mt-3">
+            <label className="label mb-1 block">Model</label>
+            <input
+              className="input w-full"
+              value={model}
+              onChange={(e) => onModelChange(e.target.value)}
+              placeholder={
+                provider === "openai"
+                  ? status?.openai.default_model
+                  : provider === "anthropic"
+                    ? status?.anthropic?.default_model || "claude-sonnet-4-20250514"
+                  : status?.ollama.default_model
+              }
+              spellCheck={false}
+            />
+          </div>
+        </Hint>
       )}
 
       {(provider === "openai" || provider === "anthropic") && (
-        <div className="mt-3">
-          <label className="label mb-1 block">API key</label>
-          <input
-            className="input w-full"
-            value={props.apiKey}
-            onChange={(e) => props.onApiKeyChange(e.target.value)}
-            placeholder={provider === "openai" ? "sk-..." : "sk-ant-..."}
-            type="password"
-            spellCheck={false}
-          />
-          <p className="mt-1 text-[11px] text-amber-700">
-            ⚠ Stored in browser localStorage as plaintext and sent directly from your browser to {provider === "openai" ? "OpenAI" : "Anthropic"}.
-            Anyone with DevTools access on this device can read it. Use a key with a small monthly cap, and never share this browser profile.
-          </p>
-        </div>
+        <Hint id="ai.apiKey" className="w-full">
+          <div className="mt-3">
+            <label className="label mb-1 block">API key</label>
+            <input
+              className="input w-full"
+              value={props.apiKey}
+              onChange={(e) => props.onApiKeyChange(e.target.value)}
+              placeholder={provider === "openai" ? "sk-..." : "sk-ant-..."}
+              type="password"
+              spellCheck={false}
+            />
+            <p className="mt-1 text-[11px] text-amber-700">
+              ⚠ Stored in browser localStorage as plaintext and sent directly from your browser to {provider === "openai" ? "OpenAI" : "Anthropic"}.
+              Anyone with DevTools access on this device can read it. Use a key with a small monthly cap, and never share this browser profile.
+            </p>
+          </div>
+        </Hint>
       )}
 
       {provider === "ollama" && (
-        <div className="mt-3">
-          <label className="label mb-1 block">Ollama base URL</label>
-          <input
-            className="input w-full"
-            value={props.ollamaBaseUrl}
-            onChange={(e) => props.onOllamaBaseUrlChange(e.target.value)}
-            placeholder="http://127.0.0.1:11434"
-            spellCheck={false}
-          />
-          <p className="mt-1 text-[11px] text-ink-500">
-            Requires a running <code>ollama</code> server; pull a model first
-            (for example <code>ollama pull {status?.ollama.default_model || "llama3.1:8b"}</code>).
-          </p>
-        </div>
+        <Hint id="ai.ollamaUrl" className="w-full">
+          <div className="mt-3">
+            <label className="label mb-1 block">Ollama base URL</label>
+            <input
+              className="input w-full"
+              value={props.ollamaBaseUrl}
+              onChange={(e) => props.onOllamaBaseUrlChange(e.target.value)}
+              placeholder="http://127.0.0.1:11434"
+              spellCheck={false}
+            />
+            <p className="mt-1 text-[11px] text-ink-500">
+              Requires a running <code>ollama</code> server; pull a model first
+              (for example <code>ollama pull {status?.ollama.default_model || "llama3.1:8b"}</code>).
+            </p>
+          </div>
+        </Hint>
       )}
 
       {provider === "openai" && !status?.openai.available && (
@@ -1076,9 +1085,11 @@ function ProviderCard(props: {
       )}
 
       <div className="mt-3 flex items-center gap-2">
-        <button type="button" className="btn-ghost text-xs" onClick={props.onTest}>
-          Test
-        </button>
+        <Hint id="ai.test">
+          <button type="button" className="btn-ghost text-xs" onClick={props.onTest}>
+            Test
+          </button>
+        </Hint>
         {props.providerTest && (
           <span
             className={clsx(
@@ -1136,59 +1147,65 @@ function ContextCard(props: {
     <div className="card shrink-0 p-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="label">Context</div>
-        <Tooltip content="Refresh session list from server">
+        <Hint id="ai.sessions">
           <button type="button" className="btn-ghost text-xs" onClick={onRefresh}>
             Refresh
           </button>
-        </Tooltip>
+        </Hint>
       </div>
 
-      <label className="mb-2 flex items-center gap-2 text-xs">
-        <input
-          type="checkbox"
-          checked={includeContext}
-          onChange={(e) => onIncludeContextChange(e.target.checked)}
-        />
-        Include app context in prompt
-      </label>
+      <Hint id="ai.includeContext">
+        <label className="mb-2 flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={includeContext}
+            onChange={(e) => onIncludeContextChange(e.target.checked)}
+          />
+          Include app context in prompt
+        </label>
+      </Hint>
 
       <div className={clsx("transition-opacity", !includeContext && "pointer-events-none opacity-40")}>
         <label className="label mb-1 block">Focus module</label>
-        <select
-          className="input mb-2 w-full"
-          aria-label="Focus module"
-          value={activeModule}
-          onChange={(e) => onActiveModuleChange(e.target.value as AIModuleName | "")}
-          disabled={!includeContext}
-        >
-          {moduleOptions.map((m) => (
-            <option key={m || "auto"} value={m}>
-              {m || "Auto (any module)"}
-            </option>
-          ))}
-        </select>
+        <Hint id="ai.focusModule" className="w-full">
+          <select
+            className="input mb-2 w-full"
+            aria-label="Focus module"
+            value={activeModule}
+            onChange={(e) => onActiveModuleChange(e.target.value as AIModuleName | "")}
+            disabled={!includeContext}
+          >
+            {moduleOptions.map((m) => (
+              <option key={m || "auto"} value={m}>
+                {m || "Auto (any module)"}
+              </option>
+            ))}
+          </select>
+        </Hint>
 
         <p className="mb-2 text-[11px] text-ink-500">{summary}</p>
 
-        <div className="label mb-1 flex items-center justify-between">
-          <span>
-            Loaded sessions
+        <Hint id="ai.sessions" className="w-full">
+          <div className="label mb-1 flex items-center justify-between">
+            <span>
+              Loaded sessions
+              {selectedSids.size > 0 && (
+                <span className="ml-1.5 rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  {selectedSids.size} selected
+                </span>
+              )}
+            </span>
             {selectedSids.size > 0 && (
-              <span className="ml-1.5 rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                {selectedSids.size} selected
-              </span>
+              <button
+                type="button"
+                className="text-[10px] font-medium text-ink-500 hover:text-ink-700"
+                onClick={onClearSelection}
+              >
+                Clear
+              </button>
             )}
-          </span>
-          {selectedSids.size > 0 && (
-            <button
-              type="button"
-              className="text-[10px] font-medium text-ink-500 hover:text-ink-700"
-              onClick={onClearSelection}
-            >
-              Clear
-            </button>
-          )}
-        </div>
+          </div>
+        </Hint>
         {sessions.length === 0 ? (
           <div className="rounded border border-dashed border-ink-200 px-2 py-3 text-[11px] text-ink-500">
             No datasets loaded yet. Open another tab to upload a file, then Refresh here.
@@ -1248,36 +1265,44 @@ function AssistantSettingsCard({
   return (
     <div className="card shrink-0 p-4">
       <div className="label mb-2">Assistant tools</div>
-      <label className="mb-2 flex items-center gap-2 text-xs">
-        <input
-          type="checkbox"
-          checked={autoExecuteSafeActions}
-          onChange={(e) => onAutoExecuteSafeActionsChange(e.target.checked)}
-        />
-        Auto-execute safe actions
-      </label>
-      <label className="flex items-center gap-2 text-xs">
-        <input
-          type="checkbox"
-          checked={showToolTrace}
-          onChange={(e) => onShowToolTraceChange(e.target.checked)}
-        />
-        Show tool-call trace
-      </label>
-      <label className="mt-2 flex items-center gap-2 text-xs">
-        <input
-          type="checkbox"
-          checked={providerFallbackEnabled}
-          onChange={(e) => onProviderFallbackEnabledChange(e.target.checked)}
-        />
-        Provider fallback chain
-      </label>
+      <Hint id="ai.autoExecute">
+        <label className="mb-2 flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={autoExecuteSafeActions}
+            onChange={(e) => onAutoExecuteSafeActionsChange(e.target.checked)}
+          />
+          Auto-execute safe actions
+        </label>
+      </Hint>
+      <Hint id="ai.toolTrace">
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={showToolTrace}
+            onChange={(e) => onShowToolTraceChange(e.target.checked)}
+          />
+          Show tool-call trace
+        </label>
+      </Hint>
+      <Hint id="ai.fallback">
+        <label className="mt-2 flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={providerFallbackEnabled}
+            onChange={(e) => onProviderFallbackEnabledChange(e.target.checked)}
+          />
+          Provider fallback chain
+        </label>
+      </Hint>
       <p className="mt-2 text-[11px] text-ink-500">
         {error ? `Action catalog error: ${error}` : `${actionCount} automation actions available.`}
       </p>
-      <button type="button" className="btn-ghost mt-2 text-xs" onClick={onOpenActionLog}>
-        Action log
-      </button>
+      <Hint id="ai.actionLog">
+        <button type="button" className="btn-ghost mt-2 text-xs" onClick={onOpenActionLog}>
+          Action log
+        </button>
+      </Hint>
     </div>
   );
 }
@@ -1301,9 +1326,11 @@ function SavedPromptsCard({
     <div className="card shrink-0 p-4">
       <div className="mb-2 flex items-center justify-between">
         <div className="label">Saved prompts</div>
-        <button type="button" className="btn-ghost text-xs" onClick={onSaveCurrent} disabled={!currentInput.trim()}>
-          Save input
-        </button>
+        <Hint id="ai.savedPrompts">
+          <button type="button" className="btn-ghost text-xs" onClick={onSaveCurrent} disabled={!currentInput.trim()}>
+            Save input
+          </button>
+        </Hint>
       </div>
       <div className="flex max-h-56 flex-col gap-1 overflow-y-auto pr-1">
         {prompts.map((prompt) => (
@@ -1361,7 +1388,9 @@ function MacroCard({
 }) {
   return (
     <div className="card shrink-0 p-4">
-      <div className="label mb-2">Macros</div>
+      <Hint id="ai.macros">
+        <div className="label mb-2">Macros</div>
+      </Hint>
       <div className="rounded border border-ink-200 bg-ink-50 p-2 text-xs">
         <div className="flex items-center justify-between gap-2">
           <span className={recording ? "font-semibold text-red-700" : "text-ink-600"}>
@@ -1445,19 +1474,21 @@ function EmptyTranscript({
           </p>
         )}
       </div>
-      <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
-        {prompts.map((p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => onPick(p)}
-            className="flex items-center justify-between gap-2 rounded-md border border-ink-200 bg-surface px-3 py-2 text-left text-xs text-ink-700 hover:border-ink-400 hover:bg-ink-50"
-          >
-            <span>{p}</span>
-            <ArrowRightIcon className="h-3 w-3 shrink-0 text-ink-400" />
-          </button>
-        ))}
-      </div>
+      <Hint id="ai.starters" className="w-full max-w-md">
+        <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
+          {prompts.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => onPick(p)}
+              className="flex items-center justify-between gap-2 rounded-md border border-ink-200 bg-surface px-3 py-2 text-left text-xs text-ink-700 hover:border-ink-400 hover:bg-ink-50"
+            >
+              <span>{p}</span>
+              <ArrowRightIcon className="h-3 w-3 shrink-0 text-ink-400" />
+            </button>
+          ))}
+        </div>
+      </Hint>
     </div>
   );
 }
@@ -1965,17 +1996,19 @@ function Composer(props: {
   return (
     <div>
       <div className="flex items-end gap-2">
-        <textarea
-          ref={ref}
-          className="input min-h-[40px] flex-1 resize-none"
-          aria-label="Message the assistant"
-          placeholder="Message the assistant… (Shift+Enter for newline)"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          rows={1}
-          disabled={busy}
-        />
+        <Hint id="ai.message" className="min-w-0 flex-1">
+          <textarea
+            ref={ref}
+            className="input min-h-[40px] flex-1 resize-none"
+            aria-label="Message the assistant"
+            placeholder="Message the assistant… (Shift+Enter for newline)"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={onKeyDown}
+            rows={1}
+            disabled={busy}
+          />
+        </Hint>
         {busy ? (
           <button
             type="button"
