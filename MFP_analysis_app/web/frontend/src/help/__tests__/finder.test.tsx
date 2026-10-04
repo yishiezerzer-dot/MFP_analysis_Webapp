@@ -3,7 +3,7 @@ import { cleanup, render } from "@testing-library/react";
 import { useState } from "react";
 import type { ControlHint } from "../controls";
 import { scoreControl, searchFinder } from "../controlSearch";
-import { FLASH_CLASS, hasPanelHandler, revealControl, useRevealPanel } from "../reveal";
+import { FLASH_ATTR, hasPanelHandler, revealControl, useRevealPanel } from "../reveal";
 
 const baseline: ControlHint = {
   id: "ftir.test.baseline",
@@ -83,7 +83,7 @@ describe("revealControl", () => {
     );
     expect(await revealControl("app.help")).toBe("shown");
     const marked = document.querySelector('[data-control="app.help"]') as HTMLElement;
-    expect(marked.classList.contains(FLASH_CLASS)).toBe(true);
+    expect(marked.hasAttribute(FLASH_ATTR)).toBe(true);
     expect(document.activeElement?.textContent).toBe("Help");
   });
 

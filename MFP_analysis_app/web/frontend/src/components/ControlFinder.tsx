@@ -51,7 +51,7 @@ export function ControlFinder() {
       <Hint id="app.findControl" placement="bottom">
         <button
           type="button"
-          className="flex h-9 w-52 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2.5 text-left text-sm text-ink-500 transition-colors hover:border-ink-300 hover:text-ink-700"
+          className="flex h-9 w-60 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2.5 text-left text-sm text-ink-500 transition-colors hover:border-ink-300 hover:text-ink-700"
           onClick={() => setOpen(true)}
         >
           <Search {...ICON_PROPS} />

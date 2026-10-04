@@ -429,7 +429,7 @@ select.input:disabled {
 }
 
 /* Control finder / tours: briefly outline the control the user asked for */
-.control-flash {
+[data-flash] {
   border-radius: 8px;
   animation: control-flash 1.6s ease-out;
 }
@@ -438,5 +438,5 @@ select.input:disabled {
   100% { box-shadow: 0 0 0 3px rgb(var(--brand-500) / 0), 0 0 0 8px rgb(var(--brand-500) / 0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .control-flash { animation: none; box-shadow: 0 0 0 3px rgb(var(--brand-500)); }
+  [data-flash] { animation: none; box-shadow: 0 0 0 3px rgb(var(--brand-500)); }
 }

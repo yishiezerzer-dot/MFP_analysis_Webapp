@@ -24,7 +24,13 @@ export function hasPanelHandler(name: string): boolean {
   return handlers.has(name);
 }
 
-const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+// Next frame, or 50 ms when the browser pauses frames (background or hidden tab).
+const frame = () =>
+  new Promise<void>((r) => {
+    const done = () => r();
+    requestAnimationFrame(done);
+    window.setTimeout(done, 50);
+  });
 
 async function waitFor<T>(get: () => T | null | undefined, timeoutMs: number): Promise<T | null> {
   const end = performance.now() + timeoutMs;
@@ -36,7 +42,8 @@ async function waitFor<T>(get: () => T | null | undefined, timeoutMs: number): P
   }
 }
 
-export const FLASH_CLASS = "control-flash";
+// An attribute, not a class: React rewrites className on re-render and would drop the flash.
+export const FLASH_ATTR = "data-flash";
 const FLASH_MS = 1600;
 
 export type RevealResult = "shown" | "not-found";
@@ -55,8 +62,10 @@ export async function revealControl(id: string, timeoutMs = 2000): Promise<Revea
   const el = await waitFor(() => document.querySelector<HTMLElement>(`[data-control="${id}"]`), timeoutMs);
   if (!el) return "not-found";
   el.scrollIntoView({ block: "center", behavior: "smooth" });
-  el.classList.add(FLASH_CLASS);
-  window.setTimeout(() => el.classList.remove(FLASH_CLASS), FLASH_MS);
+  el.removeAttribute(FLASH_ATTR);
+  void el.offsetWidth; // restart the animation when the same control is revealed twice
+  el.setAttribute(FLASH_ATTR, "");
+  window.setTimeout(() => el.removeAttribute(FLASH_ATTR), FLASH_MS);
   const focusable = el.matches("button, input, select, textarea, a[href]")
     ? el
     : el.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea, a[href]");
