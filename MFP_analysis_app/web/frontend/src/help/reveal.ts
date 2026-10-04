@@ -50,7 +50,11 @@ export type RevealResult = "shown" | "not-found";
 
 // Opens the control's panel (once the view that owns it is mounted), scrolls it into view,
 // flashes an outline and focuses it.
-export async function revealControl(id: string, timeoutMs = 2000): Promise<RevealResult> {
+export async function revealControl(
+  id: string,
+  timeoutMs = 2000,
+  { highlight = true }: { highlight?: boolean } = {},
+): Promise<RevealResult> {
   const control = getControl(id);
   const panel = control?.panel;
   if (panel) {
@@ -62,6 +66,7 @@ export async function revealControl(id: string, timeoutMs = 2000): Promise<Revea
   const el = await waitFor(() => document.querySelector<HTMLElement>(`[data-control="${id}"]`), timeoutMs);
   if (!el) return "not-found";
   el.scrollIntoView({ block: "center", behavior: "smooth" });
+  if (!highlight) return "shown";
   el.removeAttribute(FLASH_ATTR);
   void el.offsetWidth; // restart the animation when the same control is revealed twice
   el.setAttribute(FLASH_ATTR, "");

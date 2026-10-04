@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChartLine, FileUp, FlaskConical, Grid3X3, MessageSquare, MousePointerClick, Search } from "lucide-react";
+import { ChartLine, Compass, FileUp, FlaskConical, Grid3X3, MessageSquare, MousePointerClick, Search } from "lucide-react";
 import { api } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { TryExampleButton } from "../components/ExampleData";
@@ -8,6 +8,9 @@ import { ICON_PROPS } from "../components/common/ChartCardParts";
 import { useStoredState } from "../hooks/useStoredState";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { OPEN_ON_KEY, type OpenOn } from "../layout/startPage";
+import { useTour } from "../help/TourProvider";
+import { tourForTab } from "../help/tours";
+import { tabOfRoute } from "../help/controls";
 
 interface OpenFile {
   id: string;
@@ -79,6 +82,8 @@ function useOpenFiles(): Record<string, OpenFile[]> {
 
 function TaskCard({ task, files }: { task: Task; files: OpenFile[] | undefined }) {
   const navigate = useNavigate();
+  const { startTour } = useTour();
+  const tour = tourForTab(tabOfRoute(task.route));
   const recent = (files ?? []).slice(-3).reverse();
   return (
     <div className="card flex flex-col gap-3 p-5">
@@ -118,6 +123,19 @@ function TaskCard({ task, files }: { task: Task; files: OpenFile[] | undefined }
             module={task.module}
             onOpened={(ids) => navigate(ids[0] ? `${task.route}?open=${encodeURIComponent(ids[0])}` : task.route)}
           />
+        )}
+        {tour && (
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => {
+              navigate(task.route);
+              startTour(tour.id);
+            }}
+          >
+            <Compass {...ICON_PROPS} />
+            Take the tour
+          </button>
         )}
       </div>
     </div>

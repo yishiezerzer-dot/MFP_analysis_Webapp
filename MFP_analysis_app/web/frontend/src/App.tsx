@@ -16,6 +16,7 @@ import { BrowserBridgeProvider } from "./automation/BrowserBridge";
 import { useWorkspace } from "./context/WorkspaceContext";
 import { FileIngestionProvider } from "./context/FileIngestionContext";
 import { HelpProvider } from "./help/HelpProvider";
+import { TourProvider } from "./help/TourProvider";
 import { entryRoute, rememberTab } from "./layout/startPage";
 import { Hint } from "./components/Hint";
 import { GlobalDropOverlay } from "./components/GlobalDropOverlay";
@@ -423,22 +424,24 @@ export default function App() {
   return (
     <BrowserBridgeProvider>
       <FileIngestionProvider>
-        <HelpProvider>
-          <Suspense fallback={<ViewLoadingFallback />}>
-            <Routes>
-              <Route element={<Layout />}>
-                <Route path="/" element={<EntryRedirect />} />
-              <Route path="/home" element={<HomeView />} />
-                <Route path="/lcms" element={<LCMSView />} />
-                <Route path="/ftir" element={<FTIRView />} />
-                <Route path="/plate-reader" element={<PlateReaderView />} />
-                <Route path="/ai" element={<AIView />} />
-              {/* Old links (e.g. the removed /data-studio and /figures tabs) go to the start page instead of a blank page. */}
-              <Route path="*" element={<Navigate to="/" replace />} />
-              </Route>
-            </Routes>
-          </Suspense>
-        </HelpProvider>
+        <TourProvider>
+          <HelpProvider>
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <Routes>
+                <Route element={<Layout />}>
+                  <Route path="/" element={<EntryRedirect />} />
+                <Route path="/home" element={<HomeView />} />
+                  <Route path="/lcms" element={<LCMSView />} />
+                  <Route path="/ftir" element={<FTIRView />} />
+                  <Route path="/plate-reader" element={<PlateReaderView />} />
+                  <Route path="/ai" element={<AIView />} />
+                {/* Old links (e.g. the removed /data-studio and /figures tabs) go to the start page instead of a blank page. */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
+              </Routes>
+            </Suspense>
+          </HelpProvider>
+        </TourProvider>
       </FileIngestionProvider>
     </BrowserBridgeProvider>
   );
