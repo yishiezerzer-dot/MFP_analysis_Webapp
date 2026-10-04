@@ -119,8 +119,6 @@ export function LCMSView() {
     (value) => (isTabId(value) ? value : "navigate"),
   );
   const [showPolymerControls, setShowPolymerControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showPolymerControls`, true);
-  const [showConfidenceControls, setShowConfidenceControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showConfidenceControls`, false);
-  const [showAlignmentDiagnostics, setShowAlignmentDiagnostics] = useStoredState(`${LCMS_STORAGE_PREFIX}.showAlignmentDiagnostics`, false);
 
   // Panel visibility
   const [showTIC, setShowTIC] = useStoredState(`${LCMS_STORAGE_PREFIX}.showTIC`, true);
@@ -186,7 +184,6 @@ export function LCMSView() {
 
   // Annotate – overlay
   const [showOverlayLabels, setShowOverlayLabels] = useStoredState(`${LCMS_STORAGE_PREFIX}.showOverlayLabels`, false);
-  const [multiDragOverlay, setMultiDragOverlay] = useStoredState(`${LCMS_STORAGE_PREFIX}.multiDragOverlay`, false);
   const [polymerSettingsBySessionId, setPolymerSettingsBySessionId] =
     useStoredState<Record<string, PolymerUiSettings>>(
       `${LCMS_STORAGE_PREFIX}.polymerSettingsBySessionId`,
@@ -1610,6 +1607,8 @@ export function LCMSView() {
       ) {
         return;
       }
+      // Leave browser shortcuts (Ctrl+O, Ctrl+B, …) alone.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         goPrev();
@@ -3548,10 +3547,6 @@ export function LCMSView() {
           // Workflow chrome
           showPolymerControls={showPolymerControls}
           setShowPolymerControls={setShowPolymerControls}
-          showConfidenceControls={showConfidenceControls}
-          setShowConfidenceControls={setShowConfidenceControls}
-          showAlignmentDiagnostics={showAlignmentDiagnostics}
-          setShowAlignmentDiagnostics={setShowAlignmentDiagnostics}
           // Tabs
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -3658,8 +3653,6 @@ export function LCMSView() {
           // Annotate – overlay
           showOverlayLabels={showOverlayLabels}
           setShowOverlayLabels={setShowOverlayLabels}
-          multiDragOverlay={multiDragOverlay}
-          setMultiDragOverlay={setMultiDragOverlay}
           // Polymer
           polymerSettings={polymerSettings}
           setPolymerSettings={setPolymerSettings}

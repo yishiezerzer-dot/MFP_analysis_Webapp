@@ -99,10 +99,6 @@ export interface ToolsPanelProps {
   // chrome
   showPolymerControls: boolean;
   setShowPolymerControls: (v: boolean) => void;
-  showConfidenceControls: boolean;
-  setShowConfidenceControls: (v: boolean) => void;
-  showAlignmentDiagnostics: boolean;
-  setShowAlignmentDiagnostics: (v: boolean) => void;
   // tabs
   activeTab: TabId;
   setActiveTab: (t: TabId) => void;
@@ -195,8 +191,6 @@ export interface ToolsPanelProps {
   // annotate – overlay
   showOverlayLabels: boolean;
   setShowOverlayLabels: (v: boolean) => void;
-  multiDragOverlay: boolean;
-  setMultiDragOverlay: (v: boolean) => void;
   // polymer
   polymerSettings: PolymerUiSettings;
   setPolymerSettings: (v: PolymerUiSettings) => void;
@@ -474,8 +468,6 @@ export function DisplayTab(p: ToolsPanelProps) {
     <div className="flex flex-col gap-4">
       <GroupBox title="Extra controls">
         <Check hint="lcms.showPolymerControls" label="Polymer matching" checked={p.showPolymerControls} onChange={p.setShowPolymerControls} />
-        <Check label="Confidence" checked={p.showConfidenceControls} onChange={p.setShowConfidenceControls} />
-        <Check label="Alignment diagnostics" checked={p.showAlignmentDiagnostics} onChange={p.setShowAlignmentDiagnostics} />
       </GroupBox>
 
       <GroupBox title="Filters & units">
@@ -659,11 +651,6 @@ export function DisplayTab(p: ToolsPanelProps) {
             label="Show labels for all overlayed spectra"
             checked={p.showOverlayLabels}
             onChange={p.setShowOverlayLabels}
-          />
-          <Check
-            label="Multi-drag labels across overlay"
-            checked={p.multiDragOverlay}
-            onChange={p.setMultiDragOverlay}
           />
         </div>
         <Hint id="lcms.exportCsv" className="w-full">

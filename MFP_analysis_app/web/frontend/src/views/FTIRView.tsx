@@ -629,6 +629,8 @@ export function FTIRView() {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
+      // Leave browser shortcuts (Ctrl+F find, Ctrl+P print, …) alone.
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key.toLowerCase() === "p") void runPick();
       if (event.key.toLowerCase() === "o") setOverlayEnabled((v) => !v);
       if (event.key.toLowerCase() === "f") setGraphSettings((g) => ({ ...g, showGroupRegions: !g.showGroupRegions }));
