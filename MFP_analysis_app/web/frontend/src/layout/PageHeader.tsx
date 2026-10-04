@@ -1,6 +1,7 @@
 import { ReactNode, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { MemberSelector } from "../components/MemberSelector";
+import { ControlFinder } from "../components/ControlFinder";
 
 export interface PageHeaderContextValue {
   setHeader: (node: ReactNode) => void;
@@ -25,6 +26,7 @@ export function PageHeaderContent({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
+        <ControlFinder />
         {actions}
         <MemberSelector />
       </div>

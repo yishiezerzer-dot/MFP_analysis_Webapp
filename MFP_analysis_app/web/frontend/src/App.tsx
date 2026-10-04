@@ -14,6 +14,8 @@ import { Tooltip } from "./components/Tooltip";
 import { BrowserBridgeProvider } from "./automation/BrowserBridge";
 import { useWorkspace } from "./context/WorkspaceContext";
 import { FileIngestionProvider } from "./context/FileIngestionContext";
+import { HelpProvider } from "./help/HelpProvider";
+import { Hint } from "./components/Hint";
 import { GlobalDropOverlay } from "./components/GlobalDropOverlay";
 import { AlertBanner } from "./components/AlertBanner";
 import { api, type RestoreError } from "./api";
@@ -248,7 +250,7 @@ function Sidebar() {
           <div className="truncate text-[13px] font-semibold tracking-tight text-ink-900">MFP Analysis</div>
           <div className="truncate text-[12px] text-ink-500 leading-tight">Lab Platform</div>
         </div>
-        <Tooltip content={pinned ? "Unpin sidebar" : "Pin sidebar"} placement="bottom">
+        <Hint id="app.pinSidebar" placement="bottom">
           <button
             type="button"
             onClick={() => setPinned((p) => !p)}
@@ -261,7 +263,7 @@ function Sidebar() {
           >
             <IconPin pinned={pinned} className="h-3.5 w-3.5" />
           </button>
-        </Tooltip>
+        </Hint>
       </div>
 
       {/* Nav items */}
@@ -409,19 +411,21 @@ export default function App() {
   return (
     <BrowserBridgeProvider>
       <FileIngestionProvider>
-        <Suspense fallback={<ViewLoadingFallback />}>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route path="/" element={<Navigate to="/lcms" replace />} />
-              <Route path="/lcms" element={<LCMSView />} />
-              <Route path="/ftir" element={<FTIRView />} />
-              <Route path="/plate-reader" element={<PlateReaderView />} />
-              <Route path="/ai" element={<AIView />} />
-            {/* Old links (e.g. the removed /data-studio and /figures tabs) land on LCMS instead of a blank page. */}
-            <Route path="*" element={<Navigate to="/lcms" replace />} />
-            </Route>
-          </Routes>
-        </Suspense>
+        <HelpProvider>
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route path="/" element={<Navigate to="/lcms" replace />} />
+                <Route path="/lcms" element={<LCMSView />} />
+                <Route path="/ftir" element={<FTIRView />} />
+                <Route path="/plate-reader" element={<PlateReaderView />} />
+                <Route path="/ai" element={<AIView />} />
+              {/* Old links (e.g. the removed /data-studio and /figures tabs) land on LCMS instead of a blank page. */}
+              <Route path="*" element={<Navigate to="/lcms" replace />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </HelpProvider>
       </FileIngestionProvider>
     </BrowserBridgeProvider>
   );

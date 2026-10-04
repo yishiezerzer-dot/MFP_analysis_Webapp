@@ -7,7 +7,6 @@ import Plot from "react-plotly.js";
 import Plotly from "plotly.js-dist-min";
 import type { Data, Layout } from "plotly.js";
 import clsx from "clsx";
-import { useLocation } from "react-router-dom";
 import {
   api,
   FTIRAssignment,
@@ -27,16 +26,16 @@ import {
   FTIRYMode,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
-import { HelpOpenButton, HelpShell } from "../help/HelpShell";
-import { getHelpModule } from "../help/registry";
+import { HelpOpenButton } from "../help/HelpShell";
 import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
-import { Tooltip } from "../components/Tooltip";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
 import { useUndoRedo } from "../hooks/useUndoRedo";
 import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
+import { Hint } from "../components/Hint";
+import { useRevealPanel } from "../help/reveal";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -538,6 +537,12 @@ export function FTIRView() {
     (value) => ({ ...DEFAULT_CONTROL_PANELS, ...value }),
   );
   const [inspectorTab, setInspectorTab] = useState<FTIRInspectorTab>("preprocess");
+  useRevealPanel({
+    "ftir.inspector.preprocess": () => setInspectorTab("preprocess"),
+    "ftir.inspector.peaks": () => setInspectorTab("peaks"),
+    "ftir.inspector.quant": () => setInspectorTab("quant"),
+    "ftir.inspector.overlay": () => setInspectorTab("overlay"),
+  });
   const [integrationResult, setIntegrationResult] = useState<FTIRIntegrationResponse | null>(null);
   const [differenceSpectrum, setDifferenceSpectrum] = useState<FTIRSubtractResponse | null>(null);
   const [matchResult, setMatchResult] = useState<FTIRMatchResponse | null>(null);
@@ -551,9 +556,6 @@ export function FTIRView() {
   const fileRef = useRef<HTMLInputElement>(null);
   const workspaceFileRef = useRef<HTMLInputElement>(null);
 
-  const location = useLocation();
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
 
   const active = useMemo(
     () => sessions.find((s) => s.session_id === activeSid) ?? null,
@@ -627,6 +629,8 @@ export function FTIRView() {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
+      // Leave browser shortcuts (Ctrl+F find, Ctrl+P print, …) alone.
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.key.toLowerCase() === "p") void runPick();
       if (event.key.toLowerCase() === "o") setOverlayEnabled((v) => !v);
       if (event.key.toLowerCase() === "f") setGraphSettings((g) => ({ ...g, showGroupRegions: !g.showGroupRegions }));
@@ -1188,7 +1192,7 @@ export function FTIRView() {
       }
       actions={
         <>
-          <HelpOpenButton onClick={() => setHelpOpen(true)} />
+          <HelpOpenButton />
           <input
             ref={fileRef}
             type="file"
@@ -1212,7 +1216,7 @@ export function FTIRView() {
               e.target.value = "";
             }}
           />
-          <Tooltip content="Load a saved workspace (.json)">
+          <Hint id="ftir.loadWorkspace" placement="bottom">
             <button
               className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100"
               disabled={busy}
@@ -1220,8 +1224,8 @@ export function FTIRView() {
             >
               Load workspace
             </button>
-          </Tooltip>
-          <Tooltip content={sessions.length === 0 ? "Load a session first" : "Save workspace as JSON"}>
+          </Hint>
+          <Hint id="ftir.saveWorkspace" placement="bottom" extra={sessions.length === 0 ? "Open a spectrum first." : undefined}>
             <span>
               <button
                 className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-500"
@@ -1231,8 +1235,8 @@ export function FTIRView() {
                 Save workspace
               </button>
             </span>
-          </Tooltip>
-          <Tooltip content={peaks.length === 0 ? "Pick peaks first" : "Export peaks as CSV"}>
+          </Hint>
+          <Hint id="ftir.exportPeaks" placement="bottom" extra={peaks.length === 0 ? "Pick peaks first." : undefined}>
             <span>
               <button
                 className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-500"
@@ -1242,8 +1246,8 @@ export function FTIRView() {
                 Export peaks CSV
               </button>
             </span>
-          </Tooltip>
-          <Tooltip content={!spectrum ? "Load a spectrum first" : "Export spectrum as JCAMP-DX"}>
+          </Hint>
+          <Hint id="ftir.exportJdx" placement="bottom" extra={!spectrum ? "Open a spectrum first." : undefined}>
             <span>
               <button
                 className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-500"
@@ -1253,8 +1257,8 @@ export function FTIRView() {
                 Export JDX
               </button>
             </span>
-          </Tooltip>
-          <Tooltip content={!active ? "Load a session first" : "Export printable HTML report"}>
+          </Hint>
+          <Hint id="ftir.report" placement="bottom" extra={!active ? "Open a spectrum first." : undefined}>
             <span>
               <button
                 className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-500"
@@ -1264,14 +1268,16 @@ export function FTIRView() {
                 Report HTML
               </button>
             </span>
-          </Tooltip>
-          <button
-            className="btn-primary"
-            disabled={busy}
-            onClick={() => fileRef.current?.click()}
-          >
-            {busy ? "Working…" : "Open FTIR file(s)…"}
-          </button>
+          </Hint>
+          <Hint id="ftir.open" placement="bottom">
+            <button
+              className="btn-primary"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+            >
+              {busy ? "Working…" : "Open FTIR file(s)…"}
+            </button>
+          </Hint>
         </>
       }
     />,
@@ -1461,9 +1467,6 @@ export function FTIRView() {
           </div>
         )}
       </div>
-      {helpModule ? (
-        <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
-      ) : null}
     </div>
   );
 }
@@ -1637,27 +1640,29 @@ function PreprocessCard(props: {
     <div className="card shrink-0 p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-card-title">Preprocess</h3>
-        <select
-          className="input py-1"
-          aria-label="Apply a preprocessing preset"
-          value=""
-          onChange={(e) => {
-            const preset = FTIR_PRESETS[e.target.value];
-            if (preset) setPre({ ...pre, ...preset });
-          }}
-        >
-          <option value="" disabled>
-            Preset…
-          </option>
-          {Object.keys(FTIR_PRESETS).map((name) => (
-            <option key={name} value={name}>
-              {name}
+        <Hint id="ftir.preset">
+          <select
+            className="input py-1"
+            aria-label="Apply a preprocessing preset"
+            value=""
+            onChange={(e) => {
+              const preset = FTIR_PRESETS[e.target.value];
+              if (preset) setPre({ ...pre, ...preset });
+            }}
+          >
+            <option value="" disabled>
+              Preset…
             </option>
-          ))}
-        </select>
+            {Object.keys(FTIR_PRESETS).map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </Hint>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Mode">
+        <Field hint="ftir.mode" label="Mode">
           <select
             className="input w-full"
             value={pre.mode}
@@ -1667,7 +1672,7 @@ function PreprocessCard(props: {
             <option value="transmittance">transmittance</option>
           </select>
         </Field>
-        <Field label="Smoothing window">
+        <Field hint="ftir.smoothing" label="Smoothing window">
           <input
             type="number"
             className="input w-full"
@@ -1680,7 +1685,7 @@ function PreprocessCard(props: {
             }
           />
         </Field>
-        <Field label="SavGol poly order">
+        <Field hint="ftir.polyOrder" label="SavGol poly order">
           <input
             type="number"
             className="input w-full"
@@ -1690,7 +1695,7 @@ function PreprocessCard(props: {
             onChange={(e) => setPre({ ...pre, poly_order: clampInt(e.target.value, 0, 5) })}
           />
         </Field>
-        <Field label="Baseline">
+        <Field hint="ftir.baseline" label="Baseline">
           <select
             className="input w-full"
             value={pre.baseline}
@@ -1703,7 +1708,7 @@ function PreprocessCard(props: {
             <option value="polyfit">polyfit (deg≤3)</option>
           </select>
         </Field>
-        <Field label="Normalize">
+        <Field hint="ftir.normalize" label="Normalize">
           <select
             className="input w-full"
             value={pre.normalize}
@@ -1717,7 +1722,7 @@ function PreprocessCard(props: {
             <option value="min-max">min-max</option>
           </select>
         </Field>
-        <Field label="Baseline lambda">
+        <Field hint="ftir.baselineLambda" label="Baseline lambda">
           <input
             type="number"
             className="input w-full"
@@ -1731,7 +1736,7 @@ function PreprocessCard(props: {
             }
           />
         </Field>
-        <Field label="Asymmetry p">
+        <Field hint="ftir.asymmetry" label="Asymmetry p">
           <input
             type="number"
             className="input w-full"
@@ -1745,8 +1750,8 @@ function PreprocessCard(props: {
             }
           />
         </Field>
-        <Field label="Atmospheric mask">
-          <Tooltip content="Exclude the CO₂ doublet (2310–2390 cm⁻¹) from peak picking and shade it. Water-vapour lines overlap sample bands and can't be masked; use background subtraction.">
+        <Field hint="ftir.maskCo2" label="Atmospheric mask">
+          <>
             <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
               <input
                 type="checkbox"
@@ -1755,10 +1760,10 @@ function PreprocessCard(props: {
               />
               Mask CO₂
             </label>
-          </Tooltip>
+          </>
         </Field>
-        <Field label="ATR correction">
-          <Tooltip content="Approximate ATR correction: scales intensity by ν/ν_ref (penetration depth ∝ 1/ν). Not a full optical correction.">
+        <Field hint="ftir.atr" label="ATR correction">
+          <>
             <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
               <input
                 type="checkbox"
@@ -1767,9 +1772,9 @@ function PreprocessCard(props: {
               />
               Correct ATR (approx.)
             </label>
-          </Tooltip>
+          </>
         </Field>
-        <Field label="ATR n crystal">
+        <Field hint="ftir.atrN" label="ATR n crystal">
           <input
             type="number"
             className="input w-full"
@@ -1801,44 +1806,50 @@ function OverlayCard(props: {
     <div className="card shrink-0 p-4">
       <div className="mb-3 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold">Overlay</h3>
-        <label className="flex items-center gap-2 text-sm text-ink-700">
-          <input
-            type="checkbox"
-            checked={props.enabled}
-            onChange={(e) => props.setEnabled(e.target.checked)}
-          />
-          Show selected spectra
-        </label>
-      </div>
-      <div className="mb-3 flex items-center gap-2 text-xs text-ink-600">
-        <span>Mode</span>
-        <select className="input py-1 text-xs" value={props.overlayMode ?? "overlay"} onChange={(e) => props.setOverlayMode(e.target.value as GraphSettings["overlayMode"])}>
-          <option value="overlay">overlay</option>
-          <option value="offset">offset</option>
-          <option value="stacked">stacked</option>
-        </select>
-      </div>
-      <div className="grid gap-2">
-        {props.sessions.map((session) => (
-          <label
-            key={session.session_id}
-            className="flex min-w-0 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs"
-          >
+        <Hint id="ftir.overlayShow">
+          <label className="flex items-center gap-2 text-sm text-ink-700">
             <input
               type="checkbox"
-              checked={props.selectedIds.includes(session.session_id)}
-              onChange={(event) => {
-                props.setSelectedIds(
-                  event.target.checked
-                    ? [...props.selectedIds, session.session_id]
-                    : props.selectedIds.filter((sid) => sid !== session.session_id),
-                );
-              }}
+              checked={props.enabled}
+              onChange={(e) => props.setEnabled(e.target.checked)}
             />
-            <span className="truncate">{session.display_name}</span>
+            Show selected spectra
           </label>
-        ))}
+        </Hint>
       </div>
+      <Hint id="ftir.overlayMode">
+        <div className="mb-3 flex items-center gap-2 text-xs text-ink-600">
+          <span>Mode</span>
+          <select className="input py-1 text-xs" value={props.overlayMode ?? "overlay"} onChange={(e) => props.setOverlayMode(e.target.value as GraphSettings["overlayMode"])}>
+            <option value="overlay">overlay</option>
+            <option value="offset">offset</option>
+            <option value="stacked">stacked</option>
+          </select>
+        </div>
+      </Hint>
+      <Hint id="ftir.overlaySelect" className="w-full">
+        <div className="grid gap-2">
+          {props.sessions.map((session) => (
+            <label
+              key={session.session_id}
+              className="flex min-w-0 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs"
+            >
+              <input
+                type="checkbox"
+                checked={props.selectedIds.includes(session.session_id)}
+                onChange={(event) => {
+                  props.setSelectedIds(
+                    event.target.checked
+                      ? [...props.selectedIds, session.session_id]
+                      : props.selectedIds.filter((sid) => sid !== session.session_id),
+                  );
+                }}
+              />
+              <span className="truncate">{session.display_name}</span>
+            </label>
+          ))}
+        </div>
+      </Hint>
     </div>
   );
 }
@@ -1859,21 +1870,25 @@ function PeakCard(props: {
     <div className="card shrink-0 p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-card-title">Peak picking</h3>
-        <button className="btn-primary whitespace-nowrap" onClick={props.onRun} disabled={props.disabled || props.picking}>
-          {props.picking ? "Picking…" : "Pick peaks"}
-        </button>
+        <Hint id="ftir.pickPeaks">
+          <button className="btn-primary whitespace-nowrap" onClick={props.onRun} disabled={props.disabled || props.picking}>
+            {props.picking ? "Picking…" : "Pick peaks"}
+          </button>
+        </Hint>
       </div>
-      <label className="text-body mb-3 flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={props.pickAcrossOverlay}
-          disabled={!props.overlayEnabled || props.overlayCount < 2}
-          onChange={(e) => props.setPickAcrossOverlay(e.target.checked)}
-        />
-        Pick on overlaid spectra
-      </label>
+      <Hint id="ftir.pickOverlay">
+        <label className="text-body mb-3 flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={props.pickAcrossOverlay}
+            disabled={!props.overlayEnabled || props.overlayCount < 2}
+            onChange={(e) => props.setPickAcrossOverlay(e.target.checked)}
+          />
+          Pick on overlaid spectra
+        </label>
+      </Hint>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Min prominence" className="flex flex-col justify-end">
+        <Field hint="ftir.minProminence" label="Min prominence" className="flex flex-col justify-end">
           <input
             type="number"
             className="input w-full"
@@ -1885,7 +1900,7 @@ function PeakCard(props: {
             }
           />
         </Field>
-        <Field label="Min height" className="flex flex-col justify-end">
+        <Field hint="ftir.minHeight" label="Min height" className="flex flex-col justify-end">
           <input
             type="number"
             className="input w-full"
@@ -1904,7 +1919,7 @@ function PeakCard(props: {
             }
           />
         </Field>
-        <Field label="Min distance (cm⁻¹)" className="flex flex-col justify-end">
+        <Field hint="ftir.minDistance" label="Min distance (cm⁻¹)" className="flex flex-col justify-end">
           <input
             type="number"
             className="input w-full"
@@ -1916,7 +1931,7 @@ function PeakCard(props: {
             }
           />
         </Field>
-        <Field label="Top N (0 = all)" className="flex flex-col justify-end">
+        <Field hint="ftir.topN" label="Top N (0 = all)" className="flex flex-col justify-end">
           <input
             type="number"
             className="input w-full"
@@ -1927,7 +1942,7 @@ function PeakCard(props: {
             onChange={(e) => setPk({ ...pk, top_n: clampInt(e.target.value, 0, 200) })}
           />
         </Field>
-        <Field label="Assign bonds" className="flex flex-col justify-end">
+        <Field hint="ftir.assign" label="Assign bonds" className="flex flex-col justify-end">
           <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
             <input
               type="checkbox"
@@ -1937,8 +1952,8 @@ function PeakCard(props: {
             Use library v3
           </label>
         </Field>
-        <Field label="2nd derivative" className="flex flex-col justify-end">
-          <Tooltip content="Use second-derivative minima to pick shoulders and overlapping bands">
+        <Field hint="ftir.shoulder" label="2nd derivative" className="flex flex-col justify-end">
+          <>
             <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
               <input
                 type="checkbox"
@@ -1947,9 +1962,9 @@ function PeakCard(props: {
               />
               Shoulder mode
             </label>
-          </Tooltip>
+          </>
         </Field>
-        <Field label="Assign top N" className="flex flex-col justify-end">
+        <Field hint="ftir.assignTopN" label="Assign top N" className="flex flex-col justify-end">
           <input
             type="number"
             className="input w-full"
@@ -1961,7 +1976,7 @@ function PeakCard(props: {
             onChange={(e) => setPk({ ...pk, assign_top_n: clampInt(e.target.value, 1, 10) })}
           />
         </Field>
-        <Field label="Assign min score" className="flex flex-col justify-end">
+        <Field hint="ftir.assignMinScore" label="Assign min score" className="flex flex-col justify-end">
           <input
             type="number"
             className="input w-full"
@@ -2020,16 +2035,16 @@ function AssignmentConstraintsCard(props: {
             Rule out functional groups before re-labeling peaks.
           </p>
         </div>
-        <Tooltip content="Re-run peak picking and library assignment with these exclusions">
+        <Hint id="ftir.relabel">
           <span>
             <button className="btn-primary" onClick={props.onApply} disabled={props.disabled}>
               Apply & re-label
             </button>
           </span>
-        </Tooltip>
+        </Hint>
       </div>
       <div className="grid grid-cols-1 gap-3">
-        <Field label="Exclude categories">
+        <Field hint="ftir.excludeCategories" label="Exclude categories">
           <div className="max-h-36 overflow-auto rounded-md border border-ink-200 bg-surface p-2">
             {categories.length === 0 ? (
               <div className="text-xs text-ink-500">Library categories unavailable.</div>
@@ -2049,7 +2064,7 @@ function AssignmentConstraintsCard(props: {
             )}
           </div>
         </Field>
-        <Field label="Exclude subcategories">
+        <Field hint="ftir.excludeSubcategories" label="Exclude subcategories">
           <div className="max-h-36 overflow-auto rounded-md border border-ink-200 bg-surface p-2">
             {subcategories.length === 0 ? (
               <div className="text-xs text-ink-500">No subcategories loaded.</div>
@@ -2072,7 +2087,7 @@ function AssignmentConstraintsCard(props: {
             )}
           </div>
         </Field>
-        <Field label="Ambiguity ratio">
+        <Field hint="ftir.ambiguity" label="Ambiguity ratio">
           <input
             type="number"
             className="input w-full"
@@ -2139,7 +2154,7 @@ function QuantToolsCard(props: {
         <div className="rounded-md border border-ink-200 bg-surface-raised p-3">
           <div className="text-section mb-2">Band integration</div>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Lo cm^-1">
+            <Field hint="ftir.integrateRegion" label="Lo cm^-1">
               <input
                 className="input w-full"
                 type="number"
@@ -2147,7 +2162,7 @@ function QuantToolsCard(props: {
                 onChange={(event) => updateRegion("integrationRegion", { lo: Number(event.target.value) || 0 })}
               />
             </Field>
-            <Field label="Hi cm^-1">
+            <Field hint="ftir.integrateRegion" label="Hi cm^-1">
               <input
                 className="input w-full"
                 type="number"
@@ -2155,7 +2170,7 @@ function QuantToolsCard(props: {
                 onChange={(event) => updateRegion("integrationRegion", { hi: Number(event.target.value) || 0 })}
               />
             </Field>
-            <Field label="Baseline">
+            <Field hint="ftir.integrateBaseline" label="Baseline">
               <select
                 className="input w-full"
                 value={props.state.integrationBaseline}
@@ -2171,7 +2186,7 @@ function QuantToolsCard(props: {
                 <option value="tangent">tangent</option>
               </select>
             </Field>
-            <Field label="Run">
+            <Field hint="ftir.integrate" label="Run">
               <button className="btn-primary h-9 w-full" disabled={props.disabled || props.busy} onClick={props.onIntegrate}>
                 Integrate
               </button>
@@ -2190,7 +2205,7 @@ function QuantToolsCard(props: {
         <div className="rounded-md border border-ink-200 bg-surface-raised p-3">
           <div className="text-section mb-2">Difference spectrum</div>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Subtract session">
+            <Field hint="ftir.subtractSession" label="Subtract session">
               <select
                 className="input w-full"
                 value={selectedCompareSid}
@@ -2205,7 +2220,7 @@ function QuantToolsCard(props: {
                 ))}
               </select>
             </Field>
-            <Field label="Scale k">
+            <Field hint="ftir.subtractK" label="Scale k">
               <input
                 className="input w-full"
                 type="number"
@@ -2216,7 +2231,7 @@ function QuantToolsCard(props: {
                 onChange={(event) => props.setState({ ...props.state, subtractK: Number(event.target.value) || 0 })}
               />
             </Field>
-            <Field label="Auto-fit region">
+            <Field hint="ftir.subtractAutoFit" label="Auto-fit region">
               <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
                 <input
                   type="checkbox"
@@ -2226,7 +2241,7 @@ function QuantToolsCard(props: {
                 Use region
               </label>
             </Field>
-            <Field label="Run">
+            <Field hint="ftir.subtract" label="Run">
               <button
                 className="btn-primary h-9 w-full"
                 disabled={props.disabled || props.busy || !selectedCompareSid}
@@ -2237,7 +2252,7 @@ function QuantToolsCard(props: {
             </Field>
             {props.state.subtractUseRegion && (
               <>
-                <Field label="Fit lo cm^-1">
+                <Field hint="ftir.subtractRegion" label="Fit lo cm^-1">
                   <input
                     className="input w-full"
                     type="number"
@@ -2245,7 +2260,7 @@ function QuantToolsCard(props: {
                     onChange={(event) => updateRegion("subtractRegion", { lo: Number(event.target.value) || 0 })}
                   />
                 </Field>
-                <Field label="Fit hi cm^-1">
+                <Field hint="ftir.subtractRegion" label="Fit hi cm^-1">
                   <input
                     className="input w-full"
                     type="number"
@@ -2262,9 +2277,11 @@ function QuantToolsCard(props: {
                 Difference trace shown with k={props.differenceSpectrum.k.toFixed(3)} over{" "}
                 {props.differenceSpectrum.n_points_returned.toLocaleString()} points.
               </span>
-              <button className="btn-ghost border border-ink-200 px-2 py-0.5 text-xs" onClick={props.onClearDifference}>
-                Clear difference
-              </button>
+              <Hint id="ftir.clearDifference">
+                <button className="btn-ghost border border-ink-200 px-2 py-0.5 text-xs" onClick={props.onClearDifference}>
+                  Clear difference
+                </button>
+              </Hint>
             </div>
           )}
         </div>
@@ -2272,7 +2289,7 @@ function QuantToolsCard(props: {
       <div className="mt-4 rounded-md border border-ink-200 bg-surface-raised p-3">
         <div className="text-section mb-2">Reference matching</div>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Match lo cm^-1">
+          <Field hint="ftir.matchRegion" label="Match lo cm^-1">
             <input
               className="input w-full"
               type="number"
@@ -2280,7 +2297,7 @@ function QuantToolsCard(props: {
               onChange={(event) => updateAnyRegion("matchRegion", { lo: Number(event.target.value) || 650 })}
             />
           </Field>
-          <Field label="Match hi cm^-1">
+          <Field hint="ftir.matchRegion" label="Match hi cm^-1">
             <input
               className="input w-full"
               type="number"
@@ -2288,7 +2305,7 @@ function QuantToolsCard(props: {
               onChange={(event) => updateAnyRegion("matchRegion", { hi: Number(event.target.value) || 1800 })}
             />
           </Field>
-          <Field label="Derivative">
+          <Field hint="ftir.matchDerivative" label="Derivative">
             <select
               className="input w-full"
               value={props.state.matchDerivativeOrder}
@@ -2304,7 +2321,7 @@ function QuantToolsCard(props: {
               <option value={2}>2nd</option>
             </select>
           </Field>
-          <Field label="Top N">
+          <Field hint="ftir.matchTopN" label="Top N">
             <input
               className="input w-full"
               type="number"
@@ -2316,12 +2333,12 @@ function QuantToolsCard(props: {
               }
             />
           </Field>
-          <Field label="Run">
+          <Field hint="ftir.match" label="Run">
             <button className="btn-primary h-9 w-full" disabled={props.disabled || props.busy} onClick={props.onMatch}>
               Match
             </button>
           </Field>
-          <Field label="Overlay">
+          <Field hint="ftir.clearReference" label="Overlay">
             <button
               className="btn-ghost h-9 w-full border border-ink-200 px-2 text-xs"
               disabled={!props.selectedReference}
@@ -2367,33 +2384,35 @@ function QuantToolsCard(props: {
           <div className="text-section">
             Sub-band Deconvolution & Fitting (2nd Derivative Seeded)
           </div>
-          <div className="flex flex-wrap items-center gap-1 text-[12px] text-ink-500">
-            <span>Presets:</span>
-            <button
-              type="button"
-              className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 hover:bg-ink-100"
-              onClick={() => props.setState({ ...props.state, fitRegion: { lo: 1600, hi: 1700 }, fitComponents: 4, fitProfile: "gauss" })}
-            >
-              Amide I (1600–1700)
-            </button>
-            <button
-              type="button"
-              className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 hover:bg-ink-100"
-              onClick={() => props.setState({ ...props.state, fitRegion: { lo: 1680, hi: 1780 }, fitComponents: 2, fitProfile: "gauss" })}
-            >
-              Carbonyl (1680–1780)
-            </button>
-            <button
-              type="button"
-              className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 hover:bg-ink-100"
-              onClick={() => props.setState({ ...props.state, fitRegion: { lo: 3100, hi: 3600 }, fitComponents: 3, fitProfile: "gauss" })}
-            >
-              O-H/N-H (3100–3600)
-            </button>
-          </div>
+          <Hint id="ftir.fitPresets">
+            <div className="flex flex-wrap items-center gap-1 text-[12px] text-ink-500">
+              <span>Presets:</span>
+              <button
+                type="button"
+                className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 hover:bg-ink-100"
+                onClick={() => props.setState({ ...props.state, fitRegion: { lo: 1600, hi: 1700 }, fitComponents: 4, fitProfile: "gauss" })}
+              >
+                Amide I (1600–1700)
+              </button>
+              <button
+                type="button"
+                className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 hover:bg-ink-100"
+                onClick={() => props.setState({ ...props.state, fitRegion: { lo: 1680, hi: 1780 }, fitComponents: 2, fitProfile: "gauss" })}
+              >
+                Carbonyl (1680–1780)
+              </button>
+              <button
+                type="button"
+                className="rounded border border-ink-200 bg-surface px-1.5 py-0.5 hover:bg-ink-100"
+                onClick={() => props.setState({ ...props.state, fitRegion: { lo: 3100, hi: 3600 }, fitComponents: 3, fitProfile: "gauss" })}
+              >
+                O-H/N-H (3100–3600)
+              </button>
+            </div>
+          </Hint>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Fit lo cm^-1">
+          <Field hint="ftir.fitRegion" label="Fit lo cm^-1">
             <input
               className="input w-full"
               type="number"
@@ -2401,7 +2420,7 @@ function QuantToolsCard(props: {
               onChange={(event) => updateRegion("fitRegion", { lo: Number(event.target.value) || 0 })}
             />
           </Field>
-          <Field label="Fit hi cm^-1">
+          <Field hint="ftir.fitRegion" label="Fit hi cm^-1">
             <input
               className="input w-full"
               type="number"
@@ -2409,7 +2428,7 @@ function QuantToolsCard(props: {
               onChange={(event) => updateRegion("fitRegion", { hi: Number(event.target.value) || 0 })}
             />
           </Field>
-          <Field label="Components">
+          <Field hint="ftir.fitComponents" label="Components">
             <input
               className="input w-full"
               type="number"
@@ -2421,7 +2440,7 @@ function QuantToolsCard(props: {
               }
             />
           </Field>
-          <Field label="Profile">
+          <Field hint="ftir.fitProfile" label="Profile">
             <select
               className="input w-full"
               value={props.state.fitProfile}
@@ -2437,12 +2456,12 @@ function QuantToolsCard(props: {
               <option value="voigt">Voigt mix</option>
             </select>
           </Field>
-          <Field label="Run">
+          <Field hint="ftir.deconvolute" label="Run">
             <button className="btn-primary h-9 w-full" disabled={props.disabled || props.busy} onClick={props.onFit}>
               Deconvolute
             </button>
           </Field>
-          <Field label="Overlay">
+          <Field hint="ftir.clearFit" label="Overlay">
             <button
               className="btn-ghost h-9 w-full border border-ink-200 px-2 text-xs"
               disabled={!props.fitResult}
@@ -2466,29 +2485,31 @@ function QuantToolsCard(props: {
                 <Metric label="RMS Residual" value={formatNumber(props.fitResult.residual_rms)} />
                 <Metric label="Profile" value={props.fitResult.profile} />
               </div>
-              <button
-                type="button"
-                className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-100"
-                onClick={() => {
-                  if (!props.fitResult) return;
-                  const rows = [
-                    ["Component", "Center_cm1", "Assignment", "FWHM_cm1", "Amplitude", "Area", "Area_Percent"],
-                    ...props.fitResult.components.map((c) => [
-                      c.index,
-                      c.center.toFixed(2),
-                      `"${c.assignment ?? ""}"`,
-                      c.fwhm != null ? c.fwhm.toFixed(2) : (c.width * 2.35).toFixed(2),
-                      c.amplitude.toFixed(4),
-                      c.area.toFixed(4),
-                      c.area_percent != null ? c.area_percent.toFixed(2) : "",
-                    ]),
-                  ];
-                  const csv = rows.map((r) => r.join(",")).join("\n");
-                  void navigator.clipboard.writeText(csv);
-                }}
-              >
-                Copy deconvolution CSV
-              </button>
+              <Hint id="ftir.fitCsv">
+                <button
+                  type="button"
+                  className="rounded border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-100"
+                  onClick={() => {
+                    if (!props.fitResult) return;
+                    const rows = [
+                      ["Component", "Center_cm1", "Assignment", "FWHM_cm1", "Amplitude", "Area", "Area_Percent"],
+                      ...props.fitResult.components.map((c) => [
+                        c.index,
+                        c.center.toFixed(2),
+                        `"${c.assignment ?? ""}"`,
+                        c.fwhm != null ? c.fwhm.toFixed(2) : (c.width * 2.35).toFixed(2),
+                        c.amplitude.toFixed(4),
+                        c.area.toFixed(4),
+                        c.area_percent != null ? c.area_percent.toFixed(2) : "",
+                      ]),
+                    ];
+                    const csv = rows.map((r) => r.join(",")).join("\n");
+                    void navigator.clipboard.writeText(csv);
+                  }}
+                >
+                  Copy deconvolution CSV
+                </button>
+              </Hint>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full border-separate border-spacing-0 text-xs">
@@ -2615,6 +2636,7 @@ function SpectrumChart(props: {
   const [customMin, setCustomMin] = useState(400);
   const [customMax, setCustomMax] = useState(4000);
   const [showGraphSettings, setShowGraphSettings] = useState(false);
+  useRevealPanel({ "ftir.chart.design": () => setShowGraphSettings(true) });
   const plotRef = useRef<unknown>(null);
   const plotContainerRef = useRef<HTMLDivElement>(null);
   const plotSize = useContainerSize(plotContainerRef, 420);
@@ -3105,72 +3127,77 @@ function SpectrumChart(props: {
         {/* Left Cluster: Derivatives, Baseline & Region */}
         <div className="flex flex-wrap items-center gap-1.5">
           {props.peakTool}
-          <ToolbarButton
-            icon={Activity}
-            label="2nd derivative"
-            active={props.showSecondDerivative}
-            onClick={() => props.setShowSecondDerivative((prev) => !prev)}
-            title="Overlay inverted 2nd derivative (-d²A/dν²) to detect hidden sub-bands and shoulders"
-          />
-          <ToolbarButton
-            icon={Spline}
-            label="Baseline"
-            active={props.showBaselineCurve}
-            onClick={() => props.setShowBaselineCurve((prev) => !prev)}
-            title="Overlay fitted baseline curve before subtraction"
-          />
+          <Hint id="ftir.secondDerivative">
+            <ToolbarButton
+              icon={Activity}
+              label="2nd derivative"
+              active={props.showSecondDerivative}
+              onClick={() => props.setShowSecondDerivative((prev) => !prev)}
+            />
+          </Hint>
+          <Hint id="ftir.showBaseline">
+            <ToolbarButton
+              icon={Spline}
+              label="Baseline"
+              active={props.showBaselineCurve}
+              onClick={() => props.setShowBaselineCurve((prev) => !prev)}
+            />
+          </Hint>
 
-          <div className="flex items-center gap-1.5 pl-1">
-            <span className="text-caption">Region</span>
-            <select
-              aria-label="Wavenumber region"
-              className="input py-1"
-              value={region}
-              onChange={(e) => setRegion(e.target.value as FTIRRegion)}
-            >
-              <option value="full">Full (400–4000 cm⁻¹)</option>
-              <option value="fingerprint">Fingerprint (400–1500)</option>
-              <option value="functional">Functional groups (1500–4000)</option>
-              <option value="amide">Amide I & II (1500–1750)</option>
-              <option value="custom">Custom…</option>
-            </select>
-            {region === "custom" && (
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  className="input w-16 py-1 text-xs"
-                  value={customMin}
-                  onChange={(e) => setCustomMin(Number(e.target.value) || 400)}
-                  placeholder="min"
-                />
-                <span className="text-xs text-ink-500">–</span>
-                <input
-                  type="number"
-                  className="input w-16 py-1 text-xs"
-                  value={customMax}
-                  onChange={(e) => setCustomMax(Number(e.target.value) || 4000)}
-                  placeholder="max"
-                />
-              </div>
-            )}
-          </div>
+          <Hint id="ftir.region">
+            <div className="flex items-center gap-1.5 pl-1">
+              <span className="text-caption">Region</span>
+              <select
+                aria-label="Wavenumber region"
+                className="input py-1"
+                value={region}
+                onChange={(e) => setRegion(e.target.value as FTIRRegion)}
+              >
+                <option value="full">Full (400–4000 cm⁻¹)</option>
+                <option value="fingerprint">Fingerprint (400–1500)</option>
+                <option value="functional">Functional groups (1500–4000)</option>
+                <option value="amide">Amide I & II (1500–1750)</option>
+                <option value="custom">Custom…</option>
+              </select>
+              {region === "custom" && (
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    className="input w-16 py-1 text-xs"
+                    value={customMin}
+                    onChange={(e) => setCustomMin(Number(e.target.value) || 400)}
+                    placeholder="min"
+                  />
+                  <span className="text-xs text-ink-500">–</span>
+                  <input
+                    type="number"
+                    className="input w-16 py-1 text-xs"
+                    value={customMax}
+                    onChange={(e) => setCustomMax(Number(e.target.value) || 4000)}
+                    placeholder="max"
+                  />
+                </div>
+              )}
+            </div>
+          </Hint>
         </div>
 
         {/* Right Cluster: Graph Settings & Export */}
         <div className="flex items-center gap-1.5 shrink-0">
-          <ToolbarButton
-            icon={Palette}
-            label="Design"
-            active={showGraphSettings}
-            onClick={() => setShowGraphSettings((prev) => !prev)}
-            title="Toggle chart display settings"
-          />
+          <Hint id="ftir.design">
+            <ToolbarButton
+              icon={Palette}
+              label="Design"
+              active={showGraphSettings}
+              onClick={() => setShowGraphSettings((prev) => !prev)}
+            />
+          </Hint>
           <PaperFigureExportToolbar disabled={!spectrum} onExport={exportPlotImagePaper} />
         </div>
       </div>
       {showGraphSettings && (
         <div className="mb-3 grid gap-3 rounded-md border border-ink-200 bg-ink-50/50 p-3 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Line width">
+          <Field hint="ftir.lineWidth" label="Line width">
             <input
               type="number"
               min={0.5}
@@ -3186,7 +3213,7 @@ function SpectrumChart(props: {
               }
             />
           </Field>
-          <Field label="Frame">
+          <Field hint="ftir.frame" label="Frame">
             <select
               className="input w-full"
               value={props.graphSettings.frame}
@@ -3202,7 +3229,7 @@ function SpectrumChart(props: {
               <option value="full">Full frame</option>
             </select>
           </Field>
-          <Field label="Show ticks">
+          <Field hint="ftir.ticks" label="Show ticks">
             <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
               <input
                 type="checkbox"
@@ -3217,7 +3244,7 @@ function SpectrumChart(props: {
               Enable axis ticks
             </label>
           </Field>
-          <Field label="Show grid">
+          <Field hint="ftir.grid" label="Show grid">
             <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
               <input
                 type="checkbox"
@@ -3232,7 +3259,7 @@ function SpectrumChart(props: {
               Enable gridlines
             </label>
           </Field>
-          <Field label="Group regions">
+          <Field hint="ftir.groupRegions" label="Group regions">
             <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
               <input
                 type="checkbox"
@@ -3247,7 +3274,7 @@ function SpectrumChart(props: {
               Show regions
             </label>
           </Field>
-          <Field label="Peak label color">
+          <Field hint="ftir.labelColor" label="Peak label color">
             <input
               type="color"
               className="h-9 w-full cursor-pointer rounded-md border border-ink-200 bg-surface px-2"
@@ -3260,7 +3287,7 @@ function SpectrumChart(props: {
               }
             />
           </Field>
-          <Field label="Peak label size">
+          <Field hint="ftir.labelSize" label="Peak label size">
             <input
               type="number"
               min={6}
@@ -3276,7 +3303,7 @@ function SpectrumChart(props: {
               }
             />
           </Field>
-          <Field label="Axis title size">
+          <Field hint="ftir.axisTitleSize" label="Axis title size">
             <input
               type="number"
               min={8}
@@ -3292,7 +3319,7 @@ function SpectrumChart(props: {
               }
             />
           </Field>
-          <Field label="Axis tick size">
+          <Field hint="ftir.axisTickSize" label="Axis tick size">
             <input
               type="number"
               min={8}
@@ -3308,32 +3335,34 @@ function SpectrumChart(props: {
               }
             />
           </Field>
-          <div className="md:col-span-2 xl:col-span-4">
-            <div className="label mb-1">Trace colors</div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {colorRows.map((row) => (
-                <label
-                  key={row.key}
-                  className="flex items-center justify-between gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs"
-                >
-                  <span className="truncate">{row.label}</span>
-                  <input
-                    type="color"
-                    value={resolveTraceColor(row.key, row.defaultColor)}
-                    onChange={(event) =>
-                      props.setGraphSettings({
-                        ...props.graphSettings,
-                        traceColors: {
-                          ...props.graphSettings.traceColors,
-                          [row.key]: event.target.value,
-                        },
-                      })
-                    }
-                  />
-                </label>
-              ))}
+          <Hint id="ftir.traceColors" className="w-full">
+            <div className="md:col-span-2 xl:col-span-4">
+              <div className="label mb-1">Trace colors</div>
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {colorRows.map((row) => (
+                  <label
+                    key={row.key}
+                    className="flex items-center justify-between gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs"
+                  >
+                    <span className="truncate">{row.label}</span>
+                    <input
+                      type="color"
+                      value={resolveTraceColor(row.key, row.defaultColor)}
+                      onChange={(event) =>
+                        props.setGraphSettings({
+                          ...props.graphSettings,
+                          traceColors: {
+                            ...props.graphSettings.traceColors,
+                            [row.key]: event.target.value,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
+          </Hint>
         </div>
       )}
       {!spectrum ? (
@@ -3456,26 +3485,32 @@ function PeaksTable(props: {
         </h3>
         <div className="flex items-center gap-2">
           {assignments && (
-            <input
-              className="input h-7 w-44 py-0.5 text-xs"
-              placeholder="Filter assignment"
-              value={filterText}
-              onChange={(e) => setFilterText(e.target.value)}
-            />
+            <Hint id="ftir.peakFilter">
+              <input
+                className="input h-7 w-44 py-0.5 text-xs"
+                placeholder="Filter assignment"
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+              />
+            </Hint>
           )}
           {assignments && (
-            <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-600">
-              <input
-                type="checkbox"
-                checked={showLowConf}
-                onChange={(e) => setShowLowConf(e.target.checked)}
-              />
-              Show low-confidence
-            </label>
+            <Hint id="ftir.lowConf">
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-600">
+                <input
+                  type="checkbox"
+                  checked={showLowConf}
+                  onChange={(e) => setShowLowConf(e.target.checked)}
+                />
+                Show low-confidence
+              </label>
+            </Hint>
           )}
-          <button className="btn-ghost border border-ink-200 px-2 py-0.5 text-xs" onClick={copyCSV}>
-            {copied ? "✓ Copied" : "Copy CSV"}
-          </button>
+          <Hint id="ftir.copyCsv">
+            <button className="btn-ghost border border-ink-200 px-2 py-0.5 text-xs" onClick={copyCSV}>
+              {copied ? "✓ Copied" : "Copy CSV"}
+            </button>
+          </Hint>
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -3488,9 +3523,15 @@ function PeaksTable(props: {
               <Th align="right"><SortButton label="Prominence" field="prominence" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} /></Th>
               <Th align="right">Width (cm⁻¹)</Th>
               {assignments && <Th>Top candidate</Th>}
-              {assignments && <Th>Label source</Th>}
-              <Th>Plot label</Th>
-              <Th>Hide label</Th>
+              {assignments && <Th>
+                <Hint id="ftir.labelChoice" placement="bottom">Label source</Hint>
+              </Th>}
+              <Th>
+                <Hint id="ftir.labelText" placement="bottom">Plot label</Hint>
+              </Th>
+              <Th>
+                <Hint id="ftir.hideLabel" placement="bottom">Hide label</Hint>
+              </Th>
               {assignments && <Th align="right"><SortButton label="Score" field="score" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} /></Th>}
               {assignments && <Th>Alternates</Th>}
             </tr>
@@ -3666,12 +3707,19 @@ const OVERLAY_PALETTE = [
   "#0891b2",
 ];
 
-function Field(props: { label: string; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={clsx("min-w-0", props.className)}>
+function Field(props: { label: string; children: React.ReactNode; className?: string; hint?: string }) {
+  const field = (
+    <div className={clsx("min-w-0", props.hint && "flex-1", props.className)}>
       <div className="label">{props.label}</div>
       {props.children}
     </div>
+  );
+  return props.hint ? (
+    <Hint id={props.hint} className="min-w-0 w-full">
+      {field}
+    </Hint>
+  ) : (
+    field
   );
 }
 

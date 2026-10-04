@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PlotMouseEvent } from "plotly.js";
 import clsx from "clsx";
-import { useLocation } from "react-router-dom";
 import { api, LCMSEICData, LCMSRegionSpectrumData, LCMSTICOverlayTrace, LCMSFindMzResponse, LCMSSessionSummary, PolymerSettings, SpectrumData, SpectrumLabel, TICData, UVChromatogramResponse } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
-import { HelpOpenButton, HelpShell } from "../help/HelpShell";
-import { getHelpModule } from "../help/registry";
+import { HelpOpenButton } from "../help/HelpShell";
+import { Hint } from "../components/Hint";
+import { useRevealPanel } from "../help/reveal";
+import { useHelp } from "../help/HelpProvider";
 import { AlertBanner } from "../components/AlertBanner";
-import { Tooltip } from "../components/Tooltip";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
 import { useAutomationDispatch } from "../automation/registry";
 import { useStoredState } from "../hooks/useStoredState";
@@ -119,8 +119,6 @@ export function LCMSView() {
     (value) => (isTabId(value) ? value : "navigate"),
   );
   const [showPolymerControls, setShowPolymerControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showPolymerControls`, true);
-  const [showConfidenceControls, setShowConfidenceControls] = useStoredState(`${LCMS_STORAGE_PREFIX}.showConfidenceControls`, false);
-  const [showAlignmentDiagnostics, setShowAlignmentDiagnostics] = useStoredState(`${LCMS_STORAGE_PREFIX}.showAlignmentDiagnostics`, false);
 
   // Panel visibility
   const [showTIC, setShowTIC] = useStoredState(`${LCMS_STORAGE_PREFIX}.showTIC`, true);
@@ -186,7 +184,6 @@ export function LCMSView() {
 
   // Annotate – overlay
   const [showOverlayLabels, setShowOverlayLabels] = useStoredState(`${LCMS_STORAGE_PREFIX}.showOverlayLabels`, false);
-  const [multiDragOverlay, setMultiDragOverlay] = useStoredState(`${LCMS_STORAGE_PREFIX}.multiDragOverlay`, false);
   const [polymerSettingsBySessionId, setPolymerSettingsBySessionId] =
     useStoredState<Record<string, PolymerUiSettings>>(
       `${LCMS_STORAGE_PREFIX}.polymerSettingsBySessionId`,
@@ -390,9 +387,7 @@ export function LCMSView() {
   const workspaceFileRef = useRef<HTMLInputElement>(null);
   const eicPlotCounterRef = useRef(0);
 
-  const location = useLocation();
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
+  const { helpOpen } = useHelp();
 
   const dispatchUiAction = useCallback(
     (actionId: Parameters<typeof actionDispatch>[0], args: Record<string, unknown> = {}) => {
@@ -655,6 +650,15 @@ export function LCMSView() {
     }
   }, [actionDispatch]);
 
+  useRevealPanel({
+    "lcms.dialog.polymer": () => void openPolymerDialogWithMatch(),
+    "lcms.dialog.expected": () => void openExpectedProductsWithCompute(),
+    "lcms.dialog.kendrick": () => void openKendrickWithCompute(),
+    "lcms.dialog.comparison": () => void openComparisonMatrix(),
+    "lcms.dialog.deconvolution": () => active && setDeconvolutionOpen(true),
+    "lcms.dialog.featureTable": () => dispatchUiAction("lcms.open_dialog", { dialog: "feature_table" }),
+    "lcms.dialog.eic": () => dispatchUiAction("lcms.open_dialog", { dialog: "eic" }),
+  });
   // --- data loading ---------------------------------------------------------
 
   useEffect(() => {
@@ -1603,6 +1607,8 @@ export function LCMSView() {
       ) {
         return;
       }
+      // Leave browser shortcuts (Ctrl+O, Ctrl+B, …) alone.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         goPrev();
@@ -3018,7 +3024,7 @@ export function LCMSView() {
       subtitle="mzML viewer — TIC, UV, spectrum at click, top-peak annotation"
       actions={
         <>
-          <HelpOpenButton onClick={() => setHelpOpen(true)} />
+          <HelpOpenButton />
           <input
             ref={fileRef}
             type="file"
@@ -3042,7 +3048,7 @@ export function LCMSView() {
               e.target.value = "";
             }}
           />
-          <Tooltip content="Load a saved workspace (.json)">
+          <Hint id="lcms.loadWorkspace" placement="bottom">
             <button
               className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100"
               disabled={busy}
@@ -3050,8 +3056,8 @@ export function LCMSView() {
             >
               Load workspace
             </button>
-          </Tooltip>
-          <Tooltip content={sessions.length === 0 ? "Open a file first" : "Save current workspace"}>
+          </Hint>
+          <Hint id="lcms.saveWorkspace" placement="bottom" extra={sessions.length === 0 ? "Open a file first." : undefined}>
             <span>
               <button
                 className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-500"
@@ -3061,14 +3067,16 @@ export function LCMSView() {
                 Save workspace
               </button>
             </span>
-          </Tooltip>
-          <button
-            className="btn-primary"
-            disabled={busy}
-            onClick={() => fileRef.current?.click()}
-          >
-            {busy ? "Loading…" : "Open mzML…"}
-          </button>
+          </Hint>
+          <Hint id="lcms.open" placement="bottom">
+            <button
+              className="btn-primary"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+            >
+              {busy ? "Loading…" : "Open mzML…"}
+            </button>
+          </Hint>
         </>
       }
     />,
@@ -3539,10 +3547,6 @@ export function LCMSView() {
           // Workflow chrome
           showPolymerControls={showPolymerControls}
           setShowPolymerControls={setShowPolymerControls}
-          showConfidenceControls={showConfidenceControls}
-          setShowConfidenceControls={setShowConfidenceControls}
-          showAlignmentDiagnostics={showAlignmentDiagnostics}
-          setShowAlignmentDiagnostics={setShowAlignmentDiagnostics}
           // Tabs
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -3649,8 +3653,6 @@ export function LCMSView() {
           // Annotate – overlay
           showOverlayLabels={showOverlayLabels}
           setShowOverlayLabels={setShowOverlayLabels}
-          multiDragOverlay={multiDragOverlay}
-          setMultiDragOverlay={setMultiDragOverlay}
           // Polymer
           polymerSettings={polymerSettings}
           setPolymerSettings={setPolymerSettings}
@@ -3864,9 +3866,6 @@ export function LCMSView() {
           onSave={saveCustomUvLabel}
         />
       )}
-      {helpModule ? (
-        <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
-      ) : null}
     </div>
   );
 }

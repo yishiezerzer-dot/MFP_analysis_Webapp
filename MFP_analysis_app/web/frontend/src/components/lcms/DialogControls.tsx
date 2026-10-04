@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import clsx from "clsx";
+import { Hint } from "../Hint";
 
 export function Modal({
   title,
@@ -43,6 +44,17 @@ export function Modal({
   );
 }
 
+// Wraps a setting in its registry hint when one is given.
+function withHint(hint: string | undefined, node: ReactNode) {
+  return hint ? (
+    <Hint id={hint} className="w-full">
+      {node}
+    </Hint>
+  ) : (
+    node
+  );
+}
+
 export function GroupBox({ title, children }: { title: string; children: ReactNode }) {
   return (
     <fieldset className="min-w-0 rounded-md border border-ink-200 bg-surface p-3">
@@ -68,13 +80,16 @@ export function Check({
   checked,
   onChange,
   className,
+  hint,
 }: {
   label: string;
   checked: boolean;
   onChange: (v: boolean) => void;
   className?: string;
+  hint?: string;
 }) {
-  return (
+  return withHint(
+    hint,
     <label className={clsx("flex items-center gap-2 text-sm text-ink-800", className)}>
       <input
         type="checkbox"
@@ -82,23 +97,26 @@ export function Check({
         onChange={(e) => onChange(e.target.checked)}
       />
       <span>{label}</span>
-    </label>
+    </label>,
   );
 }
 
 export function TextSetting({
   label,
+  hint,
   value,
   placeholder,
   onChange,
 }: {
   label: string;
+  hint?: string;
   value: string;
   placeholder?: string;
   onChange: (value: string) => void;
 }) {
-  return (
-    <label className="block">
+  return withHint(
+    hint,
+    <label className="block w-full">
       <div className="label">{label}</div>
       <input
         type="text"
@@ -107,12 +125,13 @@ export function TextSetting({
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
       />
-    </label>
+    </label>,
   );
 }
 
 export function NumberSetting({
   label,
+  hint,
   value,
   nullable,
   min,
@@ -121,6 +140,7 @@ export function NumberSetting({
   onChange,
 }: {
   label: string;
+  hint?: string;
   value: number | null;
   nullable?: boolean;
   min?: number;
@@ -128,8 +148,9 @@ export function NumberSetting({
   step?: number;
   onChange: (value: number | null) => void;
 }) {
-  return (
-    <label className="block">
+  return withHint(
+    hint,
+    <label className="block w-full">
       <div className="label">{label}</div>
       <input
         type="number"
@@ -148,23 +169,26 @@ export function NumberSetting({
           if (Number.isFinite(n)) onChange(n);
         }}
       />
-    </label>
+    </label>,
   );
 }
 
 export function SelectSetting({
   label,
+  hint,
   value,
   options,
   onChange,
 }: {
   label: string;
+  hint?: string;
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
 }) {
-  return (
-    <label className="block">
+  return withHint(
+    hint,
+    <label className="block w-full">
       <div className="label">{label}</div>
       <select
         className="input mt-1 w-full"
@@ -177,7 +201,7 @@ export function SelectSetting({
           </option>
         ))}
       </select>
-    </label>
+    </label>,
   );
 }
 

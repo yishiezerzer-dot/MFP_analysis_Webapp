@@ -12,6 +12,7 @@ import { Atom, Hand, Hexagon, Palette, RotateCcw, RotateCw, ZoomIn } from "lucid
 import { SegmentedControl } from "../common/SegmentedControl";
 import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, LCMSSpectrumOverlayTrace, cleanLabelText, formatRt, axisRange, axisTitle, axisFrame, spectrumDefaultRange, visibleLabelMask } from "../../lcms/viewShared";
 import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../common/ChartCardParts";
+import { Hint } from "../Hint";
 
 export function hexToRgba(hex: string, alpha: number): string {
   const clean = (hex || "#7c3aed").replace("#", "").trim();
@@ -588,15 +589,16 @@ export function SpectrumChart(props: {
           ]}
         />
         {movedLabelCount > 0 && (
-          <ToolbarButton
-            icon={RotateCcw}
-            label={`Reset positions (${movedLabelCount})`}
-            title="Reset all repositioned peak labels back to default"
-            onClick={() => {
-              setLabelOffsets({});
-              setLocalRevision((r) => r + 1);
-            }}
-          />
+          <Hint id="lcms.resetLabels">
+            <ToolbarButton
+              icon={RotateCcw}
+              label={`Reset positions (${movedLabelCount})`}
+              onClick={() => {
+                setLabelOffsets({});
+                setLocalRevision((r) => r + 1);
+              }}
+            />
+          </Hint>
         )}
       </div>
 
@@ -605,129 +607,141 @@ export function SpectrumChart(props: {
         {/* Left Cluster: Polymer Studio and Deconvolution */}
         <div className="flex flex-wrap items-center gap-1.5">
           {props.onTogglePolymerStudio && (
-            <button
-              type="button"
-              className="btn-primary whitespace-nowrap px-2.5 py-1"
-              aria-pressed={props.polymerStudioOpen}
-              onClick={props.onTogglePolymerStudio}
-              title="Open Polymer & Reaction Studio (Live parameter tuning)"
-            >
-              <Hexagon {...ICON_PROPS} />
-              <span>Polymer Studio</span>
-              {props.polymerEnabled && (
-                <span className="h-1.5 w-1.5 rounded-full bg-success" title="Matching is live on the spectrum" />
-              )}
-            </button>
+            <Hint id="lcms.polymerStudio">
+              <button
+                type="button"
+                className="btn-primary whitespace-nowrap px-2.5 py-1"
+                aria-pressed={props.polymerStudioOpen}
+                onClick={props.onTogglePolymerStudio}
+              >
+                <Hexagon {...ICON_PROPS} />
+                <span>Polymer Studio</span>
+                {props.polymerEnabled && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-success" title="Matching is live on the spectrum" />
+                )}
+              </button>
+            </Hint>
           )}
 
           {props.onDeconvolution && (
-            <button
-              type="button"
-              className="btn whitespace-nowrap border border-ink-200 bg-surface px-2.5 py-1 text-ink-800 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={props.onDeconvolution}
-              disabled={!s}
-              title="Deconvolute multi-charged ESI envelope and isotopic spacing to true neutral mass"
-            >
-              <Atom {...ICON_PROPS} />
-              <span>Deconvolute</span>
-            </button>
+            <Hint id="lcms.deconvolution">
+              <button
+                type="button"
+                className="btn whitespace-nowrap border border-ink-200 bg-surface px-2.5 py-1 text-ink-800 hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={props.onDeconvolution}
+                disabled={!s}
+              >
+                <Atom {...ICON_PROPS} />
+                <span>Deconvolute</span>
+              </button>
+            </Hint>
           )}
 
           {s && props.onPeakClick && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handlePickTargetMz();
-              }}
-              className="flex items-center"
-            >
-              <div className="flex items-center rounded-md border border-ink-200 bg-surface py-0.5 pl-2 pr-1 focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
-                <span className="text-caption mr-1 select-none">m/z</span>
-                <input
-                  type="number"
-                  step="any"
-                  value={targetMzInput}
-                  onChange={(e) => setTargetMzInput(e.target.value)}
-                  placeholder="e.g. 524.3"
-                  aria-label="Target m/z"
-                  className="w-20 bg-transparent font-mono text-[13px] text-ink-800 placeholder:text-ink-500 focus:outline-none"
-                />
-                <button
-                  type="submit"
-                  disabled={!targetMzInput.trim()}
-                  className="btn-ghost px-2 py-0.5 disabled:cursor-not-allowed disabled:opacity-40"
-                  title="Inspect peak or create EIC for this m/z"
-                >
-                  Inspect
-                </button>
-              </div>
-            </form>
+            <Hint id="lcms.targetMz">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handlePickTargetMz();
+                }}
+                className="flex items-center"
+              >
+                <div className="flex items-center rounded-md border border-ink-200 bg-surface py-0.5 pl-2 pr-1 focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500">
+                  <span className="text-caption mr-1 select-none">m/z</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={targetMzInput}
+                    onChange={(e) => setTargetMzInput(e.target.value)}
+                    placeholder="e.g. 524.3"
+                    aria-label="Target m/z"
+                    className="w-20 bg-transparent font-mono text-[13px] text-ink-800 placeholder:text-ink-500 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!targetMzInput.trim()}
+                    className="btn-ghost px-2 py-0.5 disabled:cursor-not-allowed disabled:opacity-40"
+                    title="Inspect peak or create EIC for this m/z"
+                  >
+                    Inspect
+                  </button>
+                </div>
+              </form>
+            </Hint>
           )}
 
           {s && props.onPeakClick && (
-            <select
-              className="input max-w-[200px] truncate py-1"
-              aria-label="Select a detected peak"
-              value=""
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                if (Number.isFinite(val)) {
-                  handlePickTargetMz(val);
-                }
-              }}
-              title="Pick a mass from detected peaks"
-            >
-              <option value="" disabled>
-                Select peak ({topPeaks.length ? `${topPeaks.length} top` : `${s.labels.length || s.meta.n_peaks} peaks`})...
-              </option>
-              {(topPeaks.length > 0 ? topPeaks : visibleLabels.map((l) => ({ mz: l.mz, intensity: l.intensity, relIntensity: l.intensity / (activeBasePeak || 1), label: l.text }))).map((p) => (
-                <option key={p.mz} value={p.mz}>
-                  m/z {p.mz.toFixed(4)} ({Math.round(p.relIntensity * 100)}%){p.label ? ` - ${cleanLabelText(p.label)}` : ""}
+            <Hint id="lcms.targetMz">
+              <select
+                className="input max-w-[200px] truncate py-1"
+                aria-label="Select a detected peak"
+                value=""
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  if (Number.isFinite(val)) {
+                    handlePickTargetMz(val);
+                  }
+                }}
+              >
+                <option value="" disabled>
+                  Select peak ({topPeaks.length ? `${topPeaks.length} top` : `${s.labels.length || s.meta.n_peaks} peaks`})...
                 </option>
-              ))}
-            </select>
+                {(topPeaks.length > 0 ? topPeaks : visibleLabels.map((l) => ({ mz: l.mz, intensity: l.intensity, relIntensity: l.intensity / (activeBasePeak || 1), label: l.text }))).map((p) => (
+                  <option key={p.mz} value={p.mz}>
+                    m/z {p.mz.toFixed(4)} ({Math.round(p.relIntensity * 100)}%){p.label ? ` - ${cleanLabelText(p.label)}` : ""}
+                  </option>
+                ))}
+              </select>
+            </Hint>
           )}
         </div>
 
         {/* Right Cluster: Quick Mode Pills, Design, Reload & Export */}
         <div className="flex items-center gap-1.5 shrink-0">
-          <SegmentedControl
-            size="xs"
-            ariaLabel="Spectrum drag mode"
-            value={interactionMode}
-            onChange={setInteractionMode}
-            options={[
-              { value: "zoom", label: "Zoom", icon: <ZoomIn {...ICON_PROPS} />, title: "Standard box-zoom drag on spectrum canvas" },
-              { value: "move", label: "Move labels", icon: <Hand {...ICON_PROPS} />, title: "Move peak labels freely without drawing zoom boxes" },
-            ]}
-          />
-          {props.overlayTraces.length > 0 && props.onUpdateOverlayMode && (
+          <Hint id="lcms.spectrumMode">
             <SegmentedControl
               size="xs"
-              ariaLabel="Overlay mode"
-              value={overlayMode}
-              onChange={(mode) => props.onUpdateOverlayMode?.(mode)}
+              ariaLabel="Spectrum drag mode"
+              value={interactionMode}
+              onChange={setInteractionMode}
               options={[
-                { value: "overlay", label: "Overlay", title: "Standard overlaid spectra (raw intensity)" },
-                { value: "butterfly", label: "Butterfly", title: "Mirrored butterfly plot (Head-to-Tail, raw AU)" },
-                { value: "butterfly_normalized", label: "Butterfly %", title: "Mirrored butterfly plot normalized to base peak (Head-to-Tail, 0 to ±100%)" },
-                { value: "normalized", label: "% Norm", title: "Normalize each spectrum to 0–100% base peak" },
+                { value: "zoom", label: "Zoom", icon: <ZoomIn {...ICON_PROPS} /> },
+                { value: "move", label: "Move labels", icon: <Hand {...ICON_PROPS} /> },
               ]}
             />
+          </Hint>
+          {props.overlayTraces.length > 0 && props.onUpdateOverlayMode && (
+            <Hint id="lcms.spectrumOverlay">
+              <SegmentedControl
+                size="xs"
+                ariaLabel="Overlay mode"
+                value={overlayMode}
+                onChange={(mode) => props.onUpdateOverlayMode?.(mode)}
+                options={[
+                  { value: "overlay", label: "Overlay" },
+                  { value: "butterfly", label: "Butterfly" },
+                  { value: "butterfly_normalized", label: "Butterfly %" },
+                  { value: "normalized", label: "% Norm" },
+                ]}
+              />
+            </Hint>
           )}
           {props.onOpenDesign && (
-            <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} title="Configure MS1 spectrum appearance, colors & peak labels" />
+            <Hint id="lcms.chartDesign">
+              <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} />
+            </Hint>
           )}
           {props.onReload && (
-            <ToolbarButton
-              icon={RotateCw}
-              label="Reload"
-              title="Reload MS1 spectrum plot"
-              onClick={() => {
-                setLocalRevision((r) => r + 1);
-                props.onReload?.();
-              }}
-            />
+            <Hint id="lcms.reload">
+              <ToolbarButton
+                icon={RotateCw}
+                label="Reload"
+                onClick={() => {
+                  setLocalRevision((r) => r + 1);
+                  props.onReload?.();
+                }}
+              />
+            </Hint>
           )}
           <PaperFigureExportToolbar
             disabled={!s}

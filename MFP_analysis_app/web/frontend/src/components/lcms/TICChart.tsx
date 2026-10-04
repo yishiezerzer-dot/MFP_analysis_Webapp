@@ -5,7 +5,6 @@ import clsx from "clsx";
 import { LCMSTICOverlayTrace, TICData } from "../../api";
 import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../../theme/ThemeProvider";
 import { PaperFigureExportToolbar } from "../PaperFigureExportToolbar";
-import { Tooltip } from "../Tooltip";
 import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExportSettings, publicationFilenameSuffix, sanitizeFilenamePart } from "../../utils/publicationPlotExport";
 import { type IntegratedTraceRegion } from "../../lcms/analysis";
 import { OVERLAY_PALETTE, type ChartSettings, type ChromatogramOverlayMode } from "../../lcms/settings";
@@ -13,6 +12,7 @@ import { SegmentedControl } from "../common/SegmentedControl";
 import { Crosshair, Keyboard, Link2, Palette, Redo2, RotateCw, Scissors, Undo2 } from "lucide-react";
 import { schedulePlotResize, useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, formatRt, formatScanId, axisRange, maxFinite, axisTitle, axisFrame } from "../../lcms/viewShared";
 import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../common/ChartCardParts";
+import { Hint } from "../Hint";
 
 export function TICChart(props: {
   tic: TICData | null;
@@ -278,20 +278,22 @@ export function TICChart(props: {
         {/* Left Cluster: Inspection / Slicing and Integration tools */}
         <div className="flex flex-wrap items-center gap-2">
           {props.onToggleRegionSelect && (
-            <SegmentedControl
-              size="xs"
-              value={props.regionSelect ? "slice" : "point"}
-              onChange={(val) => props.onToggleRegionSelect?.(val === "slice")}
-              options={[
-                { value: "point", label: "Inspect peak", icon: <Crosshair {...ICON_PROPS} />, title: "Inspect scan at clicked RT point" },
-                { value: "slice", label: "Slice peak", icon: <Scissors {...ICON_PROPS} />, title: "Click and drag across a peak to slice & integrate" },
-              ]}
-            />
+            <Hint id="lcms.ticTool">
+              <SegmentedControl
+                size="xs"
+                value={props.regionSelect ? "slice" : "point"}
+                onChange={(val) => props.onToggleRegionSelect?.(val === "slice")}
+                options={[
+                  { value: "point", label: "Inspect peak", icon: <Crosshair {...ICON_PROPS} /> },
+                  { value: "slice", label: "Slice peak", icon: <Scissors {...ICON_PROPS} /> },
+                ]}
+              />
+            </Hint>
           )}
 
           {props.regionSelect && (
             <div className="flex items-center gap-1">
-              <Tooltip content="Undo region slice (Ctrl+Z)" placement="bottom">
+              <Hint id="lcms.undoRedo" placement="bottom">
                 <button
                   type="button"
                   className="btn-ghost px-1.5 py-1 disabled:opacity-30"
@@ -300,13 +302,12 @@ export function TICChart(props: {
                     e.stopPropagation();
                     props.onUndoRegion?.();
                   }}
-                  title="Undo region slice (Ctrl+Z)"
                   aria-label="Undo region slice"
                 >
                   <Undo2 {...ICON_PROPS} />
                 </button>
-              </Tooltip>
-              <Tooltip content="Redo region slice (Ctrl+Y)" placement="bottom">
+              </Hint>
+              <Hint id="lcms.undoRedo" placement="bottom">
                 <button
                   type="button"
                   className="btn-ghost px-1.5 py-1 disabled:opacity-30"
@@ -315,12 +316,11 @@ export function TICChart(props: {
                     e.stopPropagation();
                     props.onRedoRegion?.();
                   }}
-                  title="Redo region slice (Ctrl+Y)"
                   aria-label="Redo region slice"
                 >
                   <Redo2 {...ICON_PROPS} />
                 </button>
-              </Tooltip>
+              </Hint>
             </div>
           )}
 
@@ -337,44 +337,50 @@ export function TICChart(props: {
         {/* Right Cluster: Standard actions */}
         <div className="flex items-center gap-1.5 shrink-0">
           {nonActiveOverlayTraces.length > 0 && props.onUpdateOverlayMode && (
-            <SegmentedControl
-              size="xs"
-              ariaLabel="Overlay scale"
-              value={overlayMode}
-              onChange={(mode) => props.onUpdateOverlayMode?.(mode)}
-              options={[
-                { value: "raw", label: "Raw", title: "Overlay on shared absolute scale" },
-                { value: "normalized", label: "% Norm", title: "Normalize each trace to 0–100% base peak" },
-                { value: "stacked", label: "Stacked", title: "Waterfall stacked chromatograms" },
-              ]}
-            />
+            <Hint id="lcms.overlayScale">
+              <SegmentedControl
+                size="xs"
+                ariaLabel="Overlay scale"
+                value={overlayMode}
+                onChange={(mode) => props.onUpdateOverlayMode?.(mode)}
+                options={[
+                  { value: "raw", label: "Raw" },
+                  { value: "normalized", label: "% Norm" },
+                  { value: "stacked", label: "Stacked" },
+                ]}
+              />
+            </Hint>
           )}
           {props.onToggleSyncZoom && (
-            <ToolbarButton
-              icon={Link2}
-              label={props.syncZoom ? "Zoom synced" : "Sync zoom"}
-              active={props.syncZoom}
-              onClick={props.onToggleSyncZoom}
-              title="Synchronize X-axis zoom & pan between TIC and UV chromatograms"
-            />
+            <Hint id="lcms.syncZoom">
+              <ToolbarButton
+                icon={Link2}
+                label={props.syncZoom ? "Zoom synced" : "Sync zoom"}
+                active={props.syncZoom}
+                onClick={props.onToggleSyncZoom}
+              />
+            </Hint>
           )}
           <span className="text-caption hidden items-center gap-1 whitespace-nowrap 2xl:flex">
             <Keyboard {...ICON_PROPS} />
             ←/→ scans · B overlay · Esc reset
           </span>
           {props.onOpenDesign && (
-            <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} title="Configure TIC appearance, colors & limits" />
+            <Hint id="lcms.chartDesign">
+              <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} />
+            </Hint>
           )}
           {props.onReload && (
-            <ToolbarButton
-              icon={RotateCw}
-              label="Reload"
-              title="Reload TIC plot"
-              onClick={() => {
-                setLocalRevision((r) => r + 1);
-                props.onReload?.();
-              }}
-            />
+            <Hint id="lcms.reload">
+              <ToolbarButton
+                icon={RotateCw}
+                label="Reload"
+                onClick={() => {
+                  setLocalRevision((r) => r + 1);
+                  props.onReload?.();
+                }}
+              />
+            </Hint>
           )}
           <PaperFigureExportToolbar
             disabled={!props.tic}

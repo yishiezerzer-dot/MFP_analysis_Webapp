@@ -19,6 +19,7 @@ import {
   pxToLogicalMm,
 } from "../utils/publicationPlotExport";
 import { Tooltip } from "./Tooltip";
+import { Hint } from "./Hint";
 
 export interface PaperFigureExportToolbarProps {
   disabled?: boolean;
@@ -302,7 +303,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
 
   return (
     <div ref={containerRef} className={clsx("relative inline-block", props.className)}>
-      <Tooltip content="Export figure at publication-ready journal dimensions and DPI (ACS, Nature, RSC)">
+      <Hint id="app.exportFigure">
         <button
           type="button"
           className={clsx(
@@ -318,7 +319,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
           <span>Export</span>
           <ChevronDown size={13} strokeWidth={1.8} aria-hidden />
         </button>
-      </Tooltip>
+      </Hint>
 
       {isOpen && (
         <div className="absolute right-0 top-full mt-1.5 z-50 w-[390px] max-w-[calc(100vw-1.5rem)] rounded-xl border border-ink-200 bg-surface p-3.5 shadow-xl text-xs text-ink-800 animate-in fade-in zoom-in-95 duration-100">

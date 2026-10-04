@@ -7,6 +7,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { Hint } from "../components/Hint";
+import { useRevealPanel } from "../help/reveal";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { useTheme, ThemeName } from "../theme/ThemeProvider";
@@ -37,6 +39,7 @@ export function UserMenu({
   expanded: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  useRevealPanel({ "app.menu": () => setOpen(true) });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -73,36 +76,38 @@ export function UserMenu({
       className="shrink-0 border-t border-ink-200/40"
       style={{ backgroundColor: "rgb(var(--surface))" }}
     >
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title={expanded ? undefined : `${user.name}${user.secondary ? ` — ${user.secondary}` : ""}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className={clsx(
-          "flex w-full items-center gap-2.5 transition-colors hover:bg-ink-100/50",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
-          expanded ? "px-3 py-2.5" : "justify-center px-2 py-2.5",
-        )}
-      >
-        <Avatar user={user} size="sm" withPresence />
-        {expanded && (
-          <>
-            <div className="min-w-0 flex-1 text-left">
-              <div className="truncate text-[13px] font-semibold text-ink-900">
-                {user.name}
-              </div>
-              {user.secondary && (
-                <div className="truncate text-[12px] text-ink-500">
-                  {user.secondary}
+      <Hint id="app.userMenu" placement="right" className="w-full">
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          title={expanded ? undefined : `${user.name}${user.secondary ? ` — ${user.secondary}` : ""}`}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          className={clsx(
+            "flex w-full items-center gap-2.5 transition-colors hover:bg-ink-100/50",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
+            expanded ? "px-3 py-2.5" : "justify-center px-2 py-2.5",
+          )}
+        >
+          <Avatar user={user} size="sm" withPresence />
+          {expanded && (
+            <>
+              <div className="min-w-0 flex-1 text-left">
+                <div className="truncate text-[13px] font-semibold text-ink-900">
+                  {user.name}
                 </div>
-              )}
-            </div>
-            <IconChevronUpDown className="h-3.5 w-3.5 shrink-0 text-ink-500" />
-          </>
-        )}
-      </button>
+                {user.secondary && (
+                  <div className="truncate text-[12px] text-ink-500">
+                    {user.secondary}
+                  </div>
+                )}
+              </div>
+              <IconChevronUpDown className="h-3.5 w-3.5 shrink-0 text-ink-500" />
+            </>
+          )}
+        </button>
+      </Hint>
 
       {open && (
         <UserMenuPopover
@@ -379,32 +384,34 @@ function ThemeSubmenu() {
 
   return (
     <div>
-      <button
-        type="button"
-        role="menuitem"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className={clsx(
-          "flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-[7px] text-left",
-          "transition-colors hover:bg-ink-100/60",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
-        )}
-      >
-        <IconTheme className="h-[17px] w-[17px] shrink-0 text-ink-500" />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-ink-800">
-          Theme
-        </span>
-        <span className="shrink-0 truncate text-[12px] text-ink-500">
-          {current.label}
-        </span>
-        <IconChevronRight
+      <Hint id="app.theme" placement="right" className="w-full">
+        <button
+          type="button"
+          role="menuitem"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
           className={clsx(
-            "h-3.5 w-3.5 shrink-0 text-ink-500 transition-transform duration-150",
-            open && "rotate-90",
+            "flex w-full items-center gap-2.5 rounded-[6px] px-2.5 py-[7px] text-left",
+            "transition-colors hover:bg-ink-100/60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
           )}
-        />
-      </button>
+        >
+          <IconTheme className="h-[17px] w-[17px] shrink-0 text-ink-500" />
+          <span className="min-w-0 flex-1 truncate text-[13px] text-ink-800">
+            Theme
+          </span>
+          <span className="shrink-0 truncate text-[12px] text-ink-500">
+            {current.label}
+          </span>
+          <IconChevronRight
+            className={clsx(
+              "h-3.5 w-3.5 shrink-0 text-ink-500 transition-transform duration-150",
+              open && "rotate-90",
+            )}
+          />
+        </button>
+      </Hint>
 
       {open && (
         <div

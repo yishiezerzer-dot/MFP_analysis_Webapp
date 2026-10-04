@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Hint } from "../Hint";
 import type { LCMSFeatureRow } from "../../lcms/analysis";
 import { Modal } from "./DialogControls";
 
@@ -62,21 +63,25 @@ export function FeatureTableDialog({
       width="max-w-6xl"
       footer={
         <div className="flex w-full items-center justify-between gap-2">
-          <button
-            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
-            disabled={rows.length === 0}
-            onClick={onClear}
-          >
-            Clear table
-          </button>
-          <div className="flex items-center gap-2">
+          <Hint id="lcms.ftClear">
             <button
               className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
               disabled={rows.length === 0}
-              onClick={onExportCsv}
+              onClick={onClear}
             >
-              Export CSV
+              Clear table
             </button>
+          </Hint>
+          <div className="flex items-center gap-2">
+            <Hint id="lcms.dialogExport">
+              <button
+                className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
+                disabled={rows.length === 0}
+                onClick={onExportCsv}
+              >
+                Export CSV
+              </button>
+            </Hint>
             <button className="btn-primary" onClick={onClose}>Done</button>
           </div>
         </div>

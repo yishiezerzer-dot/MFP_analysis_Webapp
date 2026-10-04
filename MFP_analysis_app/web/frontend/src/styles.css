@@ -427,3 +427,22 @@ select.input:disabled {
   color: rgb(var(--ink-500));
   text-decoration: line-through;
 }
+
+/* Control finder / tours: briefly outline the control the user asked for */
+[data-flash] {
+  border-radius: 8px;
+  animation: control-flash 1.6s ease-out;
+}
+@keyframes control-flash {
+  0%, 60% { box-shadow: 0 0 0 3px rgb(var(--brand-500) / 0.85), 0 0 0 8px rgb(var(--brand-500) / 0.2); }
+  100% { box-shadow: 0 0 0 3px rgb(var(--brand-500) / 0), 0 0 0 8px rgb(var(--brand-500) / 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-flash] { animation: none; box-shadow: 0 0 0 3px rgb(var(--brand-500)); }
+}
+
+/* A full-width hint wrapper (span[data-control]) lets its control fill it, as before wrapping */
+span[data-control].w-full > * {
+  flex: 1 1 0%;
+  min-width: 0;
+}

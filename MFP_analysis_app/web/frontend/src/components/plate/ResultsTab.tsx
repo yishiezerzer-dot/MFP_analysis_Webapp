@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { FileSpreadsheet, SquareMinus, Spline, Table2 } from "lucide-react";
 import { api, type PlateAnalysis, type PlateLayout, type PlateSummary } from "../../api";
 import { ToolbarButton } from "../common/ChartCardParts";
+import { Hint } from "../Hint";
 import { useStoredState } from "../../hooks/useStoredState";
 import { downloadBlob } from "../../lcms/viewShared";
 import { rowsToCsv } from "../../lcms/analysis";
@@ -180,29 +181,27 @@ export function ResultsTab({ plate, layout }: { plate: PlateSummary; layout: Pla
 
   const toolbar = (
     <div className="flex flex-wrap items-center gap-1 px-1">
-      <ToolbarButton
-        icon={SquareMinus}
-        label="Subtract blank"
-        active={subtract}
-        disabled={!hasBlank}
-        title={hasBlank ? "Subtract the mean of the blank wells from every well" : "No blank wells in the layout"}
-        onClick={() => setSubtractBlank(!subtractBlank)}
-      />
-      <ToolbarButton
-        icon={Spline}
-        label="4PL fit (IC₅₀)"
-        active={fit4pl}
-        title="Fit a 4-parameter logistic curve to each compound's means"
-        onClick={() => setFit4pl(!fit4pl)}
-      />
+      <Hint id="plate.subtractBlank" extra={hasBlank ? undefined : "No blank wells in this layout."}>
+        <ToolbarButton
+          icon={SquareMinus}
+          label="Subtract blank"
+          active={subtract}
+          disabled={!hasBlank}
+          onClick={() => setSubtractBlank(!subtractBlank)}
+        />
+      </Hint>
+      <Hint id="plate.fit4pl">
+        <ToolbarButton icon={Spline} label="4PL fit (IC₅₀)" active={fit4pl} onClick={() => setFit4pl(!fit4pl)} />
+      </Hint>
       <span className="flex-1" />
-      <ToolbarButton
-        icon={FileSpreadsheet}
-        label={downloading ? "Preparing…" : "Calculation workbook"}
-        title="Excel workbook with every step as a live formula, from the raw plate to % growth"
-        disabled={downloading}
-        onClick={() => void downloadWorkbook()}
-      />
+      <Hint id="plate.workbook">
+        <ToolbarButton
+          icon={FileSpreadsheet}
+          label={downloading ? "Preparing…" : "Calculation workbook"}
+          disabled={downloading}
+          onClick={() => void downloadWorkbook()}
+        />
+      </Hint>
     </div>
   );
 
@@ -245,15 +244,16 @@ export function ResultsTab({ plate, layout }: { plate: PlateSummary; layout: Pla
           status={[odLabel + " as read", layout.excluded.length > 0 && `${layout.excluded.length} excluded`]}
           explanation={explain("heatmap")}
           actions={
+            <Hint id="plate.plateCsv">
             <ToolbarButton
               icon={Table2}
               label="CSV"
-              title="The 8×12 plate as read"
               onClick={() => {
                 const rows = [["", ...Array.from({ length: 12 }, (_, i) => i + 1)], ..."ABCDEFGH".split("").map((r) => [r, ...Array.from({ length: 12 }, (_, i) => plate.values[`${r}${i + 1}`] ?? "")])];
                 downloadBlob(new Blob([rowsToCsv(rows)], { type: "text/csv" }), `${fileStem(plate)}_plate.csv`);
               }}
             />
+            </Hint>
           }
         >
           <div className="flex min-h-[270px] items-center justify-center overflow-x-auto">
@@ -301,20 +301,23 @@ export function ResultsTab({ plate, layout }: { plate: PlateSummary; layout: Pla
           explanation={explain("table")}
           actions={
             <>
-              <ToolbarButton
-                icon={Table2}
-                label="CSV"
-                onClick={() =>
-                  downloadBlob(new Blob([resultsCsv(analysis)], { type: "text/csv" }), `${fileStem(plate)}_results.csv`)
-                }
-              />
-              <ToolbarButton
-                icon={FileSpreadsheet}
-                label="Excel"
-                title="Calculation workbook: this table with live formulas"
-                disabled={downloading}
-                onClick={() => void downloadWorkbook()}
-              />
+              <Hint id="plate.resultsCsv">
+                <ToolbarButton
+                  icon={Table2}
+                  label="CSV"
+                  onClick={() =>
+                    downloadBlob(new Blob([resultsCsv(analysis)], { type: "text/csv" }), `${fileStem(plate)}_results.csv`)
+                  }
+                />
+              </Hint>
+              <Hint id="plate.workbook">
+                <ToolbarButton
+                  icon={FileSpreadsheet}
+                  label="Excel"
+                  disabled={downloading}
+                  onClick={() => void downloadWorkbook()}
+                />
+              </Hint>
             </>
           }
         >

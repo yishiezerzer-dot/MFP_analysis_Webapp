@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { useLocation } from "react-router-dom";
 import { Grid3X3, X } from "lucide-react";
 import { api, type PlateLayout, type PlateMetadata, type PlateSummary, type PlateTemplate, type PlateWell } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
-import { HelpOpenButton, HelpShell } from "../help/HelpShell";
-import { getHelpModule } from "../help/registry";
+import { HelpOpenButton } from "../help/HelpShell";
 import { AlertBanner } from "../components/AlertBanner";
 import { useToast } from "../components/Toast";
 import { SideRail } from "../components/common/SideRail";
 import { SegmentedControl } from "../components/common/SegmentedControl";
 import { ICON_PROPS } from "../components/common/ChartCardParts";
+import { Hint } from "../components/Hint";
+import { useRevealPanel } from "../help/reveal";
 import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
 import { BLANK_RING, GC_RING, PlateGrid } from "../components/plate/PlateGrid";
 import { LayoutPanel, type SaveState } from "../components/plate/LayoutPanel";
@@ -59,7 +59,6 @@ function emptyLayout(top: number): PlateLayout {
 }
 
 export function PlateReaderView() {
-  const location = useLocation();
   const { toast } = useToast();
   const { activeWorkspaceId } = useWorkspace();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -76,11 +75,14 @@ export function PlateReaderView() {
   const [savedCount, setSavedCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
   const pendingSave = useRef<{ sid: string; layout: PlateLayout; timer: number } | null>(null);
 
   const active = plates.find((p) => p.session_id === activeSid) ?? null;
+  useRevealPanel({
+    "plate.tab.map": () => setTab("map"),
+    "plate.tab.results": () => setTab("results"),
+    "plate.tab.experiment": () => setTab("experiment"),
+  });
   const view: PlateTab = tab === "experiment" && !active?.experiment_tag ? "map" : tab;
 
   useEffect(() => {
@@ -261,7 +263,7 @@ export function PlateReaderView() {
       subtitle="MIC · plate maps, % growth, dose–response"
       actions={
         <>
-          <HelpOpenButton onClick={() => setHelpOpen(true)} />
+          <HelpOpenButton />
           <input
             ref={fileRef}
             type="file"
@@ -274,9 +276,11 @@ export function PlateReaderView() {
               e.target.value = "";
             }}
           />
-          <button className="btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}>
-            {busy ? "Opening…" : "Open plate…"}
-          </button>
+          <Hint id="plate.open" placement="bottom">
+            <button className="btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}>
+              {busy ? "Opening…" : "Open plate…"}
+            </button>
+          </Hint>
         </>
       }
     />,
@@ -320,6 +324,7 @@ export function PlateReaderView() {
                   }
                 />
                 <span className="flex-1" />
+                <Hint id="plate.view">
                 <SegmentedControl<PlateTab>
                   ariaLabel="Plate view"
                   size="md"
@@ -331,6 +336,7 @@ export function PlateReaderView() {
                     { value: "experiment", label: "Experiment", disabled: !active.experiment_tag, title: active.experiment_tag ? undefined : "Give plates the same experiment tag to combine them" },
                   ]}
                 />
+                </Hint>
               </div>
               {view === "map" ? (
                 <PlateMapCard
@@ -366,7 +372,6 @@ export function PlateReaderView() {
           </>
         )}
       </div>
-      {helpModule ? <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} /> : null}
     </div>
   );
 }
@@ -402,6 +407,7 @@ function PlateMapCard({
           onPaint={paint ? onPaint : undefined}
         />
       </div>
+      <Hint id="plate.paint" placement="bottom">
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Paint wells as">
         {targets.map((t) => {
           const on = paint === t.id;
@@ -432,11 +438,14 @@ function PlateMapCard({
           Excluded {layout.excluded.length > 0 && <span className="text-ink-500">({layout.excluded.join(", ")})</span>}
         </span>
       </div>
+      </Hint>
+      <Hint id="plate.grid">
       <p className="text-caption">
         {paint
           ? "Drag across wells to assign them · Esc cancels · click a well to exclude or include it"
           : "Click a well to exclude or include it · pick a group above, then drag across wells to move them"}
       </p>
+      </Hint>
     </div>
   );
 }

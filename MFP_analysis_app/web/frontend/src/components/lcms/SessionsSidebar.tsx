@@ -1,5 +1,6 @@
 import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
+import { Hint } from "../Hint";
 import { LCMSSessionSummary } from "../../api";
 import { LCMSProject, LCMSActiveProjectId, formatUploaded, sessionTooltip, formatRange } from "../../lcms/viewShared";
 import { COMPACT_LAYOUT_QUERY, useMediaQuery } from "../../hooks/useMediaQuery";
@@ -130,28 +131,31 @@ export function SessionsSidebar(props: {
         {expanded ? (
           <>
             <span className="label flex-1 truncate">Sessions</span>
-            <button
-              type="button"
-              onClick={props.onCreateProject}
-              title="Create project"
-              className="min-h-6 rounded-md border border-ink-200 bg-surface px-1.5 py-0.5 text-[12px] font-medium text-ink-700 hover:bg-ink-100"
-            >
-              + Project
-            </button>
-            <button
-              type="button"
-              onClick={() => setPinned((p) => !p)}
-              title={
-                pinned
-                  ? "Unpin sessions panel (collapse when not hovered)"
-                  : "Pin sessions panel (always open)"
-              }
-              aria-label={pinned ? "Unpin sessions panel" : "Pin sessions panel"}
-              aria-pressed={pinned}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-ink-200/60 hover:text-ink-800"
-            >
-              <IconPin pinned={pinned} className="h-3.5 w-3.5" />
-            </button>
+            <Hint id="lcms.createProject" placement="bottom">
+              <button
+                type="button"
+                onClick={props.onCreateProject}
+                className="min-h-6 rounded-md border border-ink-200 bg-surface px-1.5 py-0.5 text-[12px] font-medium text-ink-700 hover:bg-ink-100"
+              >
+                + Project
+              </button>
+            </Hint>
+            <Hint id="lcms.pinSessions" placement="bottom">
+              <button
+                type="button"
+                onClick={() => setPinned((p) => !p)}
+                title={
+                  pinned
+                    ? "Unpin sessions panel (collapse when not hovered)"
+                    : "Pin sessions panel (always open)"
+                }
+                aria-label={pinned ? "Unpin sessions panel" : "Pin sessions panel"}
+                aria-pressed={pinned}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-ink-200/60 hover:text-ink-800"
+              >
+                <IconPin pinned={pinned} className="h-3.5 w-3.5" />
+              </button>
+            </Hint>
           </>
         ) : (
           // Collapsed affordance: a stack icon that hints the panel holds a list
@@ -308,16 +312,17 @@ export function SessionsSidebar(props: {
                   {s.uv?.available && " • UV"}
                 </div>
               </div>
-              <button
-                className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 hover:text-ink-900 group-hover:visible"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  props.onRemove(s.session_id);
-                }}
-                title="Remove"
-              >
-                ✕
-              </button>
+              <Hint id="lcms.removeSession" placement="left">
+                <button
+                  className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 hover:text-ink-900 group-hover:visible"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    props.onRemove(s.session_id);
+                  }}
+                >
+                  ✕
+                </button>
+              </Hint>
             </div>
           );
         })}
@@ -371,14 +376,15 @@ export function ProjectHeaderRow(props: {
         </button>
         <span className="font-mono text-[12px] text-ink-500">{props.count}</span>
         {!props.builtin && props.onDeleteProject && (
-          <button
-            type="button"
-            className="rounded px-1 text-[12px] text-ink-500 hover:bg-ink-200 hover:text-ink-800"
-            onClick={props.onDeleteProject}
-            title="Delete project"
-          >
-            x
-          </button>
+          <Hint id="lcms.deleteProject" placement="left">
+            <button
+              type="button"
+              className="rounded px-1 text-[12px] text-ink-500 hover:bg-ink-200 hover:text-ink-800"
+              onClick={props.onDeleteProject}
+            >
+              x
+            </button>
+          </Hint>
         )}
       </div>
     </section>
@@ -425,36 +431,38 @@ export function ProjectSessionRows(props: {
                       {session.uploaded_at && ` - ${formatUploaded(session.uploaded_at)}`}
               </div>
             </div>
-            <select
-              className="max-w-[5.5rem] rounded border border-ink-200 bg-surface px-1 py-0.5 text-[12px] text-ink-600 opacity-0 transition-opacity group-hover:opacity-100"
-              value={currentProject}
-              title="Move to project"
-              onClick={(event) => event.stopPropagation()}
-              onChange={(event) => {
-                event.stopPropagation();
-                props.onMoveSession(
-                  session.session_id,
-                  event.target.value === "__unassigned" ? null : event.target.value,
-                );
-              }}
-            >
-              <option value="__unassigned">Unassigned</option>
-              {props.projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-            <button
-              className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 hover:text-ink-900 group-hover:visible"
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onRemoveSession(session.session_id);
-              }}
-              title="Remove"
-            >
-              x
-            </button>
+            <Hint id="lcms.moveToProject" placement="left">
+              <select
+                className="max-w-[5.5rem] rounded border border-ink-200 bg-surface px-1 py-0.5 text-[12px] text-ink-600 opacity-0 transition-opacity group-hover:opacity-100"
+                value={currentProject}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => {
+                  event.stopPropagation();
+                  props.onMoveSession(
+                    session.session_id,
+                    event.target.value === "__unassigned" ? null : event.target.value,
+                  );
+                }}
+              >
+                <option value="__unassigned">Unassigned</option>
+                {props.projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </Hint>
+            <Hint id="lcms.removeSession" placement="left">
+              <button
+                className="invisible rounded px-1 text-xs text-ink-500 hover:bg-ink-200 hover:text-ink-900 group-hover:visible"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onRemoveSession(session.session_id);
+                }}
+              >
+                x
+              </button>
+            </Hint>
           </div>
         );
       })}
@@ -512,14 +520,15 @@ export function ProjectSessionSection(props: {
         </button>
         <span className="font-mono text-[12px] text-ink-500">{props.sessions.length}</span>
         {!props.builtin && props.onDeleteProject && (
-          <button
-            type="button"
-            className="rounded px-1 text-[12px] text-ink-500 hover:bg-ink-200 hover:text-ink-800"
-            onClick={props.onDeleteProject}
-            title="Delete project"
-          >
-            x
-          </button>
+          <Hint id="lcms.deleteProject" placement="left">
+            <button
+              type="button"
+              className="rounded px-1 text-[12px] text-ink-500 hover:bg-ink-200 hover:text-ink-800"
+              onClick={props.onDeleteProject}
+            >
+              x
+            </button>
+          </Hint>
         )}
       </div>
       {props.expanded && (

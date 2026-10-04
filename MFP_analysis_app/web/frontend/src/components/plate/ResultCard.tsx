@@ -4,6 +4,7 @@ import type { PlotlyHTMLElement } from "plotly.js";
 import { Check, Info, Palette, TriangleAlert } from "lucide-react";
 import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../common/ChartCardParts";
 import { PaperFigureExportToolbar } from "../PaperFigureExportToolbar";
+import { Hint } from "../Hint";
 import {
   exportPlotlyPublicationImage,
   publicationFilenameSuffix,
@@ -146,15 +147,19 @@ export function ResultCard({
         <div className="min-w-0 flex-1">
           <ChartCardTitle title={title} status={status} />
         </div>
-        <ToolbarButton
-          icon={Info}
-          label="How is this calculated?"
-          active={explainOpen}
-          onClick={() => setExplainOpen((v) => !v)}
-        />
+        <Hint id="plate.explain">
+          <ToolbarButton
+            icon={Info}
+            label="How is this calculated?"
+            active={explainOpen}
+            onClick={() => setExplainOpen((v) => !v)}
+          />
+        </Hint>
         {design && onDesignChange && (
           <div className="relative">
-            <ToolbarButton icon={Palette} label="Design" active={designOpen} onClick={() => setDesignOpen((v) => !v)} />
+            <Hint id="plate.design">
+              <ToolbarButton icon={Palette} label="Design" active={designOpen} onClick={() => setDesignOpen((v) => !v)} />
+            </Hint>
             {designOpen && (
               <DesignPopover design={design} onChange={onDesignChange} onClose={() => setDesignOpen(false)} />
             )}

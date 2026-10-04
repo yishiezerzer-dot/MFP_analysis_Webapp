@@ -3,13 +3,13 @@ import Plot from "react-plotly.js";
 import type { PlotMouseEvent, PlotlyHTMLElement } from "plotly.js";
 import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../../theme/ThemeProvider";
 import { PaperFigureExportToolbar } from "../PaperFigureExportToolbar";
-import { Tooltip } from "../Tooltip";
 import { exportPlotlyPublicationImage, PublicationExportFormat, PublicationExportSettings, publicationFilenameSuffix, sanitizeFilenamePart } from "../../utils/publicationPlotExport";
 import { eicSourceFile, type LCMSEICPlot } from "../../lcms/analysis";
 import { type ChartSettings, type EICOverlaySettings } from "../../lcms/settings";
 import { Palette, Redo2, RotateCw, Sigma, Undo2, X } from "lucide-react";
 import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, formatRt, axisRange, maxFinite, axisTitle, axisFrame } from "../../lcms/viewShared";
 import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../common/ChartCardParts";
+import { Hint } from "../Hint";
 
 export function EICChart(props: {
   eics: LCMSEICPlot[];
@@ -164,22 +164,26 @@ export function EICChart(props: {
       {/* Tier 2: Action Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-ink-100/80 px-1 py-1.5">
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            className="btn-primary whitespace-nowrap px-2.5 py-1"
-            onClick={() =>
-              props.onIntegrateAll && props.eics.length > 1
-                ? props.onIntegrateAll()
-                : props.eics.forEach((plot) => props.onIntegrate(plot))
-            }
-          >
-            <Sigma {...ICON_PROPS} />
-            <span>{props.eics.length > 1 ? "Integrate all" : "Integrate"}</span>
-          </button>
-          <ToolbarButton icon={X} label={props.clearLabel ?? "Clear"} onClick={props.onClear} />
+          <Hint id="lcms.integrateEic">
+            <button
+              type="button"
+              className="btn-primary whitespace-nowrap px-2.5 py-1"
+              onClick={() =>
+                props.onIntegrateAll && props.eics.length > 1
+                  ? props.onIntegrateAll()
+                  : props.eics.forEach((plot) => props.onIntegrate(plot))
+              }
+            >
+              <Sigma {...ICON_PROPS} />
+              <span>{props.eics.length > 1 ? "Integrate all" : "Integrate"}</span>
+            </button>
+          </Hint>
+          <Hint id="lcms.clearEic">
+            <ToolbarButton icon={X} label={props.clearLabel ?? "Clear"} onClick={props.onClear} />
+          </Hint>
           {props.onUndoEic && (
             <div className="flex items-center gap-1">
-              <Tooltip content="Undo EIC action (Ctrl+Z)" placement="bottom">
+              <Hint id="lcms.undoRedo" placement="bottom">
                 <button
                   type="button"
                   className="btn-ghost px-1.5 py-1 disabled:opacity-30"
@@ -189,12 +193,11 @@ export function EICChart(props: {
                     e.stopPropagation();
                     props.onUndoEic?.();
                   }}
-                  title="Undo EIC (Ctrl+Z)"
                 >
                   <Undo2 {...ICON_PROPS} />
                 </button>
-              </Tooltip>
-              <Tooltip content="Redo EIC action (Ctrl+Y)" placement="bottom">
+              </Hint>
+              <Hint id="lcms.undoRedo" placement="bottom">
                 <button
                   type="button"
                   className="btn-ghost px-1.5 py-1 disabled:opacity-30"
@@ -204,11 +207,10 @@ export function EICChart(props: {
                     e.stopPropagation();
                     props.onRedoEic?.();
                   }}
-                  title="Redo EIC (Ctrl+Y)"
                 >
                   <Redo2 {...ICON_PROPS} />
                 </button>
-              </Tooltip>
+              </Hint>
             </div>
           )}
         </div>
@@ -216,18 +218,21 @@ export function EICChart(props: {
         {/* Right Cluster: Standard actions */}
         <div className="flex items-center gap-1.5 shrink-0">
           {props.onOpenDesign && (
-            <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} title="Configure EIC appearance, colors & overlay options" />
+            <Hint id="lcms.chartDesign">
+              <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} />
+            </Hint>
           )}
           {props.onReload && (
-            <ToolbarButton
-              icon={RotateCw}
-              label="Reload"
-              title="Reload EIC plot"
-              onClick={() => {
-                setLocalRevision((r) => r + 1);
-                props.onReload?.();
-              }}
-            />
+            <Hint id="lcms.reload">
+              <ToolbarButton
+                icon={RotateCw}
+                label="Reload"
+                onClick={() => {
+                  setLocalRevision((r) => r + 1);
+                  props.onReload?.();
+                }}
+              />
+            </Hint>
           )}
           <PaperFigureExportToolbar
             disabled={props.eics.length === 0}

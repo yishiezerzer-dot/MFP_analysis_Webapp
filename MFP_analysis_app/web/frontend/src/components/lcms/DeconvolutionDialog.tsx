@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { Hint } from "../Hint";
 import Plot from "react-plotly.js";
 import type { PlotlyHTMLElement } from "plotly.js";
 import {
@@ -167,14 +168,16 @@ export function DeconvolutionDialog({
               : "Ready to deconvolute current MS1 spectrum"}
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
-              disabled={!result || result.components.length === 0}
-              onClick={handleExportCsv}
-            >
-              Export CSV
-            </button>
+            <Hint id="lcms.dialogExport">
+              <button
+                type="button"
+                className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
+                disabled={!result || result.components.length === 0}
+                onClick={handleExportCsv}
+              >
+                Export CSV
+              </button>
+            </Hint>
             <button className="btn-primary" onClick={onClose}>
               Done
             </button>
@@ -191,7 +194,7 @@ export function DeconvolutionDialog({
 
         {/* Control toolbar */}
         <div className="grid grid-cols-6 gap-3 rounded-lg border border-ink-200 bg-surface p-3">
-          <NumberSetting
+          <NumberSetting hint="lcms.decCharges"
             label="Min charge (z)"
             value={minCharge}
             min={1}
@@ -199,7 +202,7 @@ export function DeconvolutionDialog({
             step={1}
             onChange={(v) => setMinCharge(Math.max(1, Math.round(v ?? 1)))}
           />
-          <NumberSetting
+          <NumberSetting hint="lcms.decCharges"
             label="Max charge (z)"
             value={maxCharge}
             min={1}
@@ -207,53 +210,55 @@ export function DeconvolutionDialog({
             step={1}
             onChange={(v) => setMaxCharge(Math.max(minCharge, Math.round(v ?? 8)))}
           />
-          <div className="flex flex-col">
-            <div className="flex items-center justify-between">
-              <span className="label text-xs">Tolerance</span>
-              <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-[12px]">
-                <button
-                  type="button"
-                  className={`rounded px-1 py-0.5 font-semibold transition-colors ${
-                    toleranceUnit === "da" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500"
-                  }`}
-                  onClick={() => {
-                    setToleranceUnit("da");
-                    if (tolerance > 1) setTolerance(0.02);
-                  }}
-                >
-                  Da
-                </button>
-                <button
-                  type="button"
-                  className={`rounded px-1 py-0.5 font-semibold transition-colors ${
-                    toleranceUnit === "ppm" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500"
-                  }`}
-                  onClick={() => {
-                    setToleranceUnit("ppm");
-                    if (tolerance < 0.1) setTolerance(20);
-                  }}
-                >
-                  ppm
-                </button>
+          <Hint id="lcms.decTolerance" className="w-full">
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between">
+                <span className="label text-xs">Tolerance</span>
+                <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-[12px]">
+                  <button
+                    type="button"
+                    className={`rounded px-1 py-0.5 font-semibold transition-colors ${
+                      toleranceUnit === "da" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500"
+                    }`}
+                    onClick={() => {
+                      setToleranceUnit("da");
+                      if (tolerance > 1) setTolerance(0.02);
+                    }}
+                  >
+                    Da
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded px-1 py-0.5 font-semibold transition-colors ${
+                      toleranceUnit === "ppm" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500"
+                    }`}
+                    onClick={() => {
+                      setToleranceUnit("ppm");
+                      if (tolerance < 0.1) setTolerance(20);
+                    }}
+                  >
+                    ppm
+                  </button>
+                </div>
               </div>
+              <input
+                type="number"
+                step={toleranceUnit === "da" ? 0.005 : 1}
+                min={toleranceUnit === "da" ? 0.001 : 0.5}
+                className="input mt-1 w-full text-xs"
+                value={tolerance}
+                onChange={(e) =>
+                  setTolerance(
+                    Math.max(
+                      toleranceUnit === "da" ? 0.001 : 0.5,
+                      parseFloat(e.target.value) || (toleranceUnit === "da" ? 0.02 : 20),
+                    ),
+                  )
+                }
+              />
             </div>
-            <input
-              type="number"
-              step={toleranceUnit === "da" ? 0.005 : 1}
-              min={toleranceUnit === "da" ? 0.001 : 0.5}
-              className="input mt-1 w-full text-xs"
-              value={tolerance}
-              onChange={(e) =>
-                setTolerance(
-                  Math.max(
-                    toleranceUnit === "da" ? 0.001 : 0.5,
-                    parseFloat(e.target.value) || (toleranceUnit === "da" ? 0.02 : 20),
-                  ),
-                )
-              }
-            />
-          </div>
-          <NumberSetting
+          </Hint>
+          <NumberSetting hint="lcms.decMinInt"
             label="Min intensity (%)"
             value={minRelIntensity}
             min={0.1}
@@ -421,17 +426,18 @@ export function DeconvolutionDialog({
                           </div>
                         </td>
                         <td className="px-2.5 py-2 text-right">
-                          <button
-                            type="button"
-                            className="rounded border border-ink-200 bg-surface px-2 py-1 text-[12px] font-medium text-ink-700 shadow-sm hover:bg-ink-50"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCreateComponentEics(comp);
-                            }}
-                            title="Extract Ion Chromatograms for each charge state of this component"
-                          >
-                            Create EICs
-                          </button>
+                          <Hint id="lcms.decEics">
+                            <button
+                              type="button"
+                              className="rounded border border-ink-200 bg-surface px-2 py-1 text-[12px] font-medium text-ink-700 shadow-sm hover:bg-ink-50"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCreateComponentEics(comp);
+                              }}
+                            >
+                              Create EICs
+                            </button>
+                          </Hint>
                         </td>
                       </tr>
                     );

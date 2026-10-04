@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { Hint } from "./Hint";
 import clsx from "clsx";
 import { useWorkspace } from "../context/WorkspaceContext";
 
@@ -48,29 +49,30 @@ export function MemberSelector() {
 
   return (
     <div className="relative inline-block text-left" ref={dropdownRef}>
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className={clsx(
-          "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors",
-          "border border-ink-200/70 shadow-xs",
-          "bg-surface text-ink-800 hover:bg-ink-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
-        )}
-        title="Switch Lab Member Profile"
-      >
-        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brand-500/20 text-[10px] font-semibold text-brand-700 dark:text-brand-300">
-          {displayName.charAt(0).toUpperCase()}
-        </span>
-        <span className="max-w-[120px] truncate font-semibold">{displayName}</span>
-        <svg
-          className={clsx("h-3 w-3 text-ink-400 transition-transform", open && "rotate-180")}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
+      <Hint id="app.workspace" placement="bottom">
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className={clsx(
+            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors",
+            "border border-ink-200/70 shadow-xs",
+            "bg-surface text-ink-800 hover:bg-ink-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400",
+          )}
         >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
+          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brand-500/20 text-[10px] font-semibold text-brand-700 dark:text-brand-300">
+            {displayName.charAt(0).toUpperCase()}
+          </span>
+          <span className="max-w-[120px] truncate font-semibold">{displayName}</span>
+          <svg
+            className={clsx("h-3 w-3 text-ink-400 transition-transform", open && "rotate-180")}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </Hint>
 
       {open && (
         <div

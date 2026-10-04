@@ -1,5 +1,5 @@
 import type { HelpModule } from "../types";
-import { DocCode, DocH4, DocLead, DocLi, DocNote, DocOl, DocP, DocUl } from "../docPrimitives";
+import { DocCode, DocLead, DocLi, DocNote, DocOl, DocP, DocUl } from "../docPrimitives";
 
 export const lcmsHelpModule: HelpModule = {
   title: "LCMS — help",
@@ -7,66 +7,72 @@ export const lcmsHelpModule: HelpModule = {
     {
       id: "overview",
       title: "Overview",
-      keywords: ["mzml", "tic", "spectrum", "uv", "workflow"],
-      searchText: "liquid chromatography mass spectrometry viewer",
+      keywords: ["lcms", "mzml", "start", "tic", "spectrum"],
       body: (
         <>
           <DocLead>
-            The LCMS module loads one or more <DocCode>.mzML</DocCode> runs, shows the total ion chromatogram (TIC),
-            optional extracted ion chromatogram (EIC) and UV trace, and plots the MS1 spectrum at a selected retention
-            time. Use the header to open files and workspaces; use the left sidebar for sessions and projects; use the
-            tools column for navigation, annotation, and polymer matching.
+            Open an mzML run, click the total ion chromatogram (TIC) to see the MS1 spectrum at that time, and use
+            extracted ion chromatograms (EICs) and polymer matching to find your products.
           </DocLead>
-          <DocP>
-            Backend parsing and session APIs live under <DocCode>MFP_analysis_app/web/backend/app/routers/lcms.py</DocCode>{" "}
-            and <DocCode>lcms_service.py</DocCode>. The UI talks to them through <DocCode>api.ts</DocCode>.
-          </DocP>
+          <DocOl>
+            <DocLi>
+              <strong>Open mzML…</strong> (or drop files on the page). Each file appears in the sessions list on the
+              left.
+            </DocLi>
+            <DocLi>Pick a polarity (ESI+ or ESI−) at the top of the charts.</DocLi>
+            <DocLi>Click a peak on the TIC: the spectrum below shows that scan, with the strongest peaks labelled.</DocLi>
+            <DocLi>
+              To follow one mass over time, make an <strong>EIC</strong>; to label a whole polymer series, set up{" "}
+              <strong>Polymer Match</strong>.
+            </DocLi>
+          </DocOl>
+          <DocNote>
+            Can't find a button? Press <DocCode>Ctrl K</DocCode> and type what you want to do. Hover any control for a
+            short explanation, or press <DocCode>F1</DocCode> on it to jump here.
+          </DocNote>
         </>
       ),
     },
     {
       id: "files-workspace",
       title: "Files and workspace",
-      keywords: ["mzml", "json", "upload", "save", "load workspace"],
+      keywords: ["open", "mzml", "workspace", "json", "upload"],
       body: (
         <>
-          <DocH4>Open mzML</DocH4>
           <DocUl>
             <DocLi>
-              <strong>Open mzML…</strong> accepts <DocCode>.mzML</DocCode> (multi-file). Each file becomes a session with
-              MS1 metadata and TIC points.
-            </DocLi>
-            <DocLi>While a file is loading the header button shows “Loading…”.</DocLi>
-          </DocUl>
-          <DocH4>Workspace JSON</DocH4>
-          <DocUl>
-            <DocLi>
-              <strong>Load workspace</strong> reads a previously saved JSON bundle (sessions, UI state, labels where
-              applicable).
+              <strong>Open mzML…</strong> accepts one or more <DocCode>.mzML</DocCode> files. MS1 scans are indexed on
+              upload, so re-opening is fast. The time unit stored in the file is read automatically.
             </DocLi>
             <DocLi>
-              <strong>Save workspace</strong> exports the current workspace; disabled until at least one session exists.
+              <strong>Save workspace</strong> writes the open files and all settings to a JSON file;{" "}
+              <strong>Load workspace</strong> restores it.
             </DocLi>
           </DocUl>
-          <DocNote>
-            mzML paths may be server-side temp paths after upload; keep workspace files for reproducibility if you rely
-            on re-opening without re-uploading.
-          </DocNote>
         </>
       ),
       children: [
         {
           id: "uv-csv",
-          title: "UV / DAD CSV attachment",
-          keywords: ["uv", "csv", "dad", "chromatogram"],
+          title: "UV / DAD chromatogram",
+          keywords: ["uv", "csv", "dad", "chromatogram", "offset"],
           body: (
             <>
               <DocP>
-                Many mzML files contain MS only. Attach a separate UV trace as CSV (time + signal columns) from the LC
-                software. The chart offers <strong>Attach UV CSV</strong>, <strong>Replace</strong>, and{" "}
-                <strong>Remove</strong>. Column detection tries to infer RT units and axes; warnings appear if
-                ambiguous.
+                Most mzML files contain only MS scans. Export the UV/DAD trace from your LC software as CSV (time and
+                signal columns) and use <strong>Attach CSV…</strong> on the UV chart.
               </DocP>
+              <DocUl>
+                <DocLi>
+                  The time unit of the CSV is read from its header (e.g. <DocCode>Time (sec)</DocCode>); otherwise
+                  minutes are assumed. Change it under Display → <strong>UV CSV time unit</strong>.
+                </DocLi>
+                <DocLi>
+                  The UV detector usually sits before or after the MS, so its peaks are shifted in time. Set the shift
+                  under the UV chart's <strong>Label options → UV↔MS alignment</strong>, or use{" "}
+                  <strong>Auto-align</strong>.
+                </DocLi>
+              </DocUl>
             </>
           ),
         },
@@ -74,469 +80,384 @@ export const lcmsHelpModule: HelpModule = {
     },
     {
       id: "sessions-projects",
-      title: "Sessions sidebar and projects",
-      keywords: ["session", "project", "pin", "sidebar"],
+      title: "Sessions and projects",
+      keywords: ["session", "project", "folder", "remove", "pin"],
       body: (
-        <>
-          <DocP>
-            Each loaded mzML appears as a session. Click a session to make it active; the ribbon shows the active dataset
-            summary (name, MS1 count, RT span, polarity filter, UV state).
-          </DocP>
-          <DocH4>Projects</DocH4>
-          <DocP>
-            Sessions can be grouped into projects for organization. Use the sidebar controls to create projects and move
-            sessions between them. Pinning and hover-expand behavior keeps long lists manageable.
-          </DocP>
-        </>
-      ),
-    },
-    {
-      id: "view-tab",
-      title: "View tab (polarity, RT units, panels, overlays)",
-      keywords: ["polarity", "positive", "negative", "seconds", "minutes", "overlay"],
-      body: (
-        <>
-          <DocUl>
-            <DocLi>
-              <strong>Polarity</strong> filters which MS1 scans contribute to TIC and spectrum (positive / negative /
-              all). If the file has no scans of the chosen polarity you get a message instead of the other polarity's
-              data; in dual mode the polarity that exists is still shown.
-            </DocLi>
-            <DocLi>
-              <strong>RT display unit</strong> switches how retention times are shown (minutes or seconds). The time
-              unit stored in each mzML file is read automatically; this setting never rescales the data.
-            </DocLi>
-            <DocLi>
-              <strong>Show TIC / spectrum / UV</strong> toggles entire chart cards for a cleaner layout when you only
-              need one view.
-            </DocLi>
-            <DocLi>
-              <strong>Overlays</strong> let you plot TIC, UV, and/or MS1 spectrum traces from additional sessions on the
-              same axes (after enabling the overlay checkboxes and picking session IDs). Colors come from a fixed
-              palette per overlay index.
-            </DocLi>
-          </DocUl>
-        </>
-      ),
-    },
-    {
-      id: "primary-actions",
-      title: "Primary Actions (header strip in main column)",
-      keywords: ["primary", "actions", "ribbon"],
-      body: (
-        <>
-          <DocP>
-            The <strong>Primary Actions</strong> card groups the most common file and spectrum operations: opening mzML,
-            attaching UV, running quant shortcuts exposed there, and other one-click tasks wired in the main column. Exact
-            buttons evolve with releases—hover tooltips on each control describe the current action.
-          </DocP>
-        </>
+        <DocUl>
+          <DocLi>Each open file is a session. Click one to show it; the line above the charts summarises it.</DocLi>
+          <DocLi>
+            <strong>+ Project</strong> makes a folder; move files into it with the <strong>Move to project</strong> menu
+            on each row.
+          </DocLi>
+          <DocLi>Pin the list to keep it open; unpinned it opens when you hover the left edge.</DocLi>
+        </DocUl>
       ),
     },
     {
       id: "tools-panel",
-      title: "Workflow and Tools column (tabs)",
-      keywords: ["tools", "sidebar", "tabs", "navigate", "view", "annotate", "polymer"],
+      title: "Tools panel: Analysis and Display",
+      keywords: ["tools", "panel", "analysis", "display", "collapse"],
       body: (
         <>
-          <DocP>
-            The right-hand column hosts collapsible <strong>Workflow & Tools</strong> with inner tabs:{" "}
-            <strong>Navigate</strong>, <strong>View</strong>, <strong>Annotate</strong>, and <strong>Polymer</strong>.
-            Use the collapse control to maximize chart area on small screens.
-          </DocP>
+          <DocP>The panel on the right has two tabs. Collapse it with the arrow to give the charts more room.</DocP>
           <DocUl>
             <DocLi>
-              <strong>Navigate</strong>: RT stepping, jump, optional TIC region integration, UV offset / auto-align.
+              <strong>Analysis</strong>: scan navigation, EIC and Find m/z, jump to a retention time, spectrum peak
+              labels, polymer & reaction matching, feature table, comparison and label export.
             </DocLi>
             <DocLi>
-              <strong>View</strong>: polarity, RT units, which charts are visible, overlay session pickers.
-            </DocLi>
-            <DocLi>
-              <strong>Annotate</strong>: spectrum label thresholds, UV transfer and label layout, optional debug toggles
-              when present.
-            </DocLi>
-            <DocLi>
-              <strong>Polymer</strong>: quick access to matcher settings and the full polymer dialog.
+              <strong>Display</strong>: units, polarity, which charts are shown, TIC region selection, overlays of other
+              files and CSV exports.
             </DocLi>
           </DocUl>
         </>
-      ),
-    },
-    {
-      id: "dataset-ribbon",
-      title: "Dataset ribbon (active session)",
-      keywords: ["ribbon", "active", "session"],
-      body: (
-        <DocP>
-          Below the header, the ribbon summarizes the active session: truncated filename, MS1 scan count, approximate RT
-          span, polarity filter label, and whether UV is attached. It updates when you switch sessions or change filters.
-        </DocP>
       ),
     },
     {
       id: "navigate-tab",
-      title: "Navigate tab (RT stepping, jump, region, UV align)",
-      keywords: ["rt", "jump", "region", "align", "offset"],
+      title: "Analysis tab: moving through the run",
+      keywords: ["navigate", "scan", "jump", "rt", "next", "previous"],
       body: (
-        <>
-          <DocH4>RT controls</DocH4>
-          <DocUl>
-            <DocLi>
-              Step buttons move the selected RT to the previous/next MS1 scan (or similar discretization depending on
-              data).
-            </DocLi>
-            <DocLi>
-              <strong>Jump</strong> parses typed RT text and loads the spectrum nearest that time (respecting RT unit
-              mode).
-            </DocLi>
-            <DocLi>
-              <strong>Region select on TIC</strong> (when enabled) lets you drag a retention-time span; releasing runs
-              “sum spectrum” logic for that span instead of a single scan (see chart help).
-            </DocLi>
-          </DocUl>
-          <DocH4>UV offset and auto-align</DocH4>
-          <DocP>
-            UV time axis may differ slightly from MS acquisition clocks. Set a manual offset (minutes) or run auto-align
-            to estimate a shift that lines up UV features with MS/TIC features. Clicking the UV chart passes both display
-            RT and corrected UV RT into spectrum loading when applicable.
-          </DocP>
-        </>
+        <DocUl>
+          <DocLi>
+            <strong>Prev / Next / First / Last</strong> step through MS1 scans; the arrow keys do the same.
+          </DocLi>
+          <DocLi>
+            <strong>Jump to RT</strong> opens the scan nearest the time you type (in the RT display unit).
+          </DocLi>
+          <DocLi>
+            <strong>EIC…</strong> and <strong>Find m/z…</strong> are described under Dialogs.
+          </DocLi>
+        </DocUl>
       ),
     },
     {
       id: "annotate-tab",
-      title: "Annotate tab (spectrum labels, UV labels, transfer)",
-      keywords: ["label", "annotate", "top n", "transfer", "uv label", "stairs"],
+      title: "Analysis tab: spectrum labels",
+      keywords: ["labels", "annotate", "top n", "relative intensity", "drag"],
       body: (
-        <>
-          <DocH4>MS1 spectrum labels</DocH4>
-          <DocUl>
-            <DocLi>
-              <strong>Annotate spectrum</strong> toggles automatic peak picking labels on the MS1 plot.
-            </DocLi>
-            <DocLi>
-              <strong>Top N</strong> limits how many peaks are labeled by descending intensity.
-            </DocLi>
-            <DocLi>
-              <strong>Min relative intensity</strong> drops weak peaks as a fraction of the base peak in the current
-              spectrum.
-            </DocLi>
-            <DocLi>
-              <strong>Enable drag labels</strong> allows Plotly annotation drag; positions persist per label where the UI
-              stores offsets.
-            </DocLi>
-          </DocUl>
-          <DocH4>UV chromatogram labels</DocH4>
-          <DocUl>
-            <DocLi>
-              Transfer controls copy MS/polymer labels onto UV at the current anchor RT (with optional snap-to-UV peak).
-            </DocLi>
-            <DocLi>
-              <strong>UV label orientation</strong> switches vertical vs horizontal annotation text.
-            </DocLi>
-            <DocLi>
-              Stair parameters control auto-arrange spacing when many labels overlap in RT clusters.
-            </DocLi>
-            <DocLi>
-              <strong>Auto arrange</strong> rebuilds label anchor offsets into local “stairs” grouped by hydroxy count
-              parsed from label text (polymer-style labels).
-            </DocLi>
-            <DocLi>
-              Graph settings for UV include optional <strong>connector line color</strong> and <strong>opacity</strong>{" "}
-              for leader lines (Plotly <DocCode>arrowcolor</DocCode>).
-            </DocLi>
-          </DocUl>
-        </>
+        <DocUl>
+          <DocLi>
+            <strong>Annotate spectrum peaks</strong> labels the strongest peaks with their m/z.
+          </DocLi>
+          <DocLi>
+            <strong>Top N</strong> (default 10) and <strong>Min rel intensity</strong> (default 0.05 = 5% of the base
+            peak) decide which peaks get a label.
+          </DocLi>
+          <DocLi>
+            With <strong>dragging labels</strong> on, move overlapping labels by hand; <strong>Reset positions</strong>{" "}
+            on the spectrum puts them back.
+          </DocLi>
+        </DocUl>
+      ),
+    },
+    {
+      id: "view-tab",
+      title: "Display tab",
+      keywords: ["polarity", "units", "panels", "overlay", "region", "display"],
+      body: (
+        <DocUl>
+          <DocLi>
+            <strong>Polarity</strong>: all scans, ESI+ only, ESI− only, or both side by side (Dual). If the file has no
+            scans of the chosen polarity you get a message instead of the other polarity's data.
+          </DocLi>
+          <DocLi>
+            <strong>RT display unit</strong> only changes how times are shown; the file's own unit is always used for
+            the data.
+          </DocLi>
+          <DocLi>
+            <strong>Region select</strong>: drag across the TIC to select a time window, then{" "}
+            <strong>Sum RT window</strong> sums all MS1 scans in it. <strong>Ignore m/z</strong> keeps a dominant
+            contaminant from swamping the summed spectrum's scale.
+          </DocLi>
+          <DocLi>
+            <strong>Overlays</strong>: tick other open files to draw their TIC, UV, spectrum or EICs on the same chart.
+          </DocLi>
+        </DocUl>
       ),
     },
     {
       id: "charts-tic",
       title: "TIC chart",
-      keywords: ["tic", "chromatogram", "click"],
+      keywords: ["tic", "chromatogram", "slice", "integrate", "sync"],
       body: (
-        <>
-          <DocP>
-            Clicking the TIC loads the MS1 spectrum at that retention time (unless region mode is active). Hover shows RT
-            and intensity. Use graph settings to change colors, line width, axis limits, grid, and title sizes.
-          </DocP>
-        </>
+        <DocUl>
+          <DocLi>
+            <strong>Inspect</strong>: click the TIC to open the scan at that time.
+          </DocLi>
+          <DocLi>
+            <strong>Slice</strong>: drag across a peak to integrate its area between the two times (undo with Ctrl+Z).
+          </DocLi>
+          <DocLi>
+            With overlays: <strong>Raw</strong> shared scale, <strong>% Norm</strong> each trace to its own base peak,
+            or <strong>Stacked</strong>.
+          </DocLi>
+          <DocLi>
+            <strong>Sync zoom</strong> zooms the TIC and UV chromatograms together.
+          </DocLi>
+        </DocUl>
       ),
     },
     {
       id: "charts-eic",
       title: "EIC chart",
-      keywords: ["eic", "mz", "tolerance"],
+      keywords: ["eic", "xic", "extracted ion", "integrate"],
       body: (
-        <>
-          <DocP>
-            The extracted ion chromatogram sums MS1 intensity inside an m/z window around a target mass. Open the EIC
-            dialog to set target m/z and tolerance (Da). The backend returns time points and intensities for plotting.
-          </DocP>
-        </>
-      ),
-    },
-    {
-      id: "charts-uv",
-      title: "UV chromatogram chart",
-      keywords: ["uv", "chromatogram", "svg", "label"],
-      body: (
-        <>
-          <DocP>
-            When UV CSV is attached, the trace renders with the same RT axis scaling as MS (plus offset). Clicking
-            selects spectrum loading with UV RT context. <strong>Save SVG</strong> exports using the chart pixel size.
-            Use <strong>Publication</strong> export on LCMS charts for preset or manual plot-area sizes: SVG is vector,
-            while PNG uses the selected DPI and does not depend on the current browser panel size. Legends stack
-            vertically on the right with extra export space.
-          </DocP>
-          <DocP>
-            Transferred labels support edit/delete/clear and draggable annotation handles when enabled in graph config.
-          </DocP>
-        </>
+        <DocP>
+          An extracted ion chromatogram sums MS1 intensity in a window (Da or ppm) around one m/z, so you can see when
+          that mass elutes. <strong>Integrate</strong> reports each EIC's peak area, apex time and height;{" "}
+          <strong>Clear</strong> removes them. EICs can also be made from a spectrum peak, the deconvolution results,
+          the Kendrick plot and the expected-products list.
+        </DocP>
       ),
     },
     {
       id: "charts-spectrum",
       title: "MS1 spectrum chart",
-      keywords: ["spectrum", "mz", "intensity"],
+      keywords: ["spectrum", "ms1", "butterfly", "deconvolute", "polymer studio"],
       body: (
-        <>
-          <DocP>
-            Bar or line styling depends on graph settings. Labels (manual or automatic) render as Plotly annotations.
-            Exports (CSV/JSON) typically include the visible m/z–intensity pairs and label metadata where implemented in
-            the view.
-          </DocP>
-        </>
+        <DocUl>
+          <DocLi>
+            Type an m/z (or pick a detected peak) and <strong>Inspect</strong> it, or create its EIC.
+          </DocLi>
+          <DocLi>
+            <strong>Zoom / Move labels</strong> switches between drawing zoom boxes and dragging labels.
+          </DocLi>
+          <DocLi>
+            With overlays: <strong>Overlay</strong>, <strong>Butterfly</strong> (mirrored, head-to-tail),{" "}
+            <strong>Butterfly %</strong> or <strong>% Norm</strong>. Press <DocCode>B</DocCode> to cycle.
+          </DocLi>
+          <DocLi>
+            <strong>Polymer Studio</strong> tunes polymer matching while the labels update live;{" "}
+            <strong>Deconvolute</strong> turns a multiply charged envelope into neutral masses.
+          </DocLi>
+        </DocUl>
+      ),
+    },
+    {
+      id: "charts-uv",
+      title: "UV chromatogram chart",
+      keywords: ["uv", "labels", "auto label", "transfer", "stairs"],
+      body: (
+        <DocUl>
+          <DocLi>
+            <strong>Auto label peaks</strong> finds UV peaks and labels each with the main m/z of the MS scan at that
+            time; <strong>Label RT</strong> and <strong>Custom</strong> add single labels.
+          </DocLi>
+          <DocLi>
+            <strong>Label options</strong>: detection threshold (fraction of the tallest UV peak, default 0.05) and
+            spacing (default 0.2 min), label orientation and snapping, MS transfer, grouping identical labels,
+            auto-arranged stairs, and the UV↔MS time offset.
+          </DocLi>
+        </DocUl>
       ),
     },
     {
       id: "find-mz",
-      title: "Find m/z sweep",
-      keywords: ["find", "mz", "search"],
+      title: "Find m/z",
+      keywords: ["find", "mz", "search", "locate"],
       body: (
         <DocP>
-          Opens from the Navigate tools when available. Enter a target m/z and tolerance (Da). The tool scans chromatogram
-          data for hits and can move the RT cursor to the strongest match. Close the dialog with the dismiss control when
-          finished.
-        </DocP>
-      ),
-    },
-    {
-      id: "status-bar",
-      title: "Status bar",
-      keywords: ["status", "footer"],
-      body: (
-        <DocP>
-          The footer shows a compact summary of the active session and UV offset so you always know what data the charts
-          are bound to without opening the ribbon.
+          Analysis tab → <strong>Find m/z…</strong>. Enter a target m/z and tolerance (Da or ppm). It sweeps all MS1
+          scans of the current polarity and jumps to the time where that mass is most intense.
         </DocP>
       ),
     },
     {
       id: "dialogs",
-      title: "Dialogs (Find m/z, EIC, custom UV label, graph settings, polymer)",
-      keywords: ["dialog", "modal", "find", "eic"],
+      title: "Dialogs",
+      keywords: ["dialog", "eic", "feature table", "comparison", "deconvolution", "kendrick"],
       body: (
-        <>
-          <DocUl>
-            <DocLi>
-              <strong>Find m/z</strong> scans across RT for a target mass within tolerance and can jump the RT cursor to
-              hits.
-            </DocLi>
-            <DocLi>
-              <strong>EIC dialog</strong> configures target m/z and tolerance before fetching chromatogram data.
-            </DocLi>
-            <DocLi>
-              <strong>Custom UV label</strong> creates a text label snapped (or not) to a typed RT on UV.
-            </DocLi>
-            <DocLi>
-              <strong>Graph settings</strong> is a tabbed modal for TIC, UV, and MS1 spectrum appearance (titles, axis
-              limits, fonts, line widths, UV label connector styling, etc.).
-            </DocLi>
-            <DocLi>
-              <strong>Polymer dialog</strong> edits the full polymer matcher configuration sent to the backend.
-            </DocLi>
-          </DocUl>
-        </>
+        <DocUl>
+          <DocLi>
+            <strong>EIC</strong>: target m/z and tolerance for a new extracted ion chromatogram.
+          </DocLi>
+          <DocLi>
+            <strong>Feature table</strong>: integrated features (m/z, RT, area, height) you can label, annotate and
+            export.
+          </DocLi>
+          <DocLi>
+            <strong>Comparison</strong>: a matrix of feature area or height across the open files; rows group by expected
+            product or label first, otherwise by m/z.
+          </DocLi>
+          <DocLi>
+            <strong>Deconvolution</strong>: finds charge states (default z 1–8) belonging to one neutral mass.
+          </DocLi>
+          <DocLi>
+            <strong>Kendrick plot</strong>: mass defect against m/z for a repeat unit; one polymer series lines up
+            horizontally.
+          </DocLi>
+          <DocLi>
+            <strong>Expected products</strong>: monomer/dimer/trimer products of your monomers and whether each is in the
+            spectrum.
+          </DocLi>
+        </DocUl>
       ),
     },
     {
       id: "graph-settings-detail",
-      title: "Graph Settings dialog (TIC / UV / MS1)",
-      keywords: ["graph", "settings", "axis", "font", "height"],
+      title: "Chart design",
+      keywords: ["design", "graph settings", "title", "axis", "colour", "font"],
       body: (
-        <>
-          <DocP>
-            Opened from chart cards. Three sections mirror the three plot types. Common controls: graph title, axis
-            titles, height in pixels, line color/width (or bar width for spectrum mode), title and tick font sizes, grid
-            and frame style, manual axis min/max (leave blank for auto-scale on that axis), and label fonts/colors.
-          </DocP>
-          <DocP>
-            UV-specific options may include connector line color and opacity for label leader lines. Use{" "}
-            <strong>Set current as default</strong> inside the dialog to persist defaults to browser storage for new
-            sessions.
-          </DocP>
-        </>
+        <DocP>
+          <strong>Design</strong> on each chart sets its title, axis titles and limits (blank = automatic), size,
+          colours, line or bar width, fonts, grid and frame. <strong>Set current as default</strong> keeps them for new
+          files. Figures for papers come from <strong>Export</strong> (see Exports).
+        </DocP>
       ),
     },
     {
       id: "polymer-controls",
-      title: "Polymer tab — UI controls",
-      keywords: ["polymer", "monomer", "dp", "tolerance", "adduct"],
+      title: "Polymer & reaction matching",
+      keywords: ["polymer", "monomer", "dp", "tolerance", "adduct", "oligomer"],
       body: (
         <>
           <DocP>
-            The polymer tab surfaces the same conceptual settings as the desktop matcher: monomer table (name,_abbr,
-            mass, category), shared tolerances, max degree of polymerization (DP), bond and extra mass deltas, charge
-            list, optional decarboxylation / oxidation / cluster modes, adduct toggles (Na/K/Cl/formate/acetate), minimum
-            relative intensity for peaks considered, and advanced/debug flags when exposed.
+            Labels spectrum peaks that match compositions of your monomers. Needs ESI+ or ESI− (not All).
           </DocP>
+          <DocOl>
+            <DocLi>
+              Analysis tab → <strong>Polymer Match…</strong>. Tick your monomers (or type others as{" "}
+              <DocCode>Name Mass</DocCode>).
+            </DocLi>
+            <DocLi>
+              Check <strong>Per-bond delta</strong>: −18.010565 for condensation (ester/amide), 0 for addition
+              polymers. Add end groups as <strong>Extra delta</strong>.
+            </DocLi>
+            <DocLi>
+              Set <strong>Max DP</strong> (start with 3–6), tolerance (10–20 ppm high-res, 0.05–0.2 Da low-res), charges
+              and adducts.
+            </DocLi>
+            <DocLi>
+              Turn on <strong>Enable polymer matching</strong>. Labels like <DocCode>2-GA + 1-His</DocCode> appear on
+              matching peaks.
+            </DocLi>
+          </DocOl>
           <DocP>
-            Running the matcher sends current MS1 peak list and settings to the API; returned labels attach to spectrum
-            annotations with polymer vs custom provenance where distinguished in the UI.
+            <strong>Expected products</strong> lists what should be there and what was found;{" "}
+            <strong>Kendrick plot</strong> shows whole series; <strong>Save as defaults</strong> keeps the settings for
+            new files.
           </DocP>
         </>
       ),
     },
     {
       id: "polymer-math",
-      title: "Polymer matching — how the math works",
-      keywords: ["algorithm", "mass", "ppm", "composition", "variant", "score"],
-      searchText:
-        "compute_polymer_best_by_peak_sorted neutral mz_pred tolerance variants adducts compositions confidence",
+      title: "Polymer matching: how it's calculated",
+      keywords: ["algorithm", "mass", "ppm", "composition", "variant", "calculation"],
       body: (
         <>
-          <DocLead>
-            The reference implementation is <DocCode>compute_polymer_best_by_peak_sorted</DocCode> in{" "}
-            <DocCode>MFP_analysis_app/lab_gui/lcms_polymer_match.py</DocCode> (shared logic conceptually with the Qt
-            app). The web UI maps directly to these parameters.
-          </DocLead>
-          <DocH4>1) Peak filtering</DocH4>
-          <DocP>
-            MS1 peaks are sorted by m/z. The global maximum intensity <DocCode>max_int</DocCode> is found. Only peaks with
-            intensity ≥ <DocCode>min_rel_int × max_int</DocCode> participate in matches (relative threshold).
-          </DocP>
-          <DocH4>2) Composition enumeration</DocH4>
-          <DocP>
-            For <DocCode>n</DocCode> enabled monomer types, the code enumerates non-negative integer count vectors{" "}
-            <DocCode>counts[]</DocCode> with total monomer units <DocCode>dp</DocCode> between 1 and <DocCode>max_dp</DocCode>
-            . Before enumerating, an estimated composition count is computed; if it exceeds ~2M,{" "}
-            <DocCode>PolymerSearchTooLarge</DocCode> is raised—reduce monomers, lower max DP, or disable variant/adduct
-            combinations.
-          </DocP>
-          <DocH4>3) Neutral polymer mass</DocH4>
-          <DocP>
-            For each composition, monomer masses are summed, then <DocCode>(dp − 1) × bond_delta + extra_delta</DocCode>{" "}
-            accounts for inter-monomer bonds and fixed extras. That yields a neutral “poly” mass before optional
-            variants.
-          </DocP>
-          <DocH4>4) Variants (oxidation / decarb)</DocH4>
-          <DocP>
-            If compatibility mode is off, <DocCode>generate_variants</DocCode> builds small-mass-shift tags (oxidation /
-            CO₂ loss and optional combined) controlled by the oxid/decarb toggles and “allow combo”. Each variant adds{" "}
-            <DocCode>v.mass_delta</DocCode> to the neutral mass and maps to a display <DocCode>kind</DocCode> bucket (poly,
-            ox, decarb, oxdecarb, …).
-          </DocP>
-          <DocH4>5) Charge and adducts</DocH4>
-          <DocP>
-            Proton adducts scale with charge: for each charge state <DocCode>z</DocCode> in the configured list the
-            predicted m/z is <DocCode>mz_pred = (neutral_variant + z × 1.007276) / z</DocCode>, labelled{" "}
-            <DocCode>[M+zH]^z+</DocCode> (or <DocCode>[M−zH]^z−</DocCode> in negative mode). Other adducts (Na, K, Cl,
-            formate, acetate) are matched as singly charged ions only. A custom adduct with an explicit charge uses
-            its mass as the total adduct mass for that charge: <DocCode>(neutral_variant + mass) / charge</DocCode>.
-            Cluster mode applies the same rules to the 2M mass.
-          </DocP>
-          <DocH4>6) Tolerance test</DocH4>
-          <DocP>
-            <DocCode>tol_unit</DocCode> either fixes a Da window or converts to Da from ppm at the predicted m/z via{" "}
-            <DocCode>_tol_to_da</DocCode>. The matcher calls <DocCode>find_best_peak_match</DocCode> on the sorted m/z
-            array preferring higher intensity ties inside tolerance.
-          </DocP>
-          <DocH4>7) Choosing the “best” label per peak and kind</DocH4>
-          <DocP>
-            For each candidate that hits a peak, <DocCode>set_best</DocCode> keeps the winner per (peak index, kind) with
-            tie order: <strong>lower ppm error</strong>, then <strong>higher peak intensity</strong>, then{" "}
-            <strong>lower absolute Da error</strong>.
-          </DocP>
-          <DocH4>8) Optional confidence gate</DocH4>
-          <DocP>
-            If the environment variable <DocCode>LAB_GUI_POLYMER_MIN_SCORE</DocCode> is set to a number in [0, 1], a
-            heuristic score mixing normalized ppm closeness and intensity can drop weak hits. In normal desktop use
-            this is usually unset (no gating).
-          </DocP>
+          <DocOl>
+            <DocLi>Only peaks at or above Min rel intensity × the base peak take part.</DocLi>
+            <DocLi>Every combination of the ticked monomers from 1 up to Max DP units is enumerated.</DocLi>
+            <DocLi>
+              Neutral mass = sum of monomer masses + (DP − 1) × per-bond delta + extra delta.
+            </DocLi>
+            <DocLi>
+              Variants (water loss, −CO₂, +O, 2M dimers) add their mass shift when ticked.
+            </DocLi>
+            <DocLi>
+              For each charge z: m/z = (M + z × 1.007276) / z, labelled [M+zH]<sup>z+</sup> (or [M−zH]<sup>z−</sup>).
+              Na, K, Cl, formate and acetate adducts are matched as singly charged only; a custom adduct uses its own
+              mass and charge.
+            </DocLi>
+            <DocLi>
+              A peak matches when it is within the tolerance (Da, or ppm of the predicted m/z). Per peak, the best match
+              has the smallest ppm error, then the higher intensity.
+            </DocLi>
+          </DocOl>
+          <DocNote>
+            Too many monomers with a large Max DP is refused as "search too large": tick fewer monomers or lower Max DP.
+          </DocNote>
         </>
       ),
     },
     {
       id: "polymer-example",
-      title: "Polymer example (walk-through)",
-      keywords: ["example", "his", "glycolic", "tutorial"],
+      title: "Polymer example",
+      keywords: ["example", "walk-through", "glycolic", "histidine"],
       body: (
-        <>
-          <DocOl>
-            <DocLi>
-              Enable two monomers, e.g. hydroxy acid “GA” and amino acid “His”, with accurate monoisotopic masses from
-              your preset table.
-            </DocLi>
-            <DocLi>
-              Set charges to <DocCode>[1]</DocCode> for simple protonated species unless you expect multimers.
-            </DocLi>
-            <DocLi>
-              Set <strong>max DP</strong> to a small number (3–6) while testing so the composition search stays fast.
-            </DocLi>
-            <DocLi>
-              Choose tolerance: start with 10–20 ppm for high-res or 0.05–0.2 Da for low-res data; tighten if you get
-              ambiguous labels.
-            </DocLi>
-            <DocLi>
-              Run the matcher on a spectrum that contains oligomer ladders. You should see labels like{" "}
-              <DocCode>2-GA + 1-His … z=1</DocCode> when a composition’s predicted m/z lands on a peak within tolerance.
-            </DocLi>
-            <DocLi>
-              Inspect isotope cluster spacing: if labels systematically miss, verify polarity, adduct toggles, and bond
-              / extra deltas first before widening tolerance blindly.
-            </DocLi>
-          </DocOl>
-        </>
+        <DocP>
+          Tick glycolic acid (GA) and histidine (His), keep charge 1, Max DP 4 and 0.02 Da. On a spectrum with an
+          oligomer ladder you should see labels like <DocCode>2-GA + 1-His</DocCode>. If labels systematically miss,
+          check polarity, adducts and the per-bond delta before widening the tolerance.
+        </DocP>
       ),
     },
     {
       id: "exports",
-      title: "Exports and downloads",
-      keywords: ["csv", "json", "download", "save", "svg", "png"],
+      title: "Exports",
+      keywords: ["export", "csv", "svg", "png", "publication", "download"],
       body: (
-        <>
-          <DocP>
-            Anywhere the UI offers CSV/JSON/SVG/PNG export, the file is generated in-browser (Blob + download) or via
-            Plotly’s <DocCode>downloadImage</DocCode> for static chart images. Workspace JSON is the aggregate state
-            snapshot from the save action in the header.
-          </DocP>
-        </>
+        <DocUl>
+          <DocLi>
+            <strong>Export</strong> on each chart: 1:1 as on screen, or at a journal size (ACS, Nature, RSC) as SVG
+            (vector) or PNG at the chosen DPI, with a white background.
+          </DocLi>
+          <DocLi>
+            Display tab: <strong>Spectrum CSV</strong>, <strong>UV CSV</strong>, <strong>TIC overlay CSV</strong>.
+          </DocLi>
+          <DocLi>
+            Analysis tab: <strong>Export labels (all scans)</strong> — the labelled peaks of every MS1 scan.
+          </DocLi>
+          <DocLi>Feature table, comparison, deconvolution and expected products each have their own CSV export.</DocLi>
+        </DocUl>
       ),
+    },
+    {
+      id: "shortcuts",
+      title: "Keyboard shortcuts",
+      keywords: ["keyboard", "shortcut", "keys", "hotkey"],
+      body: (
+        <DocUl>
+          <DocLi>
+            <DocCode>←</DocCode> / <DocCode>→</DocCode> previous / next scan
+          </DocLi>
+          <DocLi>
+            <DocCode>B</DocCode> cycle the spectrum overlay mode · <DocCode>O</DocCode> overlay spectra on/off
+          </DocLi>
+          <DocLi>
+            <DocCode>Esc</DocCode> clear the TIC region selection
+          </DocLi>
+          <DocLi>
+            <DocCode>Ctrl Z</DocCode> / <DocCode>Ctrl Y</DocCode> undo / redo slices and EIC actions
+          </DocLi>
+          <DocLi>
+            <DocCode>Ctrl K</DocCode> find a control · <DocCode>F1</DocCode> help for the control under the pointer
+          </DocLi>
+        </DocUl>
+      ),
+    },
+    {
+      id: "status-bar",
+      title: "Status bar",
+      keywords: ["status", "footer"],
+      body: <DocP>The line at the bottom shows the active file, polarity and UV offset, and short status messages.</DocP>,
     },
     {
       id: "troubleshooting",
       title: "Troubleshooting",
-      keywords: ["error", "empty", "failed", "backend"],
+      keywords: ["error", "problem", "missing", "no spectrum"],
       body: (
-        <>
-          <DocUl>
-            <DocLi>
-              <strong>No spectrum</strong>: confirm a session is active and you clicked the TIC (or jumped RT) while MS1
-              data exists for that polarity.
-            </DocLi>
-            <DocLi>
-              <strong>UV missing</strong>: attach CSV; mzML alone often has no DAD trace.
-            </DocLi>
-            <DocLi>
-              <strong>Polymer “too large”</strong>: reduce search space per the math section (fewer monomers, smaller max
-              DP, fewer variant/adduct combos).
-            </DocLi>
-            <DocLi>
-              <strong>Network errors</strong>: ensure FastAPI is running and the Vite proxy targets the same port as{" "}
-              <DocCode>api.ts</DocCode>.
-            </DocLi>
-          </DocUl>
-        </>
+        <DocUl>
+          <DocLi>
+            <strong>No spectrum</strong>: click the TIC (or jump to an RT) and check that the file has scans of the
+            chosen polarity.
+          </DocLi>
+          <DocLi>
+            <strong>No UV</strong>: attach the UV CSV; mzML files usually have no UV trace.
+          </DocLi>
+          <DocLi>
+            <strong>Polymer labels missing</strong>: polarity must be ESI+ or ESI−, at least one monomer ticked, and
+            matching enabled.
+          </DocLi>
+          <DocLi>
+            <strong>"Search too large"</strong>: fewer monomers, smaller Max DP, fewer variants.
+          </DocLi>
+          <DocLi>
+            <strong>Network errors</strong>: the analysis server isn't reachable; ask whoever runs it to restart it.
+          </DocLi>
+        </DocUl>
       ),
     },
   ],
