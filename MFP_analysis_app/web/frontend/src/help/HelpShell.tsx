@@ -2,6 +2,8 @@ import clsx from "clsx";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type { HelpModule, HelpTopic } from "./types";
 import { filterTopicTree, flattenTopics } from "./topicUtils";
+import { useHelp } from "./HelpProvider";
+import { Hint } from "../components/Hint";
 
 function TocRow({
   id,
@@ -68,10 +70,12 @@ function renderBodies(topics: HelpTopic[]): ReactNode[] {
 export function HelpShell({
   open,
   module,
+  initialTopic,
   onClose,
 }: {
   open: boolean;
   module: HelpModule;
+  initialTopic?: string;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -106,6 +110,10 @@ export function HelpShell({
       document.getElementById(`help-topic-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }, []);
+
+  useEffect(() => {
+    if (open && initialTopic) scrollToId(initialTopic);
+  }, [open, initialTopic, scrollToId]);
 
   const onSearchChange = (value: string) => {
     setQuery(value);
@@ -171,14 +179,17 @@ export function HelpShell({
   );
 }
 
-export function HelpOpenButton({ onClick }: { onClick: () => void }) {
+export function HelpOpenButton() {
+  const { openHelp } = useHelp();
   return (
-    <button
-      type="button"
-      className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100"
-      onClick={onClick}
-    >
-      Help
-    </button>
+    <Hint id="app.help" placement="bottom">
+      <button
+        type="button"
+        className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100"
+        onClick={() => openHelp()}
+      >
+        Help
+      </button>
+    </Hint>
   );
 }

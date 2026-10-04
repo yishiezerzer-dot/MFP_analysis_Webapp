@@ -21,6 +21,12 @@ interface TooltipProps {
   /** Show delay in ms (default 400). */
   delay?: number;
   className?: string;
+  /** Extra classes for the tooltip bubble (e.g. a wider max width). */
+  tipClassName?: string;
+  /** Marks the wrapper for the control finder and tours (`data-control`). */
+  dataControl?: string;
+  /** Called when the pointer or keyboard focus enters / leaves the trigger. */
+  onActiveChange?: (active: boolean) => void;
 }
 
 export function Tooltip({
@@ -31,6 +37,9 @@ export function Tooltip({
   side,
   delay = 400,
   className,
+  tipClassName,
+  dataControl,
+  onActiveChange,
 }: TooltipProps) {
   const tip = content ?? text;
   const pos = placement ?? side ?? "top";
@@ -96,16 +105,29 @@ export function Tooltip({
     return () => document.removeEventListener("keydown", onKey);
   }, [visible, hide]);
 
-  if (!tip) return <>{children}</>;
+  if (!tip && !dataControl) return <>{children}</>;
 
   return (
     <span
       ref={wrapRef}
       className={`relative inline-flex ${className ?? ""}`}
-      onMouseEnter={show}
-      onMouseLeave={hide}
-      onFocus={show}
-      onBlur={hide}
+      data-control={dataControl}
+      onMouseEnter={() => {
+        show();
+        onActiveChange?.(true);
+      }}
+      onMouseLeave={() => {
+        hide();
+        onActiveChange?.(false);
+      }}
+      onFocus={() => {
+        show();
+        onActiveChange?.(true);
+      }}
+      onBlur={() => {
+        hide();
+        onActiveChange?.(false);
+      }}
       onClick={hide}
       aria-describedby={visible ? id : undefined}
     >
@@ -123,7 +145,7 @@ export function Tooltip({
               zIndex: 9999,
               pointerEvents: "none",
             }}
-            className="max-w-[220px] rounded-[5px] bg-ink-900 px-2.5 py-1.5 text-[12px] leading-snug text-white shadow-lg"
+            className={`${tipClassName ?? "max-w-[220px]"} rounded-[5px] bg-ink-900 px-2.5 py-1.5 text-[12px] leading-snug text-white shadow-lg`}
           >
             {tip}
           </div>,

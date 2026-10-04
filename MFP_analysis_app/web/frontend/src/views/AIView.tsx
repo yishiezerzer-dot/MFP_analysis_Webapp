@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import Plot from "react-plotly.js";
 import type { Data, Layout } from "plotly.js";
-import { useLocation } from "react-router-dom";
 import {
   api,
   AIContextSession,
@@ -52,8 +51,7 @@ import type { AutomationActionId } from "../automation/schemas";
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
-import { HelpOpenButton, HelpShell } from "../help/HelpShell";
-import { getHelpModule } from "../help/registry";
+import { HelpOpenButton } from "../help/HelpShell";
 import { usePlotlyTheme } from "../theme/ThemeProvider";
 
 const BUILT_IN_PROMPTS: SavedPrompt[] = [
@@ -192,9 +190,6 @@ export function AIView() {
   const plotlyTheme = usePlotlyTheme();
   const abortRef = useRef<AbortController | null>(null);
 
-  const location = useLocation();
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
 
   useEffect(() => {
     api.ai
@@ -708,7 +703,7 @@ export function AIView() {
       subtitle="Ask about FTIR, LCMS or plate reader workflows, or let the assistant run approved automation actions."
       actions={
         <>
-          <HelpOpenButton onClick={() => setHelpOpen(true)} />
+          <HelpOpenButton />
           <ProviderBadge status={status} provider={provider} />
         </>
       }
@@ -887,9 +882,6 @@ export function AIView() {
           </div>
         </section>
       </div>
-      {helpModule ? (
-        <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
-      ) : null}
       {actionLogOpen && <ActionLogDialog onClose={() => setActionLogOpen(false)} />}
     </div>
   );

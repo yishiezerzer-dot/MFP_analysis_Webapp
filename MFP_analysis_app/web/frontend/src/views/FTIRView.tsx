@@ -7,7 +7,6 @@ import Plot from "react-plotly.js";
 import Plotly from "plotly.js-dist-min";
 import type { Data, Layout } from "plotly.js";
 import clsx from "clsx";
-import { useLocation } from "react-router-dom";
 import {
   api,
   FTIRAssignment,
@@ -27,8 +26,7 @@ import {
   FTIRYMode,
 } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
-import { HelpOpenButton, HelpShell } from "../help/HelpShell";
-import { getHelpModule } from "../help/registry";
+import { HelpOpenButton } from "../help/HelpShell";
 import { exportColorMeta, themeTraceColor, usePlotlyTheme } from "../theme/ThemeProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { PaperFigureExportToolbar } from "../components/PaperFigureExportToolbar";
@@ -551,9 +549,6 @@ export function FTIRView() {
   const fileRef = useRef<HTMLInputElement>(null);
   const workspaceFileRef = useRef<HTMLInputElement>(null);
 
-  const location = useLocation();
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
 
   const active = useMemo(
     () => sessions.find((s) => s.session_id === activeSid) ?? null,
@@ -1188,7 +1183,7 @@ export function FTIRView() {
       }
       actions={
         <>
-          <HelpOpenButton onClick={() => setHelpOpen(true)} />
+          <HelpOpenButton />
           <input
             ref={fileRef}
             type="file"
@@ -1461,9 +1456,6 @@ export function FTIRView() {
           </div>
         )}
       </div>
-      {helpModule ? (
-        <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
-      ) : null}
     </div>
   );
 }

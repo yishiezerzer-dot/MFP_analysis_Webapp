@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { useLocation } from "react-router-dom";
 import { Grid3X3, X } from "lucide-react";
 import { api, type PlateLayout, type PlateMetadata, type PlateSummary, type PlateTemplate, type PlateWell } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
-import { HelpOpenButton, HelpShell } from "../help/HelpShell";
-import { getHelpModule } from "../help/registry";
+import { HelpOpenButton } from "../help/HelpShell";
 import { AlertBanner } from "../components/AlertBanner";
 import { useToast } from "../components/Toast";
 import { SideRail } from "../components/common/SideRail";
@@ -59,7 +57,6 @@ function emptyLayout(top: number): PlateLayout {
 }
 
 export function PlateReaderView() {
-  const location = useLocation();
   const { toast } = useToast();
   const { activeWorkspaceId } = useWorkspace();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -76,8 +73,6 @@ export function PlateReaderView() {
   const [savedCount, setSavedCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
   const pendingSave = useRef<{ sid: string; layout: PlateLayout; timer: number } | null>(null);
 
   const active = plates.find((p) => p.session_id === activeSid) ?? null;
@@ -261,7 +256,7 @@ export function PlateReaderView() {
       subtitle="MIC · plate maps, % growth, dose–response"
       actions={
         <>
-          <HelpOpenButton onClick={() => setHelpOpen(true)} />
+          <HelpOpenButton />
           <input
             ref={fileRef}
             type="file"
@@ -366,7 +361,6 @@ export function PlateReaderView() {
           </>
         )}
       </div>
-      {helpModule ? <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} /> : null}
     </div>
   );
 }

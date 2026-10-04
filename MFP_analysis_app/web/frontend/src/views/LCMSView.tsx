@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PlotMouseEvent } from "plotly.js";
 import clsx from "clsx";
-import { useLocation } from "react-router-dom";
 import { api, LCMSEICData, LCMSRegionSpectrumData, LCMSTICOverlayTrace, LCMSFindMzResponse, LCMSSessionSummary, PolymerSettings, SpectrumData, SpectrumLabel, TICData, UVChromatogramResponse } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
-import { HelpOpenButton, HelpShell } from "../help/HelpShell";
-import { getHelpModule } from "../help/registry";
+import { HelpOpenButton } from "../help/HelpShell";
+import { useHelp } from "../help/HelpProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { Tooltip } from "../components/Tooltip";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
@@ -390,9 +389,7 @@ export function LCMSView() {
   const workspaceFileRef = useRef<HTMLInputElement>(null);
   const eicPlotCounterRef = useRef(0);
 
-  const location = useLocation();
-  const [helpOpen, setHelpOpen] = useState(false);
-  const helpModule = useMemo(() => getHelpModule(location.pathname), [location.pathname]);
+  const { helpOpen } = useHelp();
 
   const dispatchUiAction = useCallback(
     (actionId: Parameters<typeof actionDispatch>[0], args: Record<string, unknown> = {}) => {
@@ -3018,7 +3015,7 @@ export function LCMSView() {
       subtitle="mzML viewer — TIC, UV, spectrum at click, top-peak annotation"
       actions={
         <>
-          <HelpOpenButton onClick={() => setHelpOpen(true)} />
+          <HelpOpenButton />
           <input
             ref={fileRef}
             type="file"
@@ -3864,9 +3861,6 @@ export function LCMSView() {
           onSave={saveCustomUvLabel}
         />
       )}
-      {helpModule ? (
-        <HelpShell open={helpOpen} module={helpModule} onClose={() => setHelpOpen(false)} />
-      ) : null}
     </div>
   );
 }

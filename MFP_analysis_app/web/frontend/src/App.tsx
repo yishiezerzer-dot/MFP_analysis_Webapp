@@ -14,6 +14,7 @@ import { Tooltip } from "./components/Tooltip";
 import { BrowserBridgeProvider } from "./automation/BrowserBridge";
 import { useWorkspace } from "./context/WorkspaceContext";
 import { FileIngestionProvider } from "./context/FileIngestionContext";
+import { HelpProvider } from "./help/HelpProvider";
 import { GlobalDropOverlay } from "./components/GlobalDropOverlay";
 import { AlertBanner } from "./components/AlertBanner";
 import { api, type RestoreError } from "./api";
@@ -409,19 +410,21 @@ export default function App() {
   return (
     <BrowserBridgeProvider>
       <FileIngestionProvider>
-        <Suspense fallback={<ViewLoadingFallback />}>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route path="/" element={<Navigate to="/lcms" replace />} />
-              <Route path="/lcms" element={<LCMSView />} />
-              <Route path="/ftir" element={<FTIRView />} />
-              <Route path="/plate-reader" element={<PlateReaderView />} />
-              <Route path="/ai" element={<AIView />} />
-            {/* Old links (e.g. the removed /data-studio and /figures tabs) land on LCMS instead of a blank page. */}
-            <Route path="*" element={<Navigate to="/lcms" replace />} />
-            </Route>
-          </Routes>
-        </Suspense>
+        <HelpProvider>
+          <Suspense fallback={<ViewLoadingFallback />}>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route path="/" element={<Navigate to="/lcms" replace />} />
+                <Route path="/lcms" element={<LCMSView />} />
+                <Route path="/ftir" element={<FTIRView />} />
+                <Route path="/plate-reader" element={<PlateReaderView />} />
+                <Route path="/ai" element={<AIView />} />
+              {/* Old links (e.g. the removed /data-studio and /figures tabs) land on LCMS instead of a blank page. */}
+              <Route path="*" element={<Navigate to="/lcms" replace />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </HelpProvider>
       </FileIngestionProvider>
     </BrowserBridgeProvider>
   );
