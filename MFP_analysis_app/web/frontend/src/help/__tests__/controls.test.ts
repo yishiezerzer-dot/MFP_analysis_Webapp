@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { describe, expect, it } from "vitest";
 import { CONTROLS, TAB_ROUTES, type ControlTab } from "../controls";
 import { getHelpModule } from "../registry";
