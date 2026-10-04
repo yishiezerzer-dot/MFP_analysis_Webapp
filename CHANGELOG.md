@@ -24,7 +24,7 @@ Re-check analyses made before these fixes if they relied on the items below.
 ### Changed
 
 - **Easier for new users, stage 1: hints, a control finder and up-to-date help.**
-  - **Hover hints on every control** (about 300): what it does, a typical value from the real defaults, and the help topic. Press **F1** on a control to open help at that topic.
+  - **Hover hints on every control** (about 250): what it does, a typical value from the real defaults, and the help topic. Press **F1** on a control to open help at that topic.
   - **Find a control** (header, or **Ctrl+K** / ⌘K anywhere): type a name or what you want to do ("baseline", "exclude well", "condensation") and press Enter. The app switches tab, opens the right panel or dialog, scrolls to the control and highlights it.
   - **Help rewritten** for LCMS, FTIR and the AI Assistant to match the current screens. LCMS help described tabs that no longer exist, and AI help wrongly said the assistant was read-only and that API keys live on the server. Each help topic has **Show me** buttons that jump to its controls, and help search now covers the full text.
   - **Tooltips are readable in the night theme** (they were white text on a light bubble).
