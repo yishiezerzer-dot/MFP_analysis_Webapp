@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 import clsx from "clsx";
 import { FlaskConical, Layers, MapPin, Microscope, Redo2, Undo2, type LucideIcon } from "lucide-react";
 import { ICON_PROPS } from "../common/ChartCardParts";
+import { Hint } from "../Hint";
 
 export type FTIRInspectorTab = "preprocess" | "peaks" | "quant" | "overlay";
 
@@ -31,28 +32,28 @@ const TABS: Array<{ id: FTIRInspectorTab; label: string; icon: LucideIcon; headi
 
 function UndoRedo(props: { undo: () => void; redo: () => void; canUndo?: boolean; canRedo?: boolean; what: string }) {
   return (
-    <div className="flex items-center gap-1">
-      <button
-        type="button"
-        className="btn-ghost px-1.5 py-1 disabled:opacity-30"
-        disabled={!props.canUndo}
-        onClick={props.undo}
-        aria-label={`Undo ${props.what} change`}
-        title={`Undo ${props.what} change (Ctrl+Z)`}
-      >
-        <Undo2 {...ICON_PROPS} />
-      </button>
-      <button
-        type="button"
-        className="btn-ghost px-1.5 py-1 disabled:opacity-30"
-        disabled={!props.canRedo}
-        onClick={props.redo}
-        aria-label={`Redo ${props.what} change`}
-        title={`Redo ${props.what} change (Ctrl+Y)`}
-      >
-        <Redo2 {...ICON_PROPS} />
-      </button>
-    </div>
+    <Hint id="ftir.undoRedo">
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          className="btn-ghost px-1.5 py-1 disabled:opacity-30"
+          disabled={!props.canUndo}
+          onClick={props.undo}
+          aria-label={`Undo ${props.what} change`}
+        >
+          <Undo2 {...ICON_PROPS} />
+        </button>
+        <button
+          type="button"
+          className="btn-ghost px-1.5 py-1 disabled:opacity-30"
+          disabled={!props.canRedo}
+          onClick={props.redo}
+          aria-label={`Redo ${props.what} change`}
+        >
+          <Redo2 {...ICON_PROPS} />
+        </button>
+      </div>
+    </Hint>
   );
 }
 
@@ -80,7 +81,8 @@ export function FTIRInspectorPanel({
       className="flex w-[360px] min-w-0 shrink-0 flex-col overflow-x-hidden border-l border-ink-200 bg-surface"
     >
       {/* 2 x 2 switcher: all four sections fit without horizontal scrolling */}
-      <div role="tablist" aria-label="Inspector sections" className="grid grid-cols-2 gap-1 border-b border-ink-200 p-2">
+<Hint id="ftir.inspector" placement="left" className="w-full">
+      <div role="tablist" aria-label="Inspector sections" className="grid w-full grid-cols-2 gap-1 border-b border-ink-200 p-2">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -102,6 +104,7 @@ export function FTIRInspectorPanel({
           );
         })}
       </div>
+      </Hint>
 
       <div className="flex items-center justify-between gap-2 border-b border-ink-100 px-3 py-1.5">
         <span className="text-section truncate">{current.heading}</span>
