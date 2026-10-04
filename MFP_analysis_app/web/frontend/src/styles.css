@@ -440,3 +440,9 @@ select.input:disabled {
 @media (prefers-reduced-motion: reduce) {
   [data-flash] { animation: none; box-shadow: 0 0 0 3px rgb(var(--brand-500)); }
 }
+
+/* A full-width hint wrapper (span[data-control]) lets its control fill it, as before wrapping */
+span[data-control].w-full > * {
+  flex: 1 1 0%;
+  min-width: 0;
+}
