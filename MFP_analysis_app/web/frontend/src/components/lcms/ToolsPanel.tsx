@@ -298,7 +298,7 @@ export function ToolsTab(p: ToolsPanelProps) {
     <div className="flex flex-col gap-4">
       <GroupBox title="Scan navigation">
         <Hint id="lcms.scanNav" className="w-full">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 w-full min-w-0">
             <NavyButton onClick={p.onPrev} disabled={!p.activeLoaded}>
               <ChevronLeft {...ICON_PROPS} />
               Prev
@@ -332,7 +332,7 @@ export function ToolsTab(p: ToolsPanelProps) {
       {/* 2. Jump to RT */}
       <GroupBox title="Jump to RT">
         <Hint id="lcms.rtJump" className="w-full">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full min-w-0">
             <span className="text-body shrink-0">RT ({p.rtUnit === "seconds" ? "s" : "min"})</span>
             <input
               type="number"
@@ -504,7 +504,7 @@ export function DisplayTab(p: ToolsPanelProps) {
 
       <GroupBox title="Polarity">
         <Hint id="lcms.polarity" className="w-full">
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4 w-full min-w-0">
             {(["all", "positive", "negative", "dual"] as Polarity[]).map((v) => (
               <label key={v} className="text-body flex items-center gap-1.5">
                 <input
@@ -667,7 +667,7 @@ export function DisplayTab(p: ToolsPanelProps) {
           />
         </div>
         <Hint id="lcms.exportCsv" className="w-full">
-          <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="mt-2 grid grid-cols-2 gap-2 w-full min-w-0">
             <NavyButton onClick={p.onExportSpectrum} disabled={!p.activeLoaded}>
               Spectrum CSV
             </NavyButton>

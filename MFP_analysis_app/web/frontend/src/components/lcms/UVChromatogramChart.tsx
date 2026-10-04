@@ -633,7 +633,7 @@ export function UVChromatogramChart(props: {
                 Peak Detection
               </div>
               <Hint id="lcms.uvProminence" className="w-full">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 w-full min-w-0">
                   <span className="text-ink-600">Prominence:</span>
                   <input
                     type="number"
@@ -648,7 +648,7 @@ export function UVChromatogramChart(props: {
                 </div>
               </Hint>
               <Hint id="lcms.uvMinDistance" className="w-full">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 w-full min-w-0">
                   <span className="text-ink-600">Min dist (min):</span>
                   <input
                     type="number"
@@ -680,7 +680,7 @@ export function UVChromatogramChart(props: {
                 Placement & Angle
               </div>
               <Hint id="lcms.uvOrientation" className="w-full">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 w-full min-w-0">
                   <span className="text-ink-600">Orientation:</span>
                   <select
                     className="input h-7 text-xs"
@@ -722,7 +722,7 @@ export function UVChromatogramChart(props: {
                 </label>
               </Hint>
               <Hint id="lcms.uvTransferCount" className="w-full">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 w-full min-w-0">
                   <span className="text-ink-600">Peaks to transfer:</span>
                   <select
                     className="input h-7 w-20 text-xs"
@@ -755,7 +755,7 @@ export function UVChromatogramChart(props: {
               </Hint>
               {bunchLabels && (
                 <Hint id="lcms.uvHub" className="w-full">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2 w-full min-w-0">
                     <span className="text-ink-600">Hub height:</span>
                     <input
                       type="number"
@@ -770,7 +770,7 @@ export function UVChromatogramChart(props: {
                 </Hint>
               )}
               <Hint id="lcms.uvStairX" className="w-full">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 w-full min-w-0">
                   <span className="text-ink-600">Stair X step:</span>
                   <input
                     type="number"
@@ -792,7 +792,7 @@ export function UVChromatogramChart(props: {
                 UV↔MS Alignment
               </div>
               <Hint id="lcms.uvOffset" className="w-full">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 w-full min-w-0">
                   <span className="text-ink-600">Offset (min):</span>
                   <input
                     type="number"
