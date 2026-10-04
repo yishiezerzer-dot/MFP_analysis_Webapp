@@ -1,4 +1,14 @@
+import { isValidElement, type ReactNode } from "react";
 import type { HelpTopic } from "./types";
+
+// Plain text of a help body (our Doc* primitives just wrap their children), so search covers it.
+export function nodeText(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join(" ");
+  if (isValidElement<{ children?: ReactNode }>(node)) return nodeText(node.props.children);
+  return "";
+}
 
 export interface FlatTopic {
   id: string;
@@ -13,6 +23,7 @@ function collectHaystack(topic: HelpTopic): string {
     topic.title,
     ...(topic.keywords ?? []),
     topic.searchText ?? "",
+    nodeText(topic.body),
   ];
   return parts.join(" ").toLowerCase();
 }

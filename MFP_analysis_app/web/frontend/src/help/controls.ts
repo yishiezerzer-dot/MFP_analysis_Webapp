@@ -39,6 +39,14 @@ export const CONTROLS: ControlHint[] = [
     what: "Opens the guide for this tab: what each part does, how results are calculated, and troubleshooting.",
     keywords: ["manual", "guide", "documentation", "f1"],
   },
+  {
+    id: "app.findControl",
+    tab: "app",
+    label: "Find a control",
+    what: "Search every button and setting by name or purpose; Enter jumps to it and highlights it.",
+    typical: "Ctrl+K (⌘K on a Mac)",
+    keywords: ["search", "command", "where", "locate"],
+  },
 ];
 
 const BY_ID = new Map(CONTROLS.map((c) => [c.id, c]));
