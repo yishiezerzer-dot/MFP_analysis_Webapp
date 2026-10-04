@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { Plus, Trash2, X } from "lucide-react";
 import type { PlateGroupKind, PlateLayoutSource, PlateTemplate } from "../../api";
 import { ICON_PROPS } from "../common/ChartCardParts";
+import { Hint } from "../Hint";
 import {
   newGroupId,
   nextColour,
@@ -14,12 +15,19 @@ import {
 const UNITS = ["µg/mL", "mg/mL", "µM", "mM", "% v/v"];
 const FACTORS = [2, 3, 4, 10];
 
-function Field({ label, children, error }: { label: string; children: ReactNode; error?: boolean }) {
-  return (
-    <label className="flex min-w-0 flex-col gap-1">
+function Field({ label, children, error, hint }: { label: string; children: ReactNode; error?: boolean; hint?: string }) {
+  const field = (
+    <label className="flex min-w-0 flex-1 flex-col gap-1">
       <span className={clsx("label", error && "text-danger-fg")}>{label}</span>
       {children}
     </label>
+  );
+  return hint ? (
+    <Hint id={hint} className="min-w-0 w-full">
+      {field}
+    </Hint>
+  ) : (
+    field
   );
 }
 
@@ -96,7 +104,7 @@ export function LayoutPanel({
         </div>
 
         <div className="flex items-end gap-2">
-          <Field label="Template">
+          <Field label="Template" hint="plate.template">
             <select
               className="input w-full"
               value={templateId}
@@ -115,18 +123,19 @@ export function LayoutPanel({
             </select>
           </Field>
           {selectedTemplate && (
-            <button
-              type="button"
-              className="btn-ghost px-1.5"
-              title={`Delete template "${selectedTemplate.name}"`}
-              aria-label={`Delete template ${selectedTemplate.name}`}
-              onClick={() => {
-                onDeleteTemplate(selectedTemplate);
-                setTemplateId("");
-              }}
-            >
-              <Trash2 {...ICON_PROPS} />
-            </button>
+            <Hint id="plate.deleteTemplate">
+              <button
+                type="button"
+                className="btn-ghost px-1.5"
+                aria-label={`Delete template ${selectedTemplate.name}`}
+                onClick={() => {
+                  onDeleteTemplate(selectedTemplate);
+                  setTemplateId("");
+                }}
+              >
+                <Trash2 {...ICON_PROPS} />
+              </button>
+            </Hint>
           )}
         </div>
 
@@ -146,7 +155,7 @@ export function LayoutPanel({
         <section className="flex flex-col gap-2">
           <h3 className="text-section">Dilution series</h3>
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <Field label="Top concentration" error={has("top")}>
+            <Field label="Top concentration" error={has("top")} hint="plate.top">
               <input
                 className="input"
                 type="number"
@@ -156,14 +165,14 @@ export function LayoutPanel({
                 onChange={(e) => setDilution({ top: e.target.valueAsNumber })}
               />
             </Field>
-            <Field label="Unit">
+            <Field label="Unit" hint="plate.unit">
               <select className="input" value={d.unit} onChange={(e) => setDilution({ unit: e.target.value })}>
                 {(UNITS.includes(d.unit) ? UNITS : [d.unit, ...UNITS]).map((u) => (
                   <option key={u}>{u}</option>
                 ))}
               </select>
             </Field>
-            <Field label="Direction">
+            <Field label="Direction" hint="plate.direction">
               <select
                 className="input"
                 value={d.direction}
@@ -183,7 +192,7 @@ export function LayoutPanel({
                 <option value="rows">Down rows</option>
               </select>
             </Field>
-            <Field label="Factor" error={has("factor")}>
+            <Field label="Factor" error={has("factor")} hint="plate.factor">
               <select className="input" value={d.factor} onChange={(e) => setDilution({ factor: Number(e.target.value) })}>
                 {(FACTORS.includes(d.factor) ? FACTORS : [d.factor, ...FACTORS]).map((f) => (
                   <option key={f} value={f}>
@@ -192,7 +201,7 @@ export function LayoutPanel({
                 ))}
               </select>
             </Field>
-            <Field label={byColumns ? "From column (top)" : "From row (top)"} error={has("range")}>
+            <Field label={byColumns ? "From column (top)" : "From row (top)"} error={has("range")} hint="plate.range">
               <input
                 className="input"
                 type="number"
@@ -202,7 +211,7 @@ export function LayoutPanel({
                 onChange={(e) => setDilution({ first: e.target.valueAsNumber })}
               />
             </Field>
-            <Field label={byColumns ? "To column" : "To row"} error={has("range")}>
+            <Field label={byColumns ? "To column" : "To row"} error={has("range")} hint="plate.range">
               <input
                 className="input"
                 type="number"
@@ -224,23 +233,26 @@ export function LayoutPanel({
             <div key={c.id} className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border border-ink-200 p-3">
               <div className="col-span-2 flex items-center gap-2">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.colour }} aria-hidden />
-                <input
-                  className={clsx("input min-w-0 flex-1 font-semibold", has(`name:${c.id}`) && "border-danger")}
-                  aria-label="Compound name"
-                  value={c.name}
-                  onChange={(e) => setCompound(c.id, { name: e.target.value })}
-                />
-                <button
-                  type="button"
-                  className="btn-ghost px-1.5"
-                  aria-label={`Remove ${c.name}`}
-                  title="Remove compound"
-                  onClick={() => onFormChange({ ...form, compounds: form.compounds.filter((x) => x.id !== c.id) })}
-                >
-                  <X {...ICON_PROPS} />
-                </button>
+                <Hint id="plate.compoundName" className="min-w-0 flex-1">
+                  <input
+                    className={clsx("input min-w-0 flex-1 font-semibold", has(`name:${c.id}`) && "border-danger")}
+                    aria-label="Compound name"
+                    value={c.name}
+                    onChange={(e) => setCompound(c.id, { name: e.target.value })}
+                  />
+                </Hint>
+                <Hint id="plate.removeCompound">
+                  <button
+                    type="button"
+                    className="btn-ghost px-1.5"
+                    aria-label={`Remove ${c.name}`}
+                    onClick={() => onFormChange({ ...form, compounds: form.compounds.filter((x) => x.id !== c.id) })}
+                  >
+                    <X {...ICON_PROPS} />
+                  </button>
+                </Hint>
               </div>
-              <Field label={lineWord} error={has(`lines:${c.id}`)}>
+              <Field label={lineWord} error={has(`lines:${c.id}`)} hint="plate.compoundRows">
                 <input
                   className="input"
                   placeholder={byColumns ? "A–C" : "1–3"}
@@ -248,7 +260,7 @@ export function LayoutPanel({
                   onChange={(e) => setCompound(c.id, { lines: e.target.value })}
                 />
               </Field>
-              <Field label="Kind">
+              <Field label="Kind" hint="plate.compoundKind">
                 <select
                   className="input"
                   value={c.kind}
@@ -261,21 +273,25 @@ export function LayoutPanel({
             </div>
           ))}
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn-ghost border border-ink-200 text-xs" onClick={() => addCompound("sample")}>
-              <Plus {...ICON_PROPS} />
-              Add compound
-            </button>
-            <button type="button" className="btn-ghost border border-ink-200 text-xs" onClick={() => addCompound("reference")}>
-              <Plus {...ICON_PROPS} />
-              Reference (e.g. gentamicin)
-            </button>
+            <Hint id="plate.addCompound">
+              <button type="button" className="btn-ghost border border-ink-200 text-xs" onClick={() => addCompound("sample")}>
+                <Plus {...ICON_PROPS} />
+                Add compound
+              </button>
+            </Hint>
+            <Hint id="plate.addReference">
+              <button type="button" className="btn-ghost border border-ink-200 text-xs" onClick={() => addCompound("reference")}>
+                <Plus {...ICON_PROPS} />
+                Reference (e.g. gentamicin)
+              </button>
+            </Hint>
           </div>
         </section>
 
         <section className="flex flex-col gap-2">
           <h3 className="text-section">Controls</h3>
           <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-            <Field label={byColumns ? "Growth control column" : "Growth control row"} error={has("control")}>
+            <Field label={byColumns ? "Growth control column" : "Growth control row"} error={has("control")} hint="plate.growthControl">
               <input
                 className="input"
                 placeholder={byColumns ? "12" : "H"}
@@ -283,7 +299,7 @@ export function LayoutPanel({
                 onChange={(e) => onFormChange({ ...form, control: e.target.value })}
               />
             </Field>
-            <Field label={`Blank ${lineWord.toLowerCase()} (optional)`} error={has("blank")}>
+            <Field label={`Blank ${lineWord.toLowerCase()} (optional)`} error={has("blank")} hint="plate.blank">
               <input
                 className="input"
                 placeholder={byColumns ? "G–H" : "11–12"}
@@ -306,25 +322,22 @@ export function LayoutPanel({
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={!dirty || problems.length > 0}
-            title={dirty ? "Replace the plate map with this layout (excluded wells are kept)" : "The plate already matches this form"}
-            onClick={onApply}
-          >
-            Apply to plate
-          </button>
-          {templateName === null ? (
-            <button
-              type="button"
-              className="btn-ghost border border-ink-200"
-              disabled={dirty}
-              title={dirty ? "Apply your changes first: the template saves the plate map as shown" : "Save this plate map (without excluded wells) for other plates"}
-              onClick={() => setTemplateName(selectedTemplate?.name ?? "")}
-            >
-              Save as template
+          <Hint id="plate.apply" extra={dirty ? undefined : "The plate already matches this form."}>
+            <button type="button" className="btn-primary" disabled={!dirty || problems.length > 0} onClick={onApply}>
+              Apply to plate
             </button>
+          </Hint>
+          {templateName === null ? (
+            <Hint id="plate.saveTemplate" extra={dirty ? "Apply your changes first: the template saves the plate as shown." : undefined}>
+              <button
+                type="button"
+                className="btn-ghost border border-ink-200"
+                disabled={dirty}
+                onClick={() => setTemplateName(selectedTemplate?.name ?? "")}
+              >
+                Save as template
+              </button>
+            </Hint>
           ) : (
             <form
               className="flex w-full items-center gap-2"

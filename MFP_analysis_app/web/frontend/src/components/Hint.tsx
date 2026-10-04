@@ -10,17 +10,21 @@ export function Hint({
   children,
   className,
   placement,
+  extra,
 }: {
   id: string;
   children: ReactNode;
   className?: string;
   placement?: "top" | "bottom" | "left" | "right";
+  // A live status line shown first, e.g. the current experiment tag.
+  extra?: ReactNode;
 }) {
   const { setActiveHint } = useHelp();
   const control = getControl(id);
   const topic = control ? helpTopicTitle(control) : null;
   const content = control ? (
     <span className="flex flex-col gap-0.5">
+      {extra && <span className="font-medium">{extra}</span>}
       <span>
         <strong className="font-semibold">{control.label}</strong> — {control.what}
       </span>

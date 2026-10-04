@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { HelpProvider } from "../HelpProvider";
@@ -17,6 +17,9 @@ function renderFinder() {
   );
 }
 
+beforeAll(() => {
+  Element.prototype.scrollIntoView = () => {};
+});
 afterEach(cleanup);
 
 describe("ControlFinder", () => {

@@ -17,12 +17,12 @@ const sources = import.meta.glob("../../**/*.tsx", { query: "?raw", import: "def
   string
 >;
 
-// Ids the UI marks: <Hint id="…"> and dataControl="…".
+// Ids the UI marks: <Hint id="…">, dataControl="…" and hint="…" (form fields).
 function usedIds(): Map<string, string> {
   const used = new Map<string, string>();
   for (const [file, text] of Object.entries(sources)) {
     if (file.includes("__tests__")) continue;
-    for (const m of text.matchAll(/<Hint\b[^>]*?\bid="([^"]+)"|dataControl="([^"]+)"/g)) {
+    for (const m of text.matchAll(/<Hint\b[^>]*?\bid="([^"]+)"|(?:dataControl|hint)="([a-z]+\.[A-Za-z0-9.]+)"/g)) {
       used.set(m[1] ?? m[2], file);
     }
   }
@@ -50,6 +50,16 @@ describe("control registry", () => {
       const topics = flattenTopics(route ? getHelpModule(route)?.topics ?? [] : []).map((t) => t.id);
       expect(topics, `${c.id} → ${c.helpTopic}`).toContain(c.helpTopic);
     }
+  });
+
+  it("only names panels that some view can open (useRevealPanel)", () => {
+    const allSource = Object.entries(sources)
+      .filter(([file]) => !file.includes("__tests__"))
+      .map(([, text]) => text)
+      .join("\n");
+    const panels = [...new Set(CONTROLS.map((c) => c.panel).filter((p): p is string => Boolean(p)))];
+    const missing = panels.filter((p) => !allSource.includes(`"${p}":`));
+    expect(missing, "panels without a useRevealPanel handler").toEqual([]);
   });
 
   it("covers every control marked in the UI, and every entry is used", () => {

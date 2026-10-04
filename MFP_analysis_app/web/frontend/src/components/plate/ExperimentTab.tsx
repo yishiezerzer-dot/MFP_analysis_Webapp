@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { Archive, FileSpreadsheet, Table2 } from "lucide-react";
 import { api, type PlateExperiment } from "../../api";
 import { ToolbarButton } from "../common/ChartCardParts";
+import { Hint } from "../Hint";
 import { useStoredState } from "../../hooks/useStoredState";
 import { downloadBlob } from "../../lcms/viewShared";
 import { rowsToCsv } from "../../lcms/analysis";
@@ -169,20 +170,22 @@ export function ExperimentTab({ tag, refreshKey }: { tag: string; refreshKey: nu
           ].filter(Boolean).join(" · ")}
         </span>
         <span className="flex-1" />
-        <ToolbarButton
-          icon={Archive}
-          label={busy === "si" ? "Preparing…" : "Download SI package"}
-          title="Methods, tables and provenance for every plate with this tag (zip)"
-          disabled={busy !== null}
-          onClick={() => void downloadSI()}
-        />
-        <ToolbarButton
-          icon={FileSpreadsheet}
-          label={busy === "excel" ? "Preparing…" : "Export all (Excel)"}
-          title="MIC grid plus every plate's calculation sheets with live formulas"
-          disabled={busy !== null}
-          onClick={() => void exportExcel()}
-        />
+        <Hint id="plate.siPackage">
+          <ToolbarButton
+            icon={Archive}
+            label={busy === "si" ? "Preparing…" : "Download SI package"}
+            disabled={busy !== null}
+            onClick={() => void downloadSI()}
+          />
+        </Hint>
+        <Hint id="plate.exportAll">
+          <ToolbarButton
+            icon={FileSpreadsheet}
+            label={busy === "excel" ? "Preparing…" : "Export all (Excel)"}
+            disabled={busy !== null}
+            onClick={() => void exportExcel()}
+          />
+        </Hint>
       </div>
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,600px)_minmax(0,1fr)]">
         <ResultCard
@@ -207,11 +210,13 @@ export function ExperimentTab({ tag, refreshKey }: { tag: string; refreshKey: nu
         status={[`% growth per concentration (${unit})`, "mean and each replicate", "read the MIC where the colour turns white"]}
         explanation={explainExperiment("grid", exp)}
         actions={
-          <ToolbarButton
-            icon={Table2}
-            label="CSV"
-            onClick={() => downloadBlob(new Blob([rowsToCsv(gridCsv(exp))], { type: "text/csv" }), `${stem}_mic_grid.csv`)}
-          />
+          <Hint id="plate.gridCsv">
+            <ToolbarButton
+              icon={Table2}
+              label="CSV"
+              onClick={() => downloadBlob(new Blob([rowsToCsv(gridCsv(exp))], { type: "text/csv" }), `${stem}_mic_grid.csv`)}
+            />
+          </Hint>
         }
       >
         <MicGridTable exp={exp} />

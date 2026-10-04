@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { api, ExperimentBundle } from "../api";
-import { Tooltip } from "./Tooltip";
+import { Hint } from "./Hint";
 
 interface ExperimentTagEditorProps {
   sessionId: string | null;
@@ -115,13 +115,10 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
 
   return (
     <div className={clsx("relative inline-flex items-center", className)} ref={popoverRef}>
-      <Tooltip
-        content={
-          isTagged
-            ? `Experiment: ${currentTag} (${totalLinked} total linked sessions across modules)`
-            : "Click to tag this session with an Experiment ID"
-        }
+      <Hint
+        id="app.experimentTag"
         placement="bottom"
+        extra={isTagged ? `Current: ${currentTag} · ${totalLinked} linked file${totalLinked === 1 ? "" : "s"}` : undefined}
       >
         <button
           type="button"
@@ -151,7 +148,7 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
             </span>
           )}
         </button>
-      </Tooltip>
+      </Hint>
 
       {/* Popover */}
       {isOpen && (

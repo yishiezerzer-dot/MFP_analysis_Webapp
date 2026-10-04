@@ -9,6 +9,8 @@ import { useToast } from "../components/Toast";
 import { SideRail } from "../components/common/SideRail";
 import { SegmentedControl } from "../components/common/SegmentedControl";
 import { ICON_PROPS } from "../components/common/ChartCardParts";
+import { Hint } from "../components/Hint";
+import { useRevealPanel } from "../help/reveal";
 import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
 import { BLANK_RING, GC_RING, PlateGrid } from "../components/plate/PlateGrid";
 import { LayoutPanel, type SaveState } from "../components/plate/LayoutPanel";
@@ -76,6 +78,11 @@ export function PlateReaderView() {
   const pendingSave = useRef<{ sid: string; layout: PlateLayout; timer: number } | null>(null);
 
   const active = plates.find((p) => p.session_id === activeSid) ?? null;
+  useRevealPanel({
+    "plate.tab.map": () => setTab("map"),
+    "plate.tab.results": () => setTab("results"),
+    "plate.tab.experiment": () => setTab("experiment"),
+  });
   const view: PlateTab = tab === "experiment" && !active?.experiment_tag ? "map" : tab;
 
   useEffect(() => {
@@ -269,9 +276,11 @@ export function PlateReaderView() {
               e.target.value = "";
             }}
           />
-          <button className="btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}>
-            {busy ? "Opening…" : "Open plate…"}
-          </button>
+          <Hint id="plate.open" placement="bottom">
+            <button className="btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}>
+              {busy ? "Opening…" : "Open plate…"}
+            </button>
+          </Hint>
         </>
       }
     />,
@@ -315,6 +324,7 @@ export function PlateReaderView() {
                   }
                 />
                 <span className="flex-1" />
+                <Hint id="plate.view">
                 <SegmentedControl<PlateTab>
                   ariaLabel="Plate view"
                   size="md"
@@ -326,6 +336,7 @@ export function PlateReaderView() {
                     { value: "experiment", label: "Experiment", disabled: !active.experiment_tag, title: active.experiment_tag ? undefined : "Give plates the same experiment tag to combine them" },
                   ]}
                 />
+                </Hint>
               </div>
               {view === "map" ? (
                 <PlateMapCard
@@ -396,6 +407,7 @@ function PlateMapCard({
           onPaint={paint ? onPaint : undefined}
         />
       </div>
+      <Hint id="plate.paint" placement="bottom">
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Paint wells as">
         {targets.map((t) => {
           const on = paint === t.id;
@@ -426,11 +438,14 @@ function PlateMapCard({
           Excluded {layout.excluded.length > 0 && <span className="text-ink-500">({layout.excluded.join(", ")})</span>}
         </span>
       </div>
+      </Hint>
+      <Hint id="plate.grid">
       <p className="text-caption">
         {paint
           ? "Drag across wells to assign them · Esc cancels · click a well to exclude or include it"
           : "Click a well to exclude or include it · pick a group above, then drag across wells to move them"}
       </p>
+      </Hint>
     </div>
   );
 }
