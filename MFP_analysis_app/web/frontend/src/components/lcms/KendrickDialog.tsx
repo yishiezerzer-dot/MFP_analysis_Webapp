@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Hint } from "../Hint";
 import Plot from "react-plotly.js";
 import type { PlotlyHTMLElement } from "plotly.js";
 import type { SpectrumData } from "../../api";
@@ -207,7 +208,7 @@ export function KendrickDialog({
     >
       <div className="flex flex-col gap-4 text-sm">
         <div className="grid grid-cols-6 gap-3">
-          <SelectSetting
+          <SelectSetting hint="lcms.kmdRepeat"
             label="Repeat unit"
             value={repeatSource}
             options={[
@@ -219,14 +220,14 @@ export function KendrickDialog({
             ]}
             onChange={setRepeatSource}
           />
-          <NumberSetting
+          <NumberSetting hint="lcms.kmdCustomMass"
             label="Custom mass"
             value={customMass}
             min={0.0001}
             step={0.0001}
             onChange={(value) => setCustomMass(Math.max(0.0001, value ?? firstMass))}
           />
-          <NumberSetting
+          <NumberSetting hint="lcms.kmdMinInt"
             label="Min intensity (%)"
             value={minRelIntensity}
             min={0}
@@ -234,7 +235,7 @@ export function KendrickDialog({
             step={0.1}
             onChange={(value) => setMinRelIntensity(Math.max(0, Math.min(100, value ?? 1)))}
           />
-          <NumberSetting
+          <NumberSetting hint="lcms.kmdTolerance"
             label={toleranceUnit === "ppm" ? "Tolerance (ppm)" : "KMD tolerance"}
             value={toleranceValue}
             min={toleranceUnit === "ppm" ? 0.1 : 0.0001}
@@ -246,7 +247,7 @@ export function KendrickDialog({
               )
             }
           />
-          <SelectSetting
+          <SelectSetting hint="lcms.kmdTolerance"
             label="Tolerance unit"
             value={toleranceUnit}
             options={[
@@ -259,7 +260,7 @@ export function KendrickDialog({
               setToleranceValue(next === "ppm" ? 20 : 0.01);
             }}
           />
-          <NumberSetting
+          <NumberSetting hint="lcms.kmdMinPoints"
             label="Min line points"
             value={minSeriesPoints}
             min={2}
@@ -267,7 +268,7 @@ export function KendrickDialog({
             step={1}
             onChange={(value) => setMinSeriesPoints(Math.max(2, Math.round(value ?? 3)))}
           />
-          <SelectSetting
+          <SelectSetting hint="lcms.kmdXAxis"
             label="X axis"
             value={xMode}
             options={[
@@ -284,14 +285,16 @@ export function KendrickDialog({
             {spectrum ? `, ${result.points.length.toLocaleString()} plotted peaks` : ""}
             {result.truncated ? `, capped at ${KENDRICK_POINT_LIMIT.toLocaleString()}` : ""}
           </div>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={labelSeries}
-              onChange={(event) => setLabelSeries(event.target.checked)}
-            />
-            Label series points
-          </label>
+          <Hint id="lcms.kmdLabelSeries">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={labelSeries}
+                onChange={(event) => setLabelSeries(event.target.checked)}
+              />
+              Label series points
+            </label>
+          </Hint>
           <PaperFigureExportToolbar
             disabled={!spectrum || result.points.length === 0}
             storageKey="mfp-publication-plot-export-lcms-kendrick"

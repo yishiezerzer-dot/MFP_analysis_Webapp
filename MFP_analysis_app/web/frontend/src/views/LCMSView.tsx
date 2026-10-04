@@ -5,6 +5,7 @@ import { api, LCMSEICData, LCMSRegionSpectrumData, LCMSTICOverlayTrace, LCMSFind
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton } from "../help/HelpShell";
 import { Hint } from "../components/Hint";
+import { useRevealPanel } from "../help/reveal";
 import { useHelp } from "../help/HelpProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
@@ -652,6 +653,15 @@ export function LCMSView() {
     }
   }, [actionDispatch]);
 
+  useRevealPanel({
+    "lcms.dialog.polymer": () => void openPolymerDialogWithMatch(),
+    "lcms.dialog.expected": () => void openExpectedProductsWithCompute(),
+    "lcms.dialog.kendrick": () => void openKendrickWithCompute(),
+    "lcms.dialog.comparison": () => void openComparisonMatrix(),
+    "lcms.dialog.deconvolution": () => active && setDeconvolutionOpen(true),
+    "lcms.dialog.featureTable": () => dispatchUiAction("lcms.open_dialog", { dialog: "feature_table" }),
+    "lcms.dialog.eic": () => dispatchUiAction("lcms.open_dialog", { dialog: "eic" }),
+  });
   // --- data loading ---------------------------------------------------------
 
   useEffect(() => {

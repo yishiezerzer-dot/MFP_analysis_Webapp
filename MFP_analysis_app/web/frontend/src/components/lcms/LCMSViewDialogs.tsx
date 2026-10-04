@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { Hint } from "../Hint";
 import { ChartLine } from "lucide-react";
 import clsx from "clsx";
 import { NumberSetting } from "./DialogControls";
@@ -153,60 +154,64 @@ export function FindMzDialog({
         most intense peak within the tolerance window.
       </p>
       <div className="mt-3 grid grid-cols-2 gap-3">
-        <div>
-          <div className="label">Target m/z</div>
-          <input
-            type="number"
-            step="0.0001"
-            className="input mt-1 w-full"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            autoFocus
-          />
-        </div>
-        <div>
-          <div className="flex items-center justify-between">
-            <span className="label">Tolerance ({unit === "da" ? "Da" : "ppm"})</span>
-            <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-xs">
-              <button
-                type="button"
-                className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
-                  unit === "da" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
-                }`}
-                onClick={() => {
-                  if (unit !== "da") {
-                    setUnit("da");
-                    if (tol >= 1) setTol(0.01);
-                  }
-                }}
-              >
-                Da
-              </button>
-              <button
-                type="button"
-                className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
-                  unit === "ppm" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
-                }`}
-                onClick={() => {
-                  if (unit !== "ppm") {
-                    setUnit("ppm");
-                    if (tol < 0.1) setTol(10);
-                  }
-                }}
-              >
-                ppm
-              </button>
-            </div>
+        <Hint id="lcms.dialogTargetMz" className="w-full">
+          <div>
+            <div className="label">Target m/z</div>
+            <input
+              type="number"
+              step="0.0001"
+              className="input mt-1 w-full"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              autoFocus
+            />
           </div>
-          <input
-            type="number"
-            step={unit === "da" ? "0.001" : "1"}
-            min={unit === "da" ? 0.0001 : 0.1}
-            className="input mt-1 w-full"
-            value={tol}
-            onChange={(e) => setTol(Math.max(unit === "da" ? 0.0001 : 0.1, parseFloat(e.target.value) || (unit === "da" ? 0.01 : 10)))}
-          />
-        </div>
+        </Hint>
+        <Hint id="lcms.dialogTolerance" className="w-full">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="label">Tolerance ({unit === "da" ? "Da" : "ppm"})</span>
+              <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-xs">
+                <button
+                  type="button"
+                  className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
+                    unit === "da" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+                  }`}
+                  onClick={() => {
+                    if (unit !== "da") {
+                      setUnit("da");
+                      if (tol >= 1) setTol(0.01);
+                    }
+                  }}
+                >
+                  Da
+                </button>
+                <button
+                  type="button"
+                  className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
+                    unit === "ppm" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+                  }`}
+                  onClick={() => {
+                    if (unit !== "ppm") {
+                      setUnit("ppm");
+                      if (tol < 0.1) setTol(10);
+                    }
+                  }}
+                >
+                  ppm
+                </button>
+              </div>
+            </div>
+            <input
+              type="number"
+              step={unit === "da" ? "0.001" : "1"}
+              min={unit === "da" ? 0.0001 : 0.1}
+              className="input mt-1 w-full"
+              value={tol}
+              onChange={(e) => setTol(Math.max(unit === "da" ? 0.0001 : 0.1, parseFloat(e.target.value) || (unit === "da" ? 0.01 : 10)))}
+            />
+          </div>
+        </Hint>
       </div>
     </Modal>
   );
@@ -318,60 +323,64 @@ export function EICDialog({
         The strongest EIC point will also load its nearest MS1 spectrum.
       </p>
       <div className="mt-3 grid grid-cols-2 gap-3">
-        <div>
-          <div className="label">Target m/z</div>
-          <input
-            type="number"
-            step="0.0001"
-            className="input mt-1 w-full"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            autoFocus
-          />
-        </div>
-        <div>
-          <div className="flex items-center justify-between">
-            <span className="label">Tolerance ({unit === "da" ? "Da" : "ppm"})</span>
-            <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-xs">
-              <button
-                type="button"
-                className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
-                  unit === "da" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
-                }`}
-                onClick={() => {
-                  if (unit !== "da") {
-                    setUnit("da");
-                    if (tol >= 1) setTol(0.01);
-                  }
-                }}
-              >
-                Da
-              </button>
-              <button
-                type="button"
-                className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
-                  unit === "ppm" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
-                }`}
-                onClick={() => {
-                  if (unit !== "ppm") {
-                    setUnit("ppm");
-                    if (tol < 0.1) setTol(10);
-                  }
-                }}
-              >
-                ppm
-              </button>
-            </div>
+        <Hint id="lcms.dialogTargetMz" className="w-full">
+          <div>
+            <div className="label">Target m/z</div>
+            <input
+              type="number"
+              step="0.0001"
+              className="input mt-1 w-full"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              autoFocus
+            />
           </div>
-          <input
-            type="number"
-            step={unit === "da" ? "0.001" : "1"}
-            min={unit === "da" ? 0.0001 : 0.1}
-            className="input mt-1 w-full"
-            value={tol}
-            onChange={(e) => setTol(Math.max(unit === "da" ? 0.0001 : 0.1, parseFloat(e.target.value) || (unit === "da" ? 0.01 : 10)))}
-          />
-        </div>
+        </Hint>
+        <Hint id="lcms.dialogTolerance" className="w-full">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="label">Tolerance ({unit === "da" ? "Da" : "ppm"})</span>
+              <div className="inline-flex rounded border border-ink-200 bg-ink-50 p-0.5 text-xs">
+                <button
+                  type="button"
+                  className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
+                    unit === "da" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+                  }`}
+                  onClick={() => {
+                    if (unit !== "da") {
+                      setUnit("da");
+                      if (tol >= 1) setTol(0.01);
+                    }
+                  }}
+                >
+                  Da
+                </button>
+                <button
+                  type="button"
+                  className={`rounded px-1.5 py-0.5 text-[12px] font-semibold transition-colors ${
+                    unit === "ppm" ? "bg-surface text-ink-900 shadow-sm" : "text-ink-500 hover:text-ink-800"
+                  }`}
+                  onClick={() => {
+                    if (unit !== "ppm") {
+                      setUnit("ppm");
+                      if (tol < 0.1) setTol(10);
+                    }
+                  }}
+                >
+                  ppm
+                </button>
+              </div>
+            </div>
+            <input
+              type="number"
+              step={unit === "da" ? "0.001" : "1"}
+              min={unit === "da" ? 0.0001 : 0.1}
+              className="input mt-1 w-full"
+              value={tol}
+              onChange={(e) => setTol(Math.max(unit === "da" ? 0.0001 : 0.1, parseFloat(e.target.value) || (unit === "da" ? 0.01 : 10)))}
+            />
+          </div>
+        </Hint>
       </div>
     </Modal>
   );

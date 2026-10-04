@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Hint } from "../Hint";
 import { ChartScatter, Save, Table2 } from "lucide-react";
 import clsx from "clsx";
 import { loadPolymerUiSettings, type Polarity, type PolymerUiSettings } from "../../lcms/analysis";
@@ -58,49 +59,55 @@ export function PolymerStudioModal({
   const modalFooter = (
     <div className="flex w-full flex-wrap items-center justify-between gap-2">
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
-          onClick={onSaveDefaults}
-          title="Save current configuration as default"
-        >
-          <Save size={15} strokeWidth={1.8} aria-hidden />
-          Save as defaults
-        </button>
-        <button
-          type="button"
-          className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-600 hover:bg-ink-100"
-          onClick={() => onChange(loadPolymerUiSettings())}
-          title="Reset to your saved defaults (factory defaults if none are saved)"
-        >
-          Reset
-        </button>
+        <Hint id="lcms.polymerDefaults">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-700 hover:bg-ink-100"
+            onClick={onSaveDefaults}
+          >
+            <Save size={15} strokeWidth={1.8} aria-hidden />
+            Save as defaults
+          </button>
+        </Hint>
+        <Hint id="lcms.polyReset">
+          <button
+            type="button"
+            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-xs text-ink-600 hover:bg-ink-100"
+            onClick={() => onChange(loadPolymerUiSettings())}
+          >
+            Reset
+          </button>
+        </Hint>
       </div>
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
-          onClick={onExpectedProducts}
-          disabled={!canOpenExpectedProducts}
-          title={
-            canOpenExpectedProducts
-              ? "View table of all expected monomer/dimer/oligomer products for current MS1"
-              : "Select monomers and load an MS1 spectrum first"
-          }
-        >
-          <Table2 size={15} strokeWidth={1.8} aria-hidden />
-          <span>Expected series</span>
-        </button>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
-          onClick={onKendrick}
-          disabled={!canOpenKendrick}
-          title={canOpenKendrick ? "Open Kendrick Mass Defect (KMD) plot for current spectrum" : "Load an MS1 spectrum first"}
-        >
-          <ChartScatter size={15} strokeWidth={1.8} aria-hidden />
-          <span>Kendrick plot</span>
-        </button>
+        <Hint id="lcms.expectedProducts">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={onExpectedProducts}
+            disabled={!canOpenExpectedProducts}
+            title={
+              canOpenExpectedProducts
+                ? "View table of all expected monomer/dimer/oligomer products for current MS1"
+                : "Select monomers and load an MS1 spectrum first"
+            }
+          >
+            <Table2 size={15} strokeWidth={1.8} aria-hidden />
+            <span>Expected series</span>
+          </button>
+        </Hint>
+        <Hint id="lcms.kendrick">
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-sm transition-colors hover:bg-brand-100 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={onKendrick}
+            disabled={!canOpenKendrick}
+            title={canOpenKendrick ? "Open Kendrick Mass Defect (KMD) plot for current spectrum" : "Load an MS1 spectrum first"}
+          >
+            <ChartScatter size={15} strokeWidth={1.8} aria-hidden />
+            <span>Kendrick plot</span>
+          </button>
+        </Hint>
         <button type="button" className="btn-primary text-xs" onClick={onClose}>
           Done
         </button>

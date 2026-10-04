@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Hint } from "../Hint";
 import type { LCMSSessionSummary } from "../../api";
 import {
   featureMatrixValue,
@@ -68,20 +69,22 @@ export function ComparisonMatrixDialog({
             {groups.length} feature group{groups.length === 1 ? "" : "s"} across {columnIds.length} sample{columnIds.length === 1 ? "" : "s"}
           </span>
           <div className="flex items-center gap-2">
-            <button
-              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
-              disabled={groups.length === 0}
-              onClick={() =>
-                void onExportCsv(rows, {
-                  metric,
-                  groupMode,
-                  mzTolerance,
-                  normalizeRows,
-                })
-              }
-            >
-              Export CSV
-            </button>
+            <Hint id="lcms.dialogExport">
+              <button
+                className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
+                disabled={groups.length === 0}
+                onClick={() =>
+                  void onExportCsv(rows, {
+                    metric,
+                    groupMode,
+                    mzTolerance,
+                    normalizeRows,
+                  })
+                }
+              >
+                Export CSV
+              </button>
+            </Hint>
             <button className="btn-primary" onClick={onClose}>Done</button>
           </div>
         </div>
@@ -89,7 +92,7 @@ export function ComparisonMatrixDialog({
     >
       <div className="flex flex-col gap-4 text-sm">
         <div className="grid grid-cols-4 gap-3">
-          <SelectSetting
+          <SelectSetting hint="lcms.cmpValue"
             label="Value"
             value={metric}
             options={[
@@ -98,7 +101,7 @@ export function ComparisonMatrixDialog({
             ]}
             onChange={(value) => setMetric(value as FeatureMatrixMetric)}
           />
-          <SelectSetting
+          <SelectSetting hint="lcms.cmpGroup"
             label="Group rows by"
             value={groupMode}
             options={[
@@ -107,7 +110,7 @@ export function ComparisonMatrixDialog({
             ]}
             onChange={(value) => setGroupMode(value as FeatureMatrixGroupMode)}
           />
-          <NumberSetting
+          <NumberSetting hint="lcms.cmpTol"
             label="m/z grouping tolerance"
             value={mzTolerance}
             min={0.0001}

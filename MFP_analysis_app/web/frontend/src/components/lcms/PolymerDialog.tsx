@@ -19,6 +19,7 @@ import {
   SelectSetting,
   TextSetting,
 } from "./DialogControls";
+import { Hint } from "../Hint";
 
 export function MonomerPresetBox({
   title,
@@ -192,18 +193,20 @@ export function PolymerTargetFileBanner({
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold text-brand-900">Target File:</span>
         {sessions.length > 1 && onSelectSession ? (
-          <select
-            aria-label="Target File"
-            value={activeSessionId ?? ""}
-            onChange={(e) => onSelectSession(e.target.value)}
-            className="rounded-md border border-brand-300 bg-surface px-2.5 py-1 text-xs font-semibold text-ink-800 shadow-2xs focus:border-brand-500 focus:outline-none"
-          >
-            {sessions.map((s) => (
-              <option key={s.session_id} value={s.session_id}>
-                {s.display_name}
-              </option>
-            ))}
-          </select>
+          <Hint id="lcms.polyTargetFile">
+            <select
+              aria-label="Target File"
+              value={activeSessionId ?? ""}
+              onChange={(e) => onSelectSession(e.target.value)}
+              className="rounded-md border border-brand-300 bg-surface px-2.5 py-1 text-xs font-semibold text-ink-800 shadow-2xs focus:border-brand-500 focus:outline-none"
+            >
+              {sessions.map((s) => (
+                <option key={s.session_id} value={s.session_id}>
+                  {s.display_name}
+                </option>
+              ))}
+            </select>
+          </Hint>
         ) : (
           <span className="rounded-md border border-brand-200 bg-surface px-2.5 py-1 text-xs font-semibold text-ink-800 shadow-2xs">
             {sessions.find((s) => s.session_id === activeSessionId)?.display_name ?? "Default File"}
@@ -216,39 +219,42 @@ export function PolymerTargetFileBanner({
           {onCopyFromSession && (
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-ink-600">Copy from:</span>
-              <select
-                aria-label="Copy from file"
-                defaultValue=""
-                onChange={(e) => {
-                  if (e.target.value) {
-                    onCopyFromSession(e.target.value);
-                    e.target.value = "";
-                  }
-                }}
-                className="rounded-md border border-ink-300 bg-surface px-2 py-1 text-xs text-ink-700 shadow-2xs hover:border-ink-400 focus:outline-none"
-              >
-                <option value="" disabled>
-                  Select file...
-                </option>
-                {sessions
-                  .filter((s) => s.session_id !== activeSessionId)
-                  .map((s) => (
-                    <option key={s.session_id} value={s.session_id}>
-                      {s.display_name}
-                    </option>
-                  ))}
-              </select>
+              <Hint id="lcms.polyCopyFrom">
+                <select
+                  aria-label="Copy from file"
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      onCopyFromSession(e.target.value);
+                      e.target.value = "";
+                    }
+                  }}
+                  className="rounded-md border border-ink-300 bg-surface px-2 py-1 text-xs text-ink-700 shadow-2xs hover:border-ink-400 focus:outline-none"
+                >
+                  <option value="" disabled>
+                    Select file...
+                  </option>
+                  {sessions
+                    .filter((s) => s.session_id !== activeSessionId)
+                    .map((s) => (
+                      <option key={s.session_id} value={s.session_id}>
+                        {s.display_name}
+                      </option>
+                    ))}
+                </select>
+              </Hint>
             </div>
           )}
           {onApplyToAllSessions && (
-            <button
-              type="button"
-              onClick={onApplyToAllSessions}
-              className="rounded-md border border-brand-300 bg-surface px-2.5 py-1 text-xs font-medium text-brand-700 shadow-2xs transition-colors hover:bg-brand-100/60"
-              title="Apply this file's polymer settings to all open mzML files"
-            >
-              Apply to all open files
-            </button>
+            <Hint id="lcms.polyApplyAll">
+              <button
+                type="button"
+                onClick={onApplyToAllSessions}
+                className="rounded-md border border-brand-300 bg-surface px-2.5 py-1 text-xs font-medium text-brand-700 shadow-2xs transition-colors hover:bg-brand-100/60"
+              >
+                Apply to all open files
+              </button>
+            </Hint>
           )}
         </div>
       )}
@@ -260,15 +266,17 @@ export function PolymerEnableToggle(props: PolymerSectionProps) {
   const { shared, patchShared } = polymerPatchers(props);
   const disabled = props.polarity === "all";
   return (
-    <label className={clsx("flex items-center gap-2 text-sm font-semibold text-ink-800", disabled && "opacity-60")}>
-      <input
-        type="checkbox"
-        checked={shared.enabled && !disabled}
-        disabled={disabled}
-        onChange={(e) => patchShared({ enabled: e.target.checked })}
-      />
-      <span>Enable polymer matching on spectrum</span>
-    </label>
+    <Hint id="lcms.polyEnable">
+      <label className={clsx("flex items-center gap-2 text-sm font-semibold text-ink-800", disabled && "opacity-60")}>
+        <input
+          type="checkbox"
+          checked={shared.enabled && !disabled}
+          disabled={disabled}
+          onChange={(e) => patchShared({ enabled: e.target.checked })}
+        />
+        <span>Enable polymer matching on spectrum</span>
+      </label>
+    </Hint>
   );
 }
 
@@ -276,14 +284,14 @@ export function PolymerMatchingSettings(props: PolymerSectionProps) {
   const { shared, patchShared } = polymerPatchers(props);
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <NumberSetting
+      <NumberSetting hint="lcms.polyTolerance"
         label="Tolerance"
         value={shared.tol_value}
         min={0}
         step={shared.tol_unit === "ppm" ? 1 : 0.001}
         onChange={(value) => patchShared({ tol_value: Math.max(0, value ?? shared.tol_value) })}
       />
-      <SelectSetting
+      <SelectSetting hint="lcms.polyTolUnit"
         label="Tolerance unit"
         value={shared.tol_unit}
         options={[
@@ -292,7 +300,7 @@ export function PolymerMatchingSettings(props: PolymerSectionProps) {
         ]}
         onChange={(tol_unit) => patchShared({ tol_unit: tol_unit as "Da" | "ppm" })}
       />
-      <NumberSetting
+      <NumberSetting hint="lcms.polyMaxDp"
         label="Max DP"
         value={shared.max_dp}
         min={1}
@@ -300,7 +308,7 @@ export function PolymerMatchingSettings(props: PolymerSectionProps) {
         step={1}
         onChange={(value) => patchShared({ max_dp: Math.max(1, value ?? shared.max_dp) })}
       />
-      <NumberSetting
+      <NumberSetting hint="lcms.polyMinRel"
         label="Min rel intensity"
         value={shared.min_rel_int}
         min={0}
@@ -316,35 +324,32 @@ export function PolymerPresetButton(props: PolymerSectionProps) {
   const { mode, profile } = polymerPatchers(props);
   if (props.polarity === "all") return null;
   return (
-    <button
-      type="button"
-      className="self-start rounded-md border border-brand-200 bg-surface px-3 py-1.5 text-left text-xs text-brand-700 transition-colors hover:bg-brand-50"
-      title={
-        mode === "positive"
-          ? "Turns on matching, +Na, +K, water loss and 2M clusters"
-          : "Turns on matching, +Cl, +HCOO, +Ac, water loss and 2M clusters"
-      }
-      onClick={() =>
-        props.onChange({
-          ...props.settings,
-          shared: {
-            ...props.settings.shared,
-            enabled: true,
-            h2o_loss: true,
-            cluster: true,
-            charges: props.settings.shared.charges || "1",
-          },
-          [mode]: {
-            ...profile,
-            ...(mode === "positive"
-              ? { adduct_na: true, adduct_k: true }
-              : { adduct_cl: true, adduct_formate: true, adduct_acetate: true }),
-          },
-        })
-      }
-    >
-      Apply small-oligomer MS1 annotation preset
-    </button>
+    <Hint id="lcms.polyPreset">
+      <button
+        type="button"
+        className="self-start rounded-md border border-brand-200 bg-surface px-3 py-1.5 text-left text-xs text-brand-700 transition-colors hover:bg-brand-50"
+        onClick={() =>
+          props.onChange({
+            ...props.settings,
+            shared: {
+              ...props.settings.shared,
+              enabled: true,
+              h2o_loss: true,
+              cluster: true,
+              charges: props.settings.shared.charges || "1",
+            },
+            [mode]: {
+              ...profile,
+              ...(mode === "positive"
+                ? { adduct_na: true, adduct_k: true }
+                : { adduct_cl: true, adduct_formate: true, adduct_acetate: true }),
+            },
+          })
+        }
+      >
+        Apply small-oligomer MS1 annotation preset
+      </button>
+    </Hint>
   );
 }
 
@@ -368,19 +373,23 @@ export function PolymerMonomerSettings(props: PolymerSectionProps) {
           monomers.
         </div>
       )}
-      <div className="grid grid-cols-1 gap-3">
-        <MonomerPresetBox title="Known hydroxy acids" category="hydroxy" monomers={props.settings.monomers} onChange={patchMonomers} />
-        <MonomerPresetBox title="Amino acids" category="amino" monomers={props.settings.monomers} onChange={patchMonomers} />
-      </div>
-      <label className="block">
-        <div className="label">Other monomers</div>
-        <textarea
-          className="input mt-1 h-20 w-full font-mono text-xs"
-          value={shared.monomers_text}
-          placeholder={"PEG 44.0262\nCustom,123.4567"}
-          onChange={(e) => patchShared({ monomers_text: e.target.value })}
-        />
-      </label>
+      <Hint id="lcms.polyMonomers" className="w-full">
+        <div className="grid grid-cols-1 gap-3">
+          <MonomerPresetBox title="Known hydroxy acids" category="hydroxy" monomers={props.settings.monomers} onChange={patchMonomers} />
+          <MonomerPresetBox title="Amino acids" category="amino" monomers={props.settings.monomers} onChange={patchMonomers} />
+        </div>
+      </Hint>
+      <Hint id="lcms.polyOtherMonomers" className="w-full">
+        <label className="block">
+          <div className="label">Other monomers</div>
+          <textarea
+            className="input mt-1 h-20 w-full font-mono text-xs"
+            value={shared.monomers_text}
+            placeholder={"PEG 44.0262\nCustom,123.4567"}
+            onChange={(e) => patchShared({ monomers_text: e.target.value })}
+          />
+        </label>
+      </Hint>
       <p className="-mt-2 text-xs text-ink-500">One per line as &quot;Name Mass&quot;, &quot;Name,Mass&quot; or &quot;Mass&quot;.</p>
     </div>
   );
@@ -433,142 +442,146 @@ export function PolymerAdductSettings(props: PolymerSectionProps) {
   return (
     <div className="flex flex-col gap-4">
       <GroupBox title={mode === "negative" ? "Negative adducts" : "Positive adducts"}>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {mode === "negative" ? (
-            <>
-              <Check label="+Cl⁻ (Chloride)" checked={profile.adduct_cl} onChange={(adduct_cl) => patchProfile({ adduct_cl })} />
-              <Check
-                label="+HCOO⁻ (Formate)"
-                checked={profile.adduct_formate}
-                onChange={(adduct_formate) => patchProfile({ adduct_formate })}
-              />
-              <Check
-                label="+CH₃COO⁻ (Acetate)"
-                checked={profile.adduct_acetate}
-                onChange={(adduct_acetate) => patchProfile({ adduct_acetate })}
-              />
-            </>
-          ) : (
-            <>
-              <Check label="+Na⁺ (Sodium)" checked={profile.adduct_na} onChange={(adduct_na) => patchProfile({ adduct_na })} />
-              <Check label="+K⁺ (Potassium)" checked={profile.adduct_k} onChange={(adduct_k) => patchProfile({ adduct_k })} />
-            </>
-          )}
-        </div>
+        <Hint id="lcms.polyAdducts" className="w-full">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {mode === "negative" ? (
+              <>
+                <Check label="+Cl⁻ (Chloride)" checked={profile.adduct_cl} onChange={(adduct_cl) => patchProfile({ adduct_cl })} />
+                <Check
+                  label="+HCOO⁻ (Formate)"
+                  checked={profile.adduct_formate}
+                  onChange={(adduct_formate) => patchProfile({ adduct_formate })}
+                />
+                <Check
+                  label="+CH₃COO⁻ (Acetate)"
+                  checked={profile.adduct_acetate}
+                  onChange={(adduct_acetate) => patchProfile({ adduct_acetate })}
+                />
+              </>
+            ) : (
+              <>
+                <Check label="+Na⁺ (Sodium)" checked={profile.adduct_na} onChange={(adduct_na) => patchProfile({ adduct_na })} />
+                <Check label="+K⁺ (Potassium)" checked={profile.adduct_k} onChange={(adduct_k) => patchProfile({ adduct_k })} />
+              </>
+            )}
+          </div>
+        </Hint>
       </GroupBox>
 
-      <GroupBox title="Custom adducts">
-        {customAdducts.length > 0 ? (
-          <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-ink-200 bg-surface p-2">
-            {customAdducts.map((adduct) => (
-              <div
-                key={adduct.id}
-                className="flex items-center justify-between gap-2 rounded bg-ink-50 px-2.5 py-1.5 text-xs transition-colors hover:bg-ink-100/70"
-              >
-                <label className="flex cursor-pointer select-none items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={adduct.enabled}
-                    onChange={(e) =>
-                      patchProfile({
-                        custom_adducts: customAdducts.map((a) =>
-                          a.id === adduct.id ? { ...a, enabled: e.target.checked } : a,
-                        ),
-                      })
-                    }
-                  />
-                  <span className="font-semibold text-ink-900">{adduct.name}</span>
-                </label>
-                <div className="flex items-center gap-3 text-ink-600">
-                  <span className="font-mono text-xs">
-                    {adduct.mass >= 0 ? `+${adduct.mass.toFixed(4)}` : adduct.mass.toFixed(4)} Da
-                  </span>
-                  <span className="rounded bg-ink-200/80 px-1.5 py-0.5 font-mono text-[12px] font-medium text-ink-800">
-                    z = {adduct.charge}
-                  </span>
-                  <button
-                    type="button"
-                    className="flex min-h-6 min-w-6 items-center justify-center rounded font-bold text-ink-500 transition-colors hover:bg-danger-surface hover:text-danger-fg"
-                    title="Remove custom adduct"
-                    aria-label={`Remove custom adduct ${adduct.name}`}
-                    onClick={() => patchProfile({ custom_adducts: customAdducts.filter((a) => a.id !== adduct.id) })}
-                  >
-                    ✕
-                  </button>
+      <Hint id="lcms.polyCustomAdducts" className="w-full">
+        <GroupBox title="Custom adducts">
+          {customAdducts.length > 0 ? (
+            <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-ink-200 bg-surface p-2">
+              {customAdducts.map((adduct) => (
+                <div
+                  key={adduct.id}
+                  className="flex items-center justify-between gap-2 rounded bg-ink-50 px-2.5 py-1.5 text-xs transition-colors hover:bg-ink-100/70"
+                >
+                  <label className="flex cursor-pointer select-none items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={adduct.enabled}
+                      onChange={(e) =>
+                        patchProfile({
+                          custom_adducts: customAdducts.map((a) =>
+                            a.id === adduct.id ? { ...a, enabled: e.target.checked } : a,
+                          ),
+                        })
+                      }
+                    />
+                    <span className="font-semibold text-ink-900">{adduct.name}</span>
+                  </label>
+                  <div className="flex items-center gap-3 text-ink-600">
+                    <span className="font-mono text-xs">
+                      {adduct.mass >= 0 ? `+${adduct.mass.toFixed(4)}` : adduct.mass.toFixed(4)} Da
+                    </span>
+                    <span className="rounded bg-ink-200/80 px-1.5 py-0.5 font-mono text-[12px] font-medium text-ink-800">
+                      z = {adduct.charge}
+                    </span>
+                    <button
+                      type="button"
+                      className="flex min-h-6 min-w-6 items-center justify-center rounded font-bold text-ink-500 transition-colors hover:bg-danger-surface hover:text-danger-fg"
+                      title="Remove custom adduct"
+                      aria-label={`Remove custom adduct ${adduct.name}`}
+                      onClick={() => patchProfile({ custom_adducts: customAdducts.filter((a) => a.id !== adduct.id) })}
+                    >
+                      ✕
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs italic text-ink-500">No custom adducts yet. Add one below or pick a preset.</p>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-ink-500">
+            <span className="font-medium text-ink-600">Presets:</span>
+            {CUSTOM_ADDUCT_PRESETS[mode].map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                className="min-h-6 rounded border border-ink-200 bg-surface px-2 py-0.5 text-[12px] text-ink-700 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                onClick={() => {
+                  setCustomName(p.name);
+                  setCustomMass(p.mass.toString());
+                  setCustomCharge(p.charge.toString());
+                }}
+                title={`Fill ${p.name} (+${p.mass} Da, z=${p.charge})`}
+              >
+                +{p.name} ({p.mass} Da, z={p.charge})
+              </button>
             ))}
           </div>
-        ) : (
-          <p className="text-xs italic text-ink-500">No custom adducts yet. Add one below or pick a preset.</p>
-        )}
-        <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-ink-500">
-          <span className="font-medium text-ink-600">Presets:</span>
-          {CUSTOM_ADDUCT_PRESETS[mode].map((p) => (
+          <div className="grid grid-cols-1 items-end gap-2 rounded-md border border-ink-200 bg-surface p-2.5 sm:grid-cols-4">
+            <label className="block text-[12px] font-medium text-ink-600">
+              Adduct name
+              <input
+                type="text"
+                className="input h-7 w-full text-xs"
+                placeholder="e.g. NH4 or Ca"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                onKeyDown={onEnter}
+              />
+            </label>
+            <label className="block text-[12px] font-medium text-ink-600">
+              Mass delta (Da)
+              <input
+                type="number"
+                step="0.0001"
+                className="input h-7 w-full text-xs"
+                placeholder="e.g. 18.0338"
+                value={customMass}
+                onChange={(e) => setCustomMass(e.target.value)}
+                onKeyDown={onEnter}
+              />
+            </label>
+            <label className="block text-[12px] font-medium text-ink-600">
+              Charge state (z)
+              <input
+                type="number"
+                min="1"
+                max="6"
+                step="1"
+                className="input h-7 w-full text-xs"
+                placeholder="1"
+                value={customCharge}
+                onChange={(e) => setCustomCharge(e.target.value)}
+                onKeyDown={onEnter}
+              />
+            </label>
             <button
-              key={p.name}
               type="button"
-              className="min-h-6 rounded border border-ink-200 bg-surface px-2 py-0.5 text-[12px] text-ink-700 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
-              onClick={() => {
-                setCustomName(p.name);
-                setCustomMass(p.mass.toString());
-                setCustomCharge(p.charge.toString());
-              }}
-              title={`Fill ${p.name} (+${p.mass} Da, z=${p.charge})`}
+              className="btn-primary flex h-7 items-center justify-center whitespace-nowrap text-xs disabled:opacity-50"
+              disabled={!customName.trim() || !Number.isFinite(parseFloat(customMass))}
+              onClick={addCustomAdduct}
             >
-              +{p.name} ({p.mass} Da, z={p.charge})
+              <Plus size={15} strokeWidth={1.8} aria-hidden />
+              Add adduct
             </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-1 items-end gap-2 rounded-md border border-ink-200 bg-surface p-2.5 sm:grid-cols-4">
-          <label className="block text-[12px] font-medium text-ink-600">
-            Adduct name
-            <input
-              type="text"
-              className="input h-7 w-full text-xs"
-              placeholder="e.g. NH4 or Ca"
-              value={customName}
-              onChange={(e) => setCustomName(e.target.value)}
-              onKeyDown={onEnter}
-            />
-          </label>
-          <label className="block text-[12px] font-medium text-ink-600">
-            Mass delta (Da)
-            <input
-              type="number"
-              step="0.0001"
-              className="input h-7 w-full text-xs"
-              placeholder="e.g. 18.0338"
-              value={customMass}
-              onChange={(e) => setCustomMass(e.target.value)}
-              onKeyDown={onEnter}
-            />
-          </label>
-          <label className="block text-[12px] font-medium text-ink-600">
-            Charge state (z)
-            <input
-              type="number"
-              min="1"
-              max="6"
-              step="1"
-              className="input h-7 w-full text-xs"
-              placeholder="1"
-              value={customCharge}
-              onChange={(e) => setCustomCharge(e.target.value)}
-              onKeyDown={onEnter}
-            />
-          </label>
-          <button
-            type="button"
-            className="btn-primary flex h-7 items-center justify-center whitespace-nowrap text-xs disabled:opacity-50"
-            disabled={!customName.trim() || !Number.isFinite(parseFloat(customMass))}
-            onClick={addCustomAdduct}
-          >
-            <Plus size={15} strokeWidth={1.8} aria-hidden />
-            Add adduct
-          </button>
-        </div>
-      </GroupBox>
+          </div>
+        </GroupBox>
+      </Hint>
     </div>
   );
 }
@@ -577,31 +590,31 @@ export function PolymerMassSettings(props: PolymerSectionProps) {
   const { mode, shared, profile, patchShared, patchProfile } = polymerPatchers(props);
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <NumberSetting
+      <NumberSetting hint="lcms.polyBondDelta"
         label="Per-bond delta (Da)"
         value={shared.bond_delta}
         step={0.000001}
         onChange={(value) => patchShared({ bond_delta: value ?? shared.bond_delta })}
       />
-      <NumberSetting
+      <NumberSetting hint="lcms.polyExtraDelta"
         label="Extra delta (Da)"
         value={shared.extra_delta}
         step={0.000001}
         onChange={(value) => patchShared({ extra_delta: value ?? shared.extra_delta })}
       />
-      <NumberSetting
+      <NumberSetting hint="lcms.polyAdductMass"
         label={mode === "negative" ? "-H adduct mass" : "+H adduct mass"}
         value={profile.adduct_mass}
         step={0.000001}
         onChange={(value) => patchProfile({ adduct_mass: value ?? profile.adduct_mass })}
       />
-      <NumberSetting
+      <NumberSetting hint="lcms.polyClusterMass"
         label="Cluster adduct mass"
         value={profile.cluster_adduct_mass}
         step={0.000001}
         onChange={(value) => patchProfile({ cluster_adduct_mass: value ?? profile.cluster_adduct_mass })}
       />
-      <TextSetting
+      <TextSetting hint="lcms.polyCharges"
         label="Allowed charge states (e.g. 1, 2)"
         value={shared.charges}
         onChange={(charges) => patchShared({ charges })}
@@ -613,16 +626,18 @@ export function PolymerMassSettings(props: PolymerSectionProps) {
 export function PolymerVariantSettings(props: PolymerSectionProps) {
   const { mode, shared, patchShared } = polymerPatchers(props);
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      <Check label="Water loss (-H₂O)" checked={shared.h2o_loss} onChange={(h2o_loss) => patchShared({ h2o_loss })} />
-      <Check label="Decarboxylation (-CO₂)" checked={shared.decarb} onChange={(decarb) => patchShared({ decarb })} />
-      <Check label="Oxidation (+O)" checked={shared.oxid} onChange={(oxid) => patchShared({ oxid })} />
-      <Check
-        label={mode === "negative" ? "Noncovalent dimers (2M-H)⁻" : "Noncovalent dimers (2M+H)⁺"}
-        checked={shared.cluster}
-        onChange={(cluster) => patchShared({ cluster })}
-      />
-    </div>
+    <Hint id="lcms.polyVariants" className="w-full">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <Check label="Water loss (-H₂O)" checked={shared.h2o_loss} onChange={(h2o_loss) => patchShared({ h2o_loss })} />
+        <Check label="Decarboxylation (-CO₂)" checked={shared.decarb} onChange={(decarb) => patchShared({ decarb })} />
+        <Check label="Oxidation (+O)" checked={shared.oxid} onChange={(oxid) => patchShared({ oxid })} />
+        <Check
+          label={mode === "negative" ? "Noncovalent dimers (2M-H)⁻" : "Noncovalent dimers (2M+H)⁺"}
+          checked={shared.cluster}
+          onChange={(cluster) => patchShared({ cluster })}
+        />
+      </div>
+    </Hint>
   );
 }
 
@@ -642,13 +657,14 @@ export function PolymerDialog({
       width="max-w-2xl"
       footer={
         <>
-          <button
-            className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
-            title="Reset to your saved defaults (factory defaults if none are saved)"
-            onClick={() => onChange(loadPolymerUiSettings())}
-          >
-            Reset
-          </button>
+          <Hint id="lcms.polyReset">
+            <button
+              className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
+              onClick={() => onChange(loadPolymerUiSettings())}
+            >
+              Reset
+            </button>
+          </Hint>
           <button className="btn-primary" onClick={onClose} disabled={disabled}>
             Apply
           </button>

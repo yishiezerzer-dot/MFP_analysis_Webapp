@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Hint } from "../Hint";
 import {
   api,
   type SpectrumData,
@@ -143,7 +144,7 @@ export function ExpectedProductsDialog({
           Matching expected oligomer products against the currently displayed MS1 spectrum.
         </div>
         <div className="grid grid-cols-4 gap-3">
-          <NumberSetting
+          <NumberSetting hint="lcms.expMaxOligomer"
             label="Max oligomer size"
             value={maxDp}
             min={1}
@@ -153,7 +154,7 @@ export function ExpectedProductsDialog({
               setMaxDp(Math.max(1, Math.min(EXPECTED_PRODUCT_MAX_DP, Math.round(value ?? 3))))
             }
           />
-          <SelectSetting
+          <SelectSetting hint="lcms.expResolution"
             label="Resolution mode"
             value={resolutionMode}
             options={[
@@ -162,8 +163,8 @@ export function ExpectedProductsDialog({
             ]}
             onChange={(value) => setResolutionMode(value as ExpectedProductResolutionMode)}
           />
-          <div title="Floor for matching in low-res mode. Configured ppm/Da is still used if wider.">
-            <NumberSetting
+          <div>
+            <NumberSetting hint="lcms.expLowResTol"
               label="Low-res tolerance (Da)"
               value={lowResolutionTolerance}
               min={0.01}
@@ -172,14 +173,16 @@ export function ExpectedProductsDialog({
               onChange={(value) => setLowResolutionTolerance(Math.max(0.01, value ?? 0.15))}
             />
           </div>
-          <label className="flex items-end gap-2 pb-2 text-xs text-ink-600">
-            <input
-              type="checkbox"
-              checked={showUnmatched}
-              onChange={(event) => setShowUnmatched(event.target.checked)}
-            />
-            Show unmatched candidates
-          </label>
+          <Hint id="lcms.expShowUnmatched">
+            <label className="flex items-end gap-2 pb-2 text-xs text-ink-600">
+              <input
+                type="checkbox"
+                checked={showUnmatched}
+                onChange={(event) => setShowUnmatched(event.target.checked)}
+              />
+              Show unmatched candidates
+            </label>
+          </Hint>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500">
           <div className="self-end pb-2 text-xs text-ink-500">
@@ -196,34 +199,38 @@ export function ExpectedProductsDialog({
                 Low resolution mode uses at least ± {lowResolutionTolerance.toFixed(2)} Da for matching.
               </span>
             )}
-            <button
-              className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
-              onClick={downloadCsv}
-              disabled={rows.length === 0 || !spectrum}
-            >
-              Export current scan CSV
-            </button>
-            <div className="flex items-center gap-1.5">
+            <Hint id="lcms.expExport">
               <button
-                className="rounded-md border border-brand-300 bg-surface px-2 py-1 text-xs text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:text-ink-500"
-                onClick={() => void downloadAllScansCsv()}
-                disabled={exportingAllScans || !activeSid || !tic}
-                title={`Export matched products from all TIC scans above ${allScansThresholdPct}% of max TIC intensity`}
+                className="rounded-md border border-ink-200 bg-surface px-2 py-1 text-xs text-ink-700 hover:bg-ink-50 disabled:cursor-not-allowed disabled:text-ink-500"
+                onClick={downloadCsv}
+                disabled={rows.length === 0 || !spectrum}
               >
-                {exportingAllScans ? "Exporting…" : "Export all scans CSV"}
+                Export current scan CSV
               </button>
-              <span className="text-xs text-ink-500">TIC threshold:</span>
-              <input
-                type="number"
-                className="input w-16 text-xs"
-                value={allScansThresholdPct}
-                min={0.1}
-                max={100}
-                step={0.5}
-                onChange={(e) => setAllScansThresholdPct(Math.max(0.1, Math.min(100, parseFloat(e.target.value) || 5)))}
-              />
-              <span className="text-xs text-ink-500">% of max</span>
-            </div>
+            </Hint>
+            <Hint id="lcms.expExport">
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="rounded-md border border-brand-300 bg-surface px-2 py-1 text-xs text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:text-ink-500"
+                  onClick={() => void downloadAllScansCsv()}
+                  disabled={exportingAllScans || !activeSid || !tic}
+                  title={`Export matched products from all TIC scans above ${allScansThresholdPct}% of max TIC intensity`}
+                >
+                  {exportingAllScans ? "Exporting…" : "Export all scans CSV"}
+                </button>
+                <span className="text-xs text-ink-500">TIC threshold:</span>
+                <input
+                  type="number"
+                  className="input w-16 text-xs"
+                  value={allScansThresholdPct}
+                  min={0.1}
+                  max={100}
+                  step={0.5}
+                  onChange={(e) => setAllScansThresholdPct(Math.max(0.1, Math.min(100, parseFloat(e.target.value) || 5)))}
+                />
+                <span className="text-xs text-ink-500">% of max</span>
+              </div>
+            </Hint>
           </div>
         </div>
         {!spectrum ? (
