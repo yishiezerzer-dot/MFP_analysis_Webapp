@@ -19,6 +19,7 @@ import { LayoutPanel, type SaveState } from "../components/plate/LayoutPanel";
 import { ResultsTab } from "../components/plate/ResultsTab";
 import { ExperimentTab } from "../components/plate/ExperimentTab";
 import { useStoredState } from "../hooks/useStoredState";
+import { useOpenFromUrl } from "../hooks/useOpenFromUrl";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
 import {
@@ -86,6 +87,10 @@ export function PlateReaderView() {
     "plate.tab.experiment": () => setTab("experiment"),
   });
   const view: PlateTab = tab === "experiment" && !active?.experiment_tag ? "map" : tab;
+  useOpenFromUrl(
+    plates.map((p) => p.session_id),
+    (sid) => setActiveSid(sid),
+  );
 
   useEffect(() => {
     let cancelled = false;

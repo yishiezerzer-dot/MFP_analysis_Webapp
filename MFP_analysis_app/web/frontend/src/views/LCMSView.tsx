@@ -6,6 +6,7 @@ import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton } from "../help/HelpShell";
 import { Hint } from "../components/Hint";
 import { useRevealPanel } from "../help/reveal";
+import { useOpenFromUrl } from "../hooks/useOpenFromUrl";
 import { useHelp } from "../help/HelpProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
@@ -1382,6 +1383,14 @@ export function LCMSView() {
     }
     setActiveSid(loaded[loaded.length - 1].session_id);
   };
+
+  useOpenFromUrl(
+    sessions.map((s) => s.session_id),
+    (sid) => {
+      setActiveProjectId("__all");
+      setActiveSid(sid);
+    },
+  );
 
   const openExample = async (sessionIds: string[]) => {
     addLoadedSessions(await Promise.all(sessionIds.map((sid) => api.lcms.get(sid))));

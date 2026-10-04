@@ -38,6 +38,7 @@ import { TabEmptyState } from "../components/common/TabEmptyState";
 import { ExampleTips } from "../components/ExampleData";
 import { Hint } from "../components/Hint";
 import { useRevealPanel } from "../help/reveal";
+import { useOpenFromUrl } from "../hooks/useOpenFromUrl";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -539,6 +540,10 @@ export function FTIRView() {
     (value) => ({ ...DEFAULT_CONTROL_PANELS, ...value }),
   );
   const [inspectorTab, setInspectorTab] = useState<FTIRInspectorTab>("preprocess");
+  useOpenFromUrl(
+    sessions.map((s) => s.session_id),
+    (sid) => setActiveSid(sid),
+  );
   useRevealPanel({
     "ftir.inspector.preprocess": () => setInspectorTab("preprocess"),
     "ftir.inspector.peaks": () => setInspectorTab("peaks"),
