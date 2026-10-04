@@ -10,6 +10,8 @@ import { SideRail } from "../components/common/SideRail";
 import { SegmentedControl } from "../components/common/SegmentedControl";
 import { ICON_PROPS } from "../components/common/ChartCardParts";
 import { Hint } from "../components/Hint";
+import { TabEmptyState } from "../components/common/TabEmptyState";
+import { ExampleTips } from "../components/ExampleData";
 import { useRevealPanel } from "../help/reveal";
 import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
 import { BLANK_RING, GC_RING, PlateGrid } from "../components/plate/PlateGrid";
@@ -196,6 +198,14 @@ export function PlateReaderView() {
 
   useRegisterFileIngest("/plate-reader", onUpload);
 
+  const openExample = async (sessionIds: string[]) => {
+    const opened = await Promise.all(sessionIds.map((sid) => api.plateReader.get(sid)));
+    if (opened.length === 0) return;
+    setPlates((prev) => [...prev, ...opened]);
+    setActiveSid(opened[0].session_id);
+    setTab("results");
+  };
+
   const onRemove = async (sid: string) => {
     try {
       await api.plateReader.remove(sid);
@@ -295,17 +305,16 @@ export function PlateReaderView() {
         <PlatesRail plates={plates} activeSid={activeSid} onSelect={setActiveSid} onRemove={onRemove} />
         {!active || !layout || !form ? (
           <div className="flex min-w-0 flex-1 flex-col overflow-auto p-6">
-            <div className="card flex flex-col items-center justify-center gap-3 p-12 text-center">
-              <Grid3X3 size={40} strokeWidth={1.5} className="text-ink-500" aria-hidden />
-              <div className="text-card-title">Open a plate</div>
-              <div className="max-w-md text-sm text-ink-500">
-                A BioTek Gen5 Excel export, or any sheet or CSV with an 8×12 block labelled A–H and 1–12. Notes
-                typed under the plate in Gen5 (e.g. "A-C - compound") fill in the layout.
-              </div>
-              <button className="btn-primary mt-2" onClick={() => fileRef.current?.click()}>
-                Choose file(s)…
-              </button>
-            </div>
+            <TabEmptyState
+              icon={<Grid3X3 size={40} strokeWidth={1.5} aria-hidden />}
+              title="Open a plate"
+              purpose="Analyse MIC plates: say which wells hold which compound, the growth control and the blank, then read % growth, dose–response and the MIC from the charts. Plates with the same experiment tag are combined."
+              accepts={'A BioTek Gen5 Excel export, or any sheet or CSV with an 8×12 block labelled A–H and 1–12. Notes typed under the plate in Gen5 (e.g. "A-C - compound") fill in the layout.'}
+              pickLabel="Choose file(s)…"
+              onPick={() => fileRef.current?.click()}
+              exampleModule="plate_reader"
+              onExampleOpened={openExample}
+            />
           </div>
         ) : (
           <>
@@ -338,6 +347,7 @@ export function PlateReaderView() {
                 />
                 </Hint>
               </div>
+              <ExampleTips module="plate_reader" activeName={active.display_name} />
               {view === "map" ? (
                 <PlateMapCard
                   plate={active}

@@ -353,6 +353,24 @@ async function handleBlob(res: Response): Promise<Blob> {
   return res.blob();
 }
 
+// --- Example datasets ---
+
+export interface ExampleSummary {
+  id: string;
+  module: "lcms" | "ftir" | "plate_reader";
+  route: string;
+  title: string;
+  description: string;
+  try_this: string[];
+}
+
+export interface ExampleOpened {
+  example_id: string;
+  module: ExampleSummary["module"];
+  route: string;
+  session_ids: string[];
+}
+
 // --- Plate Reader types ---
 
 export type PlateWell = string;
@@ -854,6 +872,14 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => handle<FTIRFitResponse>(r)),
+  },
+
+  examples: {
+    list: () => apiFetch("/api/examples").then((r) => handle<ExampleSummary[]>(r)),
+    open: (id: string) =>
+      apiFetch(`/api/examples/${encodeURIComponent(id)}/open`, { method: "POST" }).then((r) =>
+        handle<ExampleOpened>(r),
+      ),
   },
 
   plateReader: {
