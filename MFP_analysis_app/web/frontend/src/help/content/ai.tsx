@@ -1,5 +1,5 @@
 import type { HelpModule } from "../types";
-import { DocCode, DocH4, DocLead, DocLi, DocNote, DocOl, DocP, DocUl } from "../docPrimitives";
+import { DocCode, DocLead, DocLi, DocNote, DocP, DocUl } from "../docPrimitives";
 
 export const aiHelpModule: HelpModule = {
   title: "AI Assistant — help",
@@ -7,107 +7,125 @@ export const aiHelpModule: HelpModule = {
     {
       id: "overview",
       title: "Overview",
-      keywords: ["chat", "llm", "assistant"],
+      keywords: ["chat", "llm", "assistant", "start"],
       body: (
-        <DocLead>
-          The AI Assistant sends your prompts (and optional structured context about loaded sessions) to a configured
-          provider: Demo (offline canned logic), OpenAI-compatible API, or local Ollama. It is <strong>read-only</strong>:
-          it cannot mutate mzML, plates, or workspaces—only describe workflows and suggest steps.
-        </DocLead>
+        <>
+          <DocLead>
+            Ask questions about the app or your open data, or ask the assistant to do something — "create an EIC for
+            m/z 150.1", "open the Kendrick plot". It uses the same actions as the app's buttons.
+          </DocLead>
+          <DocP>
+            It starts in <strong>Demo</strong> mode: offline keyword matching, no real AI. Choose OpenAI, Anthropic or a
+            local Ollama model in the left panel to use a real model.
+          </DocP>
+        </>
       ),
     },
     {
       id: "providers",
-      title: "Providers and models",
-      keywords: ["openai", "ollama", "demo", "api key"],
+      title: "Providers and API keys",
+      keywords: ["openai", "anthropic", "claude", "ollama", "demo", "api key", "model"],
       body: (
         <>
           <DocUl>
             <DocLi>
-              <strong>Demo</strong> uses lightweight mock responses—no network required.
+              <strong>Demo</strong>: no network, no key; replies come from keyword matching, so "don't clear EICs" can
+              still clear them.
             </DocLi>
             <DocLi>
-              <strong>OpenAI</strong> requires server-side configuration (keys are not stored in the React bundle); the UI
-              shows availability from <DocCode>/api/ai/...</DocCode> status endpoints.
+              <strong>OpenAI / Anthropic</strong>: paste your API key. It is stored in this browser in plain text and
+              sent straight from the browser to the provider.
             </DocLi>
             <DocLi>
-              <strong>Ollama</strong> expects a reachable base URL (default <DocCode>http://127.0.0.1:11434</DocCode>) and
-              a model tag that exists locally.
+              <strong>Ollama</strong>: a model running on your own computer; set its address (default{" "}
+              <DocCode>http://127.0.0.1:11434</DocCode>) and a model you have pulled.
             </DocLi>
             <DocLi>
-              <strong>Model field</strong> overrides the default model name sent with chat requests when non-empty.
+              <strong>Test</strong> checks the connection before you chat.
             </DocLi>
           </DocUl>
-          <DocNote>
-            Never paste secrets into chat messages; provider credentials belong in environment variables on the backend.
-          </DocNote>
+          <DocNote>Use a key with a low monthly spending limit, and don't use a shared browser profile.</DocNote>
         </>
       ),
     },
     {
       id: "context",
-      title: "Context panel",
-      keywords: ["sessions", "module", "snapshot"],
+      title: "Context",
+      keywords: ["sessions", "module", "context", "files"],
       body: (
-        <>
-          <DocH4>Include context</DocH4>
-          <DocP>
-            When enabled, the next chat request may attach a compact summary of loaded sessions for the selected modules
-            (filenames, counts, simple stats). This helps the model answer “what’s loaded?” style questions.
-          </DocP>
-          <DocH4>Active module focus</DocH4>
-          <DocP>
-            Narrows contextual hints to LCMS vs FTIR vs Plate Reader so answers reference the right vocabulary (RT,
-            wavenumber, wells).
-          </DocP>
-          <DocH4>Session checkboxes</DocH4>
-          <DocP>
-            Choose which session IDs are included when multiple are open. Use <strong>Refresh</strong> after loading new
-            files to rebuild the snapshot.
-          </DocP>
-        </>
+        <DocUl>
+          <DocLi>
+            <strong>Include app context</strong> sends a short summary of your open files (names, counts, simple
+            statistics) with each message, so answers refer to your data.
+          </DocLi>
+          <DocLi>
+            <strong>Focus module</strong> narrows it to LCMS, FTIR or Plate Reader.
+          </DocLi>
+          <DocLi>
+            Tick <strong>loaded sessions</strong> to narrow the context to those files; with none ticked, all loaded
+            files are included. <strong>Refresh</strong> after opening new files.
+          </DocLi>
+        </DocUl>
       ),
     },
     {
-      id: "chat-column",
-      title: "Chat column",
-      keywords: ["message", "export", "clear"],
+      id: "actions",
+      title: "Actions and approval",
+      keywords: ["actions", "approve", "reject", "safe", "automation", "trace", "log"],
       body: (
-        <>
-          <DocUl>
-            <DocLi>Messages alternate user vs assistant bubbles with timestamps implicit in order.</DocLi>
-            <DocLi>
-              <strong>Export transcript</strong> downloads plain text of the conversation.
-            </DocLi>
-            <DocLi>
-              <strong>Clear chat</strong> wipes turns locally (does not delete lab data).
-            </DocLi>
-            <DocLi>Composer supports multiline input; send triggers the API call and shows a typing indicator.</DocLi>
-          </DocUl>
-        </>
+        <DocUl>
+          <DocLi>
+            When the assistant wants to run an action you see it in the reply. Harmless actions (open a dialog, make an
+            EIC) run on their own only if <strong>Auto-execute safe actions</strong> is on; anything else waits for{" "}
+            <strong>Approve</strong> or <strong>Reject</strong>.
+          </DocLi>
+          <DocLi>
+            <strong>Show tool-call trace</strong> lists each action with its inputs; the <strong>Action log</strong>{" "}
+            keeps the history.
+          </DocLi>
+          <DocLi>
+            <strong>Provider fallback</strong> tries the next configured provider if the chosen one fails.
+          </DocLi>
+        </DocUl>
       ),
     },
     {
       id: "starter-prompts",
-      title: "Starter prompts",
-      keywords: ["prompts", "examples"],
+      title: "Example questions, saved prompts and macros",
+      keywords: ["prompts", "examples", "macros", "record", "replay"],
+      body: (
+        <DocUl>
+          <DocLi>Clicking an example question on the empty chat sends it right away.</DocLi>
+          <DocLi>
+            <strong>Saved prompts</strong>: save the message you typed, then use it again (fills the box) or run it.
+          </DocLi>
+          <DocLi>
+            <strong>Macros</strong>: Start recording, let the assistant run actions, then save them under a name and
+            replay them later without the AI.
+          </DocLi>
+        </DocUl>
+      ),
+    },
+    {
+      id: "chat-column",
+      title: "Chat",
+      keywords: ["message", "export", "clear", "send"],
       body: (
         <DocP>
-          Empty-state chips seed the composer with common lab questions (e.g. how to preprocess FTIR, interpret MIC
-          plots). Clicking a chip fills the input; edit before sending as needed.
+          Enter sends, Shift+Enter adds a line; the red button cancels a reply in progress. <strong>Export</strong> saves
+          the chat as a text file; <strong>Clear chat</strong> removes the messages (your lab data is untouched).
         </DocP>
       ),
     },
     {
       id: "limitations",
-      title: "Limitations and safety",
-      keywords: ["hallucination", "verify"],
+      title: "Limitations",
+      keywords: ["hallucination", "verify", "accuracy"],
       body: (
-        <DocOl>
-          <DocLi>Models can hallucinate—verify critical numbers against the actual plots and exported tables.</DocLi>
-          <DocLi>Large context windows cost tokens; disable context when asking generic questions.</DocLi>
-          <DocLi>Demo mode answers are static/heuristic and not suitable for novel research conclusions.</DocLi>
-        </DocOl>
+        <DocP>
+          AI models can be confidently wrong. Check numbers against the charts, tables and calculation workbooks before
+          you use them, and don't base conclusions on Demo mode replies.
+        </DocP>
       ),
     },
   ],

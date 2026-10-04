@@ -31,6 +31,10 @@ export const plateReaderHelpModule: HelpModule = {
               gentamicin plate) to see them together.
             </DocLi>
           </DocOl>
+          <DocNote>
+            Press <DocCode>Ctrl K</DocCode> to find any setting by name or purpose, and <DocCode>F1</DocCode> on a
+            control for its help.
+          </DocNote>
         </>
       ),
     },

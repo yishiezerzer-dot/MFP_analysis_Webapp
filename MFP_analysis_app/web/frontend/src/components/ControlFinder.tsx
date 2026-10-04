@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { BookOpen, Search } from "lucide-react";
 import { Hint } from "./Hint";
-import { useToast } from "./Toast";
 import { ICON_PROPS } from "./common/ChartCardParts";
-import { CONTROLS, TAB_LABELS, TAB_ROUTES, tabOfRoute } from "../help/controls";
+import { CONTROLS, TAB_LABELS, tabOfRoute } from "../help/controls";
 import { searchFinder, type FinderResult } from "../help/controlSearch";
-import { revealControl } from "../help/reveal";
+import { useShowControl } from "../help/useShowControl";
 import { useHelp } from "../help/HelpProvider";
 
 const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -16,9 +15,8 @@ const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigat
 export function ControlFinder() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
-  const navigate = useNavigate();
-  const { toast } = useToast();
   const { openHelp } = useHelp();
+  const showControl = useShowControl();
   const currentTab = tabOfRoute(location.pathname);
 
   useEffect(() => {
@@ -32,18 +30,10 @@ export function ControlFinder() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const choose = async (r: FinderResult) => {
+  const choose = (r: FinderResult) => {
     setOpen(false);
-    if (r.kind === "topic") {
-      openHelp(r.id, r.route);
-      return;
-    }
-    const route = TAB_ROUTES[r.control.tab];
-    if (route && route !== location.pathname.replace(/\/$/, "")) navigate(route);
-    const result = await revealControl(r.control.id);
-    if (result === "not-found") {
-      toast(`"${r.control.label}" appears once a file is open on the ${TAB_LABELS[r.control.tab]} tab.`, "info");
-    }
+    if (r.kind === "topic") openHelp(r.id, r.route);
+    else void showControl(r.control.id);
   };
 
   return (

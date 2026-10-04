@@ -32,6 +32,17 @@ describe("Hint", () => {
     expect(screen.getByRole("tooltip").textContent).toMatch(/^Help — Opens the guide for this tab/);
   });
 
+  it("lists the tab's controls under their help topic as Show me buttons", () => {
+    renderAt("/plate-reader");
+    fireEvent.click(screen.getByRole("button", { name: "Help" }));
+    const topic = document.getElementById("help-topic-plate-map") as HTMLElement;
+    const showMe = [...topic.querySelectorAll("button")].map((b) => b.textContent);
+    expect(showMe).toContain("Top concentration");
+    expect(showMe).toContain("Apply to plate");
+    fireEvent.click([...topic.querySelectorAll("button")].find((b) => b.textContent === "Top concentration") as Element);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("opens this tab's help with the Help button and with F1", () => {
     renderAt("/plate-reader");
     fireEvent.click(screen.getByRole("button", { name: "Help" }));

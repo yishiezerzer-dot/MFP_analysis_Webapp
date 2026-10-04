@@ -3,7 +3,8 @@ import { useLocation } from "react-router-dom";
 import { HelpShell } from "./HelpShell";
 import { getHelpModule } from "./registry";
 import { flattenTopics } from "./topicUtils";
-import { TAB_ROUTES, getControl, type ControlHint } from "./controls";
+import { TAB_ROUTES, getControl, tabOfRoute, type ControlHint } from "./controls";
+import { useShowControl } from "./useShowControl";
 
 interface HelpContextValue {
   openHelp: (topicId?: string, route?: string) => void;
@@ -30,6 +31,7 @@ export function HelpProvider({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [open, setOpen] = useState<{ route: string; topic?: string } | null>(null);
   const activeHint = useRef<string | null>(null);
+  const showControl = useShowControl();
 
   const openHelp = useCallback(
     (topicId?: string, route?: string) => setOpen({ route: route ?? location.pathname, topic: topicId }),
@@ -60,7 +62,17 @@ export function HelpProvider({ children }: { children: ReactNode }) {
     <HelpContext.Provider value={value}>
       {children}
       {module && (
-        <HelpShell open module={module} initialTopic={open?.topic} onClose={() => setOpen(null)} />
+        <HelpShell
+          open
+          module={module}
+          initialTopic={open?.topic}
+          tab={open ? tabOfRoute(open.route) : null}
+          onShowControl={(id) => {
+            setOpen(null);
+            void showControl(id);
+          }}
+          onClose={() => setOpen(null)}
+        />
       )}
     </HelpContext.Provider>
   );

@@ -3,6 +3,8 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react
 import type { HelpModule, HelpTopic } from "./types";
 import { filterTopicTree, flattenTopics } from "./topicUtils";
 import { useHelp } from "./HelpProvider";
+import { CONTROLS, type ControlHint, type ControlTab } from "./controls";
+import { Crosshair } from "lucide-react";
 import { Hint } from "../components/Hint";
 
 function TocRow({
@@ -53,14 +55,39 @@ function renderToc(topics: HelpTopic[], depth: number, activeId: string | null, 
   return nodes;
 }
 
-function renderBodies(topics: HelpTopic[]): ReactNode[] {
+function ShowMe({ controls, onShow }: { controls: ControlHint[]; onShow: (id: string) => void }) {
+  if (controls.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5">
+      <span className="text-caption">Show me:</span>
+      {controls.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          className="inline-flex items-center gap-1 rounded-full border border-ink-200 px-2.5 py-0.5 text-[12px] text-ink-700 hover:border-brand-500 hover:bg-brand-50 hover:text-brand-800"
+          onClick={() => onShow(c.id)}
+        >
+          <Crosshair size={12} strokeWidth={1.8} aria-hidden />
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function renderBodies(
+  topics: HelpTopic[],
+  controlsFor: (topicId: string) => ControlHint[],
+  onShow?: (id: string) => void,
+): ReactNode[] {
   const out: ReactNode[] = [];
   for (const t of topics) {
     out.push(
       <section key={t.id} id={`help-topic-${t.id}`} className="scroll-mt-3 border-b border-ink-100 pb-6 last:border-0">
         <h3 className="mb-2 text-sm font-semibold text-ink-900">{t.title}</h3>
         {t.body ? <div className="text-[13px]">{t.body}</div> : null}
-        {t.children?.length ? <div className="mt-3 space-y-6">{renderBodies(t.children)}</div> : null}
+        {onShow && <ShowMe controls={controlsFor(t.id)} onShow={onShow} />}
+        {t.children?.length ? <div className="mt-3 space-y-6">{renderBodies(t.children, controlsFor, onShow)}</div> : null}
       </section>,
     );
   }
@@ -71,11 +98,16 @@ export function HelpShell({
   open,
   module,
   initialTopic,
+  tab,
+  onShowControl,
   onClose,
 }: {
   open: boolean;
   module: HelpModule;
   initialTopic?: string;
+  // The tab this help belongs to; its controls get "Show me" buttons on their help topic.
+  tab?: ControlTab | null;
+  onShowControl?: (id: string) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -84,6 +116,10 @@ export function HelpShell({
   const filtered = useMemo(() => filterTopicTree(module.topics, query), [module.topics, query]);
 
   const flat = useMemo(() => flattenTopics(module.topics), [module.topics]);
+  const controlsFor = useCallback(
+    (topicId: string) => CONTROLS.filter((c) => c.tab === tab && c.helpTopic === topicId),
+    [tab],
+  );
 
   useEffect(() => {
     if (!open) {
@@ -172,7 +208,9 @@ export function HelpShell({
             </div>
             {renderToc(filtered, 0, activeId, scrollToId)}
           </nav>
-          <div className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">{renderBodies(filtered)}</div>
+          <div className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
+            {renderBodies(filtered, controlsFor, onShowControl)}
+          </div>
         </div>
       </div>
     </div>
