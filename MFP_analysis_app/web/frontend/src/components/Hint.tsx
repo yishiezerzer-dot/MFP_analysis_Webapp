@@ -28,8 +28,8 @@ export function Hint({
       <span>
         <strong className="font-semibold">{control.label}</strong> — {control.what}
       </span>
-      {control.typical && <span className="text-white/80">Typical: {control.typical}</span>}
-      {topic && <span className="text-white/65">Help: {topic} · F1</span>}
+      {control.typical && <span className="opacity-80">Typical: {control.typical}</span>}
+      {topic && <span className="opacity-70">Help: {topic} · F1</span>}
     </span>
   ) : undefined;
   return (

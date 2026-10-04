@@ -145,7 +145,7 @@ export function Tooltip({
               zIndex: 9999,
               pointerEvents: "none",
             }}
-            className={`${tipClassName ?? "max-w-[220px]"} rounded-[5px] bg-ink-900 px-2.5 py-1.5 text-[12px] leading-snug text-white shadow-lg`}
+            className={`${tipClassName ?? "max-w-[220px]"} rounded-[5px] bg-ink-900 px-2.5 py-1.5 text-[12px] leading-snug text-[rgb(var(--surface))] shadow-lg`}
           >
             {tip}
           </div>,
