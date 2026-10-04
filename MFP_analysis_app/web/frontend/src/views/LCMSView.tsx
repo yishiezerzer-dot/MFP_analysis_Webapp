@@ -4,9 +4,9 @@ import clsx from "clsx";
 import { api, LCMSEICData, LCMSRegionSpectrumData, LCMSTICOverlayTrace, LCMSFindMzResponse, LCMSSessionSummary, PolymerSettings, SpectrumData, SpectrumLabel, TICData, UVChromatogramResponse } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton } from "../help/HelpShell";
+import { Hint } from "../components/Hint";
 import { useHelp } from "../help/HelpProvider";
 import { AlertBanner } from "../components/AlertBanner";
-import { Tooltip } from "../components/Tooltip";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
 import { useAutomationDispatch } from "../automation/registry";
 import { useStoredState } from "../hooks/useStoredState";
@@ -3039,7 +3039,7 @@ export function LCMSView() {
               e.target.value = "";
             }}
           />
-          <Tooltip content="Load a saved workspace (.json)">
+          <Hint id="lcms.loadWorkspace" placement="bottom">
             <button
               className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100"
               disabled={busy}
@@ -3047,8 +3047,8 @@ export function LCMSView() {
             >
               Load workspace
             </button>
-          </Tooltip>
-          <Tooltip content={sessions.length === 0 ? "Open a file first" : "Save current workspace"}>
+          </Hint>
+          <Hint id="lcms.saveWorkspace" placement="bottom" extra={sessions.length === 0 ? "Open a file first." : undefined}>
             <span>
               <button
                 className="rounded-md border border-ink-200 bg-surface px-3 py-2 text-sm text-ink-700 transition-colors hover:bg-ink-100 disabled:cursor-not-allowed disabled:text-ink-500"
@@ -3058,14 +3058,16 @@ export function LCMSView() {
                 Save workspace
               </button>
             </span>
-          </Tooltip>
-          <button
-            className="btn-primary"
-            disabled={busy}
-            onClick={() => fileRef.current?.click()}
-          >
-            {busy ? "Loading…" : "Open mzML…"}
-          </button>
+          </Hint>
+          <Hint id="lcms.open" placement="bottom">
+            <button
+              className="btn-primary"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+            >
+              {busy ? "Loading…" : "Open mzML…"}
+            </button>
+          </Hint>
         </>
       }
     />,

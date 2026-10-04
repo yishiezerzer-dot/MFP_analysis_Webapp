@@ -11,6 +11,8 @@ import { ArrowDownWideNarrow, FileUp, Link2, MapPin, Palette, Plus, RotateCw, Sp
 import { SegmentedControl } from "../common/SegmentedControl";
 import { schedulePlotResize, useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, UVLabelOrientation, UVTextLabel, LCMSUVOverlayChartTrace, cleanLabelText, UvPlotShape, buildBunchedAnnotations, withAlpha, formatRt, formatScanId, axisRange, maxFinite, axisTitle, axisFrame } from "../../lcms/viewShared";
 import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../common/ChartCardParts";
+import { Hint } from "../Hint";
+import { useRevealPanel } from "../../help/reveal";
 import { hexToRgba } from "./SpectrumChart";
 
 export function UVChromatogramChart(props: {
@@ -93,6 +95,7 @@ export function UVChromatogramChart(props: {
     settings,
   } = props;
   const [showLabelOptions, setShowLabelOptions] = useState(false);
+  useRevealPanel({ "lcms.uv.labelOptions": () => setShowLabelOptions(true) });
   const pt = usePlotlyTheme();
   const available = uv?.available === true;
   const canPlot = available || overlayTraces.length > 0;
@@ -475,39 +478,46 @@ export function UVChromatogramChart(props: {
         <div className="flex flex-wrap items-center gap-1.5">
           {available && (
             <>
-              <button
-                type="button"
-                className="btn-primary whitespace-nowrap px-2.5 py-1"
-                onClick={props.onAutoLabelUV}
-                disabled={busy}
-                title="Automatically detect UV peaks and annotate each with matching MS spectrum m/z"
-              >
-                <Sparkles {...ICON_PROPS} />
-                <span>Auto label peaks</span>
-              </button>
-              {props.onLabelSelectedRT && selectedUvRt != null && (
-                <ToolbarButton
-                  icon={MapPin}
-                  label="Label RT"
+              <Hint id="lcms.uvAutoLabel">
+                <button
+                  type="button"
+                  className="btn-primary whitespace-nowrap px-2.5 py-1"
+                  onClick={props.onAutoLabelUV}
                   disabled={busy}
-                  onClick={props.onLabelSelectedRT}
-                  title="Annotate currently selected UV retention time with top MS spectrum peaks"
-                />
+                >
+                  <Sparkles {...ICON_PROPS} />
+                  <span>Auto label peaks</span>
+                </button>
+              </Hint>
+              {props.onLabelSelectedRT && selectedUvRt != null && (
+                <Hint id="lcms.uvLabelRt">
+                  <ToolbarButton
+                    icon={MapPin}
+                    label="Label RT"
+                    disabled={busy}
+                    onClick={props.onLabelSelectedRT}
+                  />
+                </Hint>
               )}
               {props.onCustomUvLabel && (
-                <ToolbarButton icon={Plus} label="Custom" disabled={busy} onClick={props.onCustomUvLabel} title="Add custom text label at retention time" />
+                <Hint id="lcms.uvCustomLabel">
+                  <ToolbarButton icon={Plus} label="Custom" disabled={busy} onClick={props.onCustomUvLabel} />
+                </Hint>
               )}
-              <ToolbarButton
-                icon={Tags}
-                label="Label options"
-                active={showLabelOptions}
-                onClick={() => setShowLabelOptions((prev) => !prev)}
-                title="Configure UV peak detection thresholds, label arrangement, and snapping"
-              />
+              <Hint id="lcms.uvLabelOptions">
+                <ToolbarButton
+                  icon={Tags}
+                  label="Label options"
+                  active={showLabelOptions}
+                  onClick={() => setShowLabelOptions((prev) => !prev)}
+                />
+              </Hint>
               {labels.length > 0 && (
-                <button type="button" className="btn-danger whitespace-nowrap px-2 py-1" onClick={onClearLabels} title="Delete all transferred UV labels">
-                  Clear labels ({labels.length})
-                </button>
+                <Hint id="lcms.uvClearLabels">
+                  <button type="button" className="btn-danger whitespace-nowrap px-2 py-1" onClick={onClearLabels}>
+                    Clear labels ({labels.length})
+                  </button>
+                </Hint>
               )}
             </>
           )}
@@ -516,40 +526,46 @@ export function UVChromatogramChart(props: {
         {/* Right Cluster: Standard controls, export, and file management */}
         <div className="flex items-center gap-1.5 shrink-0">
           {overlayTraces.length > 0 && props.onUpdateOverlayMode && (
-            <SegmentedControl
-              size="xs"
-              ariaLabel="Overlay scale"
-              value={overlayMode}
-              onChange={(mode) => props.onUpdateOverlayMode?.(mode)}
-              options={[
-                { value: "raw", label: "Raw", title: "Overlay on shared absolute scale" },
-                { value: "normalized", label: "% Norm", title: "Normalize each trace to 0–100% base peak" },
-                { value: "stacked", label: "Stacked", title: "Waterfall stacked chromatograms" },
-              ]}
-            />
+            <Hint id="lcms.overlayScale">
+              <SegmentedControl
+                size="xs"
+                ariaLabel="Overlay scale"
+                value={overlayMode}
+                onChange={(mode) => props.onUpdateOverlayMode?.(mode)}
+                options={[
+                  { value: "raw", label: "Raw" },
+                  { value: "normalized", label: "% Norm" },
+                  { value: "stacked", label: "Stacked" },
+                ]}
+              />
+            </Hint>
           )}
           {props.onToggleSyncZoom && (
-            <ToolbarButton
-              icon={Link2}
-              label={props.syncZoom ? "Zoom synced" : "Sync zoom"}
-              active={props.syncZoom}
-              onClick={props.onToggleSyncZoom}
-              title="Synchronize X-axis zoom & pan between TIC and UV chromatograms"
-            />
+            <Hint id="lcms.syncZoom">
+              <ToolbarButton
+                icon={Link2}
+                label={props.syncZoom ? "Zoom synced" : "Sync zoom"}
+                active={props.syncZoom}
+                onClick={props.onToggleSyncZoom}
+              />
+            </Hint>
           )}
           {props.onOpenDesign && (
-            <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} title="Configure UV plot appearance, limits & labels" />
+            <Hint id="lcms.chartDesign">
+              <ToolbarButton icon={Palette} label="Design" onClick={props.onOpenDesign} />
+            </Hint>
           )}
           {props.onReload && (
-            <ToolbarButton
-              icon={RotateCw}
-              label="Reload"
-              title="Reload UV plot"
-              onClick={() => {
-                setLocalRevision((r) => r + 1);
-                props.onReload?.();
-              }}
-            />
+            <Hint id="lcms.reload">
+              <ToolbarButton
+                icon={RotateCw}
+                label="Reload"
+                onClick={() => {
+                  setLocalRevision((r) => r + 1);
+                  props.onReload?.();
+                }}
+              />
+            </Hint>
           )}
 
           <PaperFigureExportToolbar
@@ -559,15 +575,18 @@ export function UVChromatogramChart(props: {
             onExport={saveUvPaper}
           />
 
-          <ToolbarButton
-            icon={FileUp}
-            label={busy ? "Working…" : available ? "Replace CSV…" : "Attach CSV…"}
-            disabled={busy}
-            onClick={onPickFile}
-            title="Attach a UV/DAD chromatogram exported from your LC"
-          />
+          <Hint id="lcms.uvAttach">
+            <ToolbarButton
+              icon={FileUp}
+              label={busy ? "Working…" : available ? "Replace CSV…" : "Attach CSV…"}
+              disabled={busy}
+              onClick={onPickFile}
+            />
+          </Hint>
           {available && (
-            <ToolbarButton icon={Unlink} label="Detach" disabled={busy} onClick={onRemove} title="Detach UV chromatogram" />
+            <Hint id="lcms.uvDetach">
+              <ToolbarButton icon={Unlink} label="Detach" disabled={busy} onClick={onRemove} />
+            </Hint>
           )}
         </div>
       </div>
@@ -581,26 +600,28 @@ export function UVChromatogramChart(props: {
             </div>
             <div className="flex items-center gap-2">
               {props.onAutoArrangeLabels && (
-                <button
-                  type="button"
-                  className="btn-ghost px-2 py-1 disabled:opacity-40"
-                  onClick={props.onAutoArrangeLabels}
-                  disabled={labels.length === 0}
-                  title="Arrange labels into clean descending stairs to prevent overlap"
-                >
-                  <ArrowDownWideNarrow {...ICON_PROPS} />
-                  Auto-arrange stairs
-                </button>
+                <Hint id="lcms.uvArrange">
+                  <button
+                    type="button"
+                    className="btn-ghost px-2 py-1 disabled:opacity-40"
+                    onClick={props.onAutoArrangeLabels}
+                    disabled={labels.length === 0}
+                  >
+                    <ArrowDownWideNarrow {...ICON_PROPS} />
+                    Auto-arrange stairs
+                  </button>
+                </Hint>
               )}
               {labels.length > 0 && (
-                <button
-                  type="button"
-                  className="btn-danger px-2 py-1"
-                  onClick={onClearLabels}
-                  title="Clear all transferred and custom UV labels"
-                >
-                  Clear All ({labels.length})
-                </button>
+                <Hint id="lcms.uvClearLabels">
+                  <button
+                    type="button"
+                    className="btn-danger px-2 py-1"
+                    onClick={onClearLabels}
+                  >
+                    Clear All ({labels.length})
+                  </button>
+                </Hint>
               )}
             </div>
           </div>
@@ -611,40 +632,46 @@ export function UVChromatogramChart(props: {
               <div className="text-section">
                 Peak Detection
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-ink-600">Prominence:</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  className="input h-7 w-20 text-xs"
-                  value={props.uvProminence ?? 0.05}
-                  onChange={(e) =>
-                    props.setUvProminence?.(Math.max(0, parseFloat(e.target.value || "0") || 0))
-                  }
-                />
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-ink-600">Min dist (min):</span>
-                <input
-                  type="number"
-                  step="0.05"
-                  min={0}
-                  className="input h-7 w-20 text-xs"
-                  value={props.uvMinDistance ?? 0.1}
-                  onChange={(e) =>
-                    props.setUvMinDistance?.(Math.max(0, parseFloat(e.target.value || "0") || 0))
-                  }
-                />
-              </div>
-              <button
-                type="button"
-                className="w-full rounded bg-brand-600 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-                onClick={props.onAutoLabelUV}
-                disabled={!available || busy}
-              >
-                Re-run Detection
-              </button>
+              <Hint id="lcms.uvProminence" className="w-full">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-ink-600">Prominence:</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    className="input h-7 w-20 text-xs"
+                    value={props.uvProminence ?? 0.05}
+                    onChange={(e) =>
+                      props.setUvProminence?.(Math.max(0, parseFloat(e.target.value || "0") || 0))
+                    }
+                  />
+                </div>
+              </Hint>
+              <Hint id="lcms.uvMinDistance" className="w-full">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-ink-600">Min dist (min):</span>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min={0}
+                    className="input h-7 w-20 text-xs"
+                    value={props.uvMinDistance ?? 0.1}
+                    onChange={(e) =>
+                      props.setUvMinDistance?.(Math.max(0, parseFloat(e.target.value || "0") || 0))
+                    }
+                  />
+                </div>
+              </Hint>
+              <Hint id="lcms.uvRerun" className="w-full">
+                <button
+                  type="button"
+                  className="w-full rounded bg-brand-600 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                  onClick={props.onAutoLabelUV}
+                  disabled={!available || busy}
+                >
+                  Re-run Detection
+                </button>
+              </Hint>
             </div>
 
             {/* Placement & Alignment */}
@@ -652,26 +679,30 @@ export function UVChromatogramChart(props: {
               <div className="text-section">
                 Placement & Angle
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-ink-600">Orientation:</span>
-                <select
-                  className="input h-7 text-xs"
-                  value={labelOrientation}
-                  onChange={(e) => props.setUvLabelOrientation?.(e.target.value as UVLabelOrientation)}
-                >
-                  <option value="vertical">Vertical (-90°)</option>
-                  <option value="horizontal">Horizontal (0°)</option>
-                </select>
-              </div>
-              <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  className="rounded border-ink-300 text-brand-600"
-                  checked={props.snapUvLabels ?? false}
-                  onChange={(e) => props.setSnapUvLabels?.(e.target.checked)}
-                />
-                <span>Snap to peak apex</span>
-              </label>
+              <Hint id="lcms.uvOrientation" className="w-full">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-ink-600">Orientation:</span>
+                  <select
+                    className="input h-7 text-xs"
+                    value={labelOrientation}
+                    onChange={(e) => props.setUvLabelOrientation?.(e.target.value as UVLabelOrientation)}
+                  >
+                    <option value="vertical">Vertical (-90°)</option>
+                    <option value="horizontal">Horizontal (0°)</option>
+                  </select>
+                </div>
+              </Hint>
+              <Hint id="lcms.uvSnap">
+                <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-ink-300 text-brand-600"
+                    checked={props.snapUvLabels ?? false}
+                    onChange={(e) => props.setSnapUvLabels?.(e.target.checked)}
+                  />
+                  <span>Snap to peak apex</span>
+                </label>
+              </Hint>
             </div>
 
             {/* MS Spectrum Transfer */}
@@ -679,27 +710,31 @@ export function UVChromatogramChart(props: {
               <div className="text-section">
                 Transfer from MS
               </div>
-              <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  className="rounded border-ink-300 text-brand-600"
-                  checked={props.transferMsToUv ?? false}
-                  onChange={(e) => props.setTransferMsToUv?.(e.target.checked)}
-                />
-                <span>Transfer MS peaks on click</span>
-              </label>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-ink-600">Peaks to transfer:</span>
-                <select
-                  className="input h-7 w-20 text-xs"
-                  value={props.uvTransferCount ?? 3}
-                  onChange={(e) => props.setUvTransferCount?.(parseInt(e.target.value, 10))}
-                >
-                  {[1, 2, 3, 5, 8, 10].map((n) => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
-              </div>
+              <Hint id="lcms.uvTransfer">
+                <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-ink-300 text-brand-600"
+                    checked={props.transferMsToUv ?? false}
+                    onChange={(e) => props.setTransferMsToUv?.(e.target.checked)}
+                  />
+                  <span>Transfer MS peaks on click</span>
+                </label>
+              </Hint>
+              <Hint id="lcms.uvTransferCount" className="w-full">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-ink-600">Peaks to transfer:</span>
+                  <select
+                    className="input h-7 w-20 text-xs"
+                    value={props.uvTransferCount ?? 3}
+                    onChange={(e) => props.setUvTransferCount?.(parseInt(e.target.value, 10))}
+                  >
+                    {[1, 2, 3, 5, 8, 10].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+              </Hint>
             </div>
 
             {/* Grouping & Stairs */}
@@ -707,42 +742,48 @@ export function UVChromatogramChart(props: {
               <div className="text-section">
                 Grouping & Stairs
               </div>
-              <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  className="rounded border-ink-300 text-brand-600"
-                  checked={bunchLabels}
-                  onChange={(e) => props.setUvBunchLabels?.(e.target.checked)}
-                />
-                <span>Bunch identical labels</span>
-              </label>
+              <Hint id="lcms.uvBunch">
+                <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-ink-300 text-brand-600"
+                    checked={bunchLabels}
+                    onChange={(e) => props.setUvBunchLabels?.(e.target.checked)}
+                  />
+                  <span>Bunch identical labels</span>
+                </label>
+              </Hint>
               {bunchLabels && (
+                <Hint id="lcms.uvHub" className="w-full">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-ink-600">Hub height:</span>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min={0}
+                      max={1}
+                      className="input h-7 w-20 text-xs"
+                      value={bunchHubOffset}
+                      onChange={(e) => props.setUvBunchHubOffset?.(parseFloat(e.target.value || "0") || 0)}
+                    />
+                  </div>
+                </Hint>
+              )}
+              <Hint id="lcms.uvStairX" className="w-full">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-ink-600">Hub height:</span>
+                  <span className="text-ink-600">Stair X step:</span>
                   <input
                     type="number"
                     step="0.05"
                     min={0}
-                    max={1}
                     className="input h-7 w-20 text-xs"
-                    value={bunchHubOffset}
-                    onChange={(e) => props.setUvBunchHubOffset?.(parseFloat(e.target.value || "0") || 0)}
+                    value={props.uvLabelStairXStep ?? 0.08}
+                    onChange={(e) =>
+                      props.setUvLabelStairXStep?.(Math.max(0, parseFloat(e.target.value || "0") || 0))
+                    }
                   />
                 </div>
-              )}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-ink-600">Stair X step:</span>
-                <input
-                  type="number"
-                  step="0.05"
-                  min={0}
-                  className="input h-7 w-20 text-xs"
-                  value={props.uvLabelStairXStep ?? 0.08}
-                  onChange={(e) =>
-                    props.setUvLabelStairXStep?.(Math.max(0, parseFloat(e.target.value || "0") || 0))
-                  }
-                />
-              </div>
+              </Hint>
             </div>
 
             {/* UV↔MS Alignment */}
@@ -750,41 +791,48 @@ export function UVChromatogramChart(props: {
               <div className="text-section">
                 UV↔MS Alignment
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-ink-600">Offset (min):</span>
-                <input
-                  type="number"
-                  step="0.001"
-                  className="input h-7 w-20 text-xs"
-                  value={props.uvOffsetText ?? "0.000"}
-                  onChange={(e) => props.setUvOffsetText?.(e.target.value)}
-                />
-              </div>
-              <button
-                type="button"
-                className="w-full rounded border border-ink-300 bg-surface py-1 text-xs font-semibold text-ink-700 hover:bg-ink-100"
-                onClick={props.onApplyOffset}
-              >
-                Apply Offset
-              </button>
-              <button
-                type="button"
-                className="w-full rounded bg-brand-600 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
-                onClick={props.onAutoAlignUV}
-                disabled={!available || busy}
-                title="Automatically cross-correlate TIC and UV to find optimal offset"
-              >
-                Auto-align UV↔MS
-              </button>
-              <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  className="rounded border-ink-300 text-brand-600"
-                  checked={props.autoAlignUv ?? false}
-                  onChange={(e) => props.setAutoAlignUv?.(e.target.checked)}
-                />
-                <span>Enable auto-align</span>
-              </label>
+              <Hint id="lcms.uvOffset" className="w-full">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-ink-600">Offset (min):</span>
+                  <input
+                    type="number"
+                    step="0.001"
+                    className="input h-7 w-20 text-xs"
+                    value={props.uvOffsetText ?? "0.000"}
+                    onChange={(e) => props.setUvOffsetText?.(e.target.value)}
+                  />
+                </div>
+              </Hint>
+              <Hint id="lcms.uvOffset" className="w-full">
+                <button
+                  type="button"
+                  className="w-full rounded border border-ink-300 bg-surface py-1 text-xs font-semibold text-ink-700 hover:bg-ink-100"
+                  onClick={props.onApplyOffset}
+                >
+                  Apply Offset
+                </button>
+              </Hint>
+              <Hint id="lcms.uvAutoAlign" className="w-full">
+                <button
+                  type="button"
+                  className="w-full rounded bg-brand-600 py-1 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                  onClick={props.onAutoAlignUV}
+                  disabled={!available || busy}
+                >
+                  Auto-align UV↔MS
+                </button>
+              </Hint>
+              <Hint id="lcms.uvAutoAlign">
+                <label className="flex items-center gap-2 text-ink-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-ink-300 text-brand-600"
+                    checked={props.autoAlignUv ?? false}
+                    onChange={(e) => props.setAutoAlignUv?.(e.target.checked)}
+                  />
+                  <span>Enable auto-align</span>
+                </label>
+              </Hint>
             </div>
           </div>
         </div>
