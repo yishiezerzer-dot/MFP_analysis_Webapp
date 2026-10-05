@@ -6,6 +6,12 @@
 
 Re-check analyses made before these fixes if they relied on the items below.
 
+- **FTIR peak widths and bond suggestions** (library v3.1). The peak *Width* was the distance between the peak's prominence bases, often 500–2000 cm⁻¹, so every peak counted as "broad". It is now the full width at half maximum. With that, and with library fixes, the suggestions change:
+  - aromatic, nitro, sulfone, anhydride, acid O–H and aldehyde C–H now need their partner band;
+  - with an ester C=O present, C–O bands are preferred as ester over phosphate, Si–O, sulfoxide or alcohol/ether;
+  - new bands for CH₂/CH₃ bends, the CH₃ umbrella and C–C skeletal/CH₂ rock.
+
+  On a PLGA film this removes the phosphate, aromatic, nitro and carboxylic-acid O–H labels; the peaks are now ester C=O and C–O, CH bends, C–C skeletal, sp³ C–H and O–H. Re-pick peaks on spectra whose labels or widths you reported.
 - **LCMS polymer / expected-product labels for charge ≥ 2** (plan 1.1). Multiply charged ions were predicted as `(M + 1·H)/z` instead of `(M + z·H)/z`, so real `[M+2H]²⁺`/`[M+3H]³⁺` ions went unlabelled and labels read `[M+H]²⁺`. Na/K/Cl/formate/acetate adducts are now matched at z = 1 only (previously also at z > 1 with a single adduct mass). Affects spectrum labels and the Expected Products table whenever the charges field included values above 1. The same bug existed in a third copy used by the AI assistant / MCP automation action `lcms.compute_expected_products`, which is also fixed.
 - **LCMS spectrum polymer labels with zero-valued settings** (plan 1.2). `bond_delta = 0` (addition polymers) was silently replaced by −18.0106, `adduct_mass = 0` by +1.0073 and `min_rel_int = 0` by 0.01 in server-side spectrum labels. The Expected Products table was not affected.
 - **Expected Products table variants** (plan 1.3). The table now also lists combined modifications (e.g. `+O-CO2`, `-CO2-H2O`), as the spectrum labels already did, so both views agree.
@@ -23,6 +29,7 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **Try with example data / the guides no longer make duplicate example files.** Opening an example that is already open in the workspace selects the open copy; for the plates, only a plate you closed is added back.
 - **Easier for new users, stage 4: recorded walkthroughs.** Each guided workflow has a short animated walkthrough, recorded on the example data, in the help: LCMS and FTIR *Overview*, Plate Reader *Overview*, and *Prepare for paper* under LCMS *Exports* and Plate Reader *Experiment*. `frontend/scripts/walkthroughs` re-records them when the screens change.
 - **Analyse a MIC plate** now prefills the dilution series, growth control, blank rows and a same-plate reference from a plate that already has a layout, not just the compounds. Before, running it on such a plate could clear its blank rows.
 - **Easier for new users, stage 3: guided workflows.** A **Guide me** button asks one question per screen, with an "I don't know" explanation for each and a summary of what it will do before it runs. Answers are remembered for next time.

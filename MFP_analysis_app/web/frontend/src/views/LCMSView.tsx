@@ -1365,10 +1365,12 @@ export function LCMSView() {
     prevUvBunchLabelsRef.current = uvBunchLabels;
   }, [uvBunchLabels]);
 
-  // New sessions (uploads or an opened example) join the list unassigned and become active.
+  // New sessions (uploads or an opened example) join the list unassigned and become active; an example
+  // that was already open comes back as its existing session, which is just selected.
   const addLoadedSessions = (loaded: LCMSSessionSummary[]) => {
     if (loaded.length === 0) return;
-    setSessions((prev) => [...prev, ...loaded]);
+    const fresh = loaded.filter((s) => !sessions.some((p) => p.session_id === s.session_id));
+    setSessions((prev) => [...prev, ...fresh.filter((s) => !prev.some((p) => p.session_id === s.session_id))]);
     setPolymerSettingsBySessionId((prev) => {
       const next = { ...prev };
       loaded.forEach((session) => {
@@ -1380,12 +1382,14 @@ export function LCMSView() {
     });
     setSessionProjectById((prev) => {
       const next = { ...prev };
-      loaded.forEach((session) => {
+      fresh.forEach((session) => {
         next[session.session_id] = null;
       });
       return next;
     });
-    if (activeProjectId !== "__all" && activeProjectId !== "__unassigned") {
+    if (fresh.length < loaded.length) {
+      setActiveProjectId("__all");
+    } else if (activeProjectId !== "__all" && activeProjectId !== "__unassigned") {
       setActiveProjectId("__unassigned");
     }
     setActiveSid(loaded[loaded.length - 1].session_id);

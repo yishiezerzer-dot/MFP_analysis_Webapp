@@ -758,7 +758,8 @@ export function FTIRView() {
 
   const addLoadedSessions = (loaded: FTIRSessionSummary[]) => {
     if (loaded.length === 0) return;
-    setSessions((prev) => [...prev, ...loaded]);
+    // An example that was already open comes back as its existing session.
+    setSessions((prev) => [...prev, ...loaded.filter((s) => !prev.some((p) => p.session_id === s.session_id))]);
     setActiveSid(loaded[loaded.length - 1].session_id);
     setPeaks([]);
     setAssignments(null);

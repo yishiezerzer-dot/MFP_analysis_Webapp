@@ -1,5 +1,6 @@
 """Example datasets: list them, and open one as ordinary sessions (copies, display name "Example – …",
-experiment tag "Example") so new users can practise without their own files."""
+experiment tag "Example") so new users can practise without their own files. Opening an example that is
+already open in the workspace returns the open sessions instead of adding another copy."""
 from __future__ import annotations
 
 import shutil
@@ -31,8 +32,23 @@ def _copy(name: str, dest_dir: Path) -> Path:
     return dest
 
 
+_REGISTRIES = {"lcms": lcms_registry, "ftir": ftir_registry, "plate_reader": plate_registry}
+
+
+def _open_by_name(example: Example, workspace_id: str) -> Dict[str, str]:
+    """Display name → session id of this example's sessions already open in the workspace (oldest first)."""
+    found: Dict[str, str] = {}
+    for session in _REGISTRIES[example.module].list(workspace_id=workspace_id):
+        found.setdefault(session.display_name, session.session_id)
+    return found
+
+
 def _open(example: Example, workspace_id: str) -> List[str]:
+    existing = _open_by_name(example, workspace_id)
     ids: List[str] = []
+    new: List[str] = []
+    if example.module in ("lcms", "ftir") and example.display_name in existing:
+        return [existing[example.display_name]]
     if example.module == "lcms":
         summary = _ingest_mzml(_copy(example.file, _MZML_UPLOAD_DIR), example.display_name, "minutes", workspace_id)
         sid = summary["session_id"]
@@ -40,18 +56,24 @@ def _open(example: Example, workspace_id: str) -> List[str]:
             state = lcms_registry.get(sid)
             attach_uv_from_csv(state, _copy(example.uv_file, _UV_UPLOAD_DIR), filename=example.uv_file, rt_unit="auto")
         ids.append(sid)
+        new.append(sid)
     elif example.module == "ftir":
         state = ftir_registry.add_from_path(_copy(example.file, get_upload_dir("ftir")), workspace_id=workspace_id,
                                             display_name=example.display_name)
         save_session_record(state.session_id, state.workspace_id, "ftir", state.display_name, str(state.path))
         ids.append(state.session_id)
+        new.append(state.session_id)
     elif example.module == "plate_reader":
         for plate in example.plates:
+            if plate.display_name in existing:
+                ids.append(existing[plate.display_name])
+                continue
             session = plate_registry.add_from_path(_copy(plate.file, get_upload_dir("plate_reader")),
                                                    workspace_id=workspace_id, display_name=plate.display_name)
             save_layout(session, PlateLayout.from_dict(plate.layout))
             ids.append(session.session_id)
-    for sid in ids:
+            new.append(session.session_id)
+    for sid in new:
         set_session_experiment_tag(sid, EXAMPLE_TAG)
     return ids
 

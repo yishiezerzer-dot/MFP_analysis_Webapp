@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-FTIR_LIBRARY_VERSION = "3.0"
+FTIR_LIBRARY_VERSION = "3.1"
 
 # Allowed vocab per spec
 _ALLOWED_SHAPES = {"sharp", "medium", "broad"}

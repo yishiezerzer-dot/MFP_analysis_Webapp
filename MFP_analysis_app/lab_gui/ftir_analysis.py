@@ -738,7 +738,7 @@ def pick_peaks_second_derivative(
         prom_orig, lb_i, rb_i = _approx_prominence_with_bases(idx, y_pick)
         lb = float(x_sorted[lb_i]) if lb_i is not None else None
         rb = float(x_sorted[rb_i]) if rb_i is not None else None
-        width = float(abs(rb - lb)) if lb is not None and rb is not None else None
+        width = _fwhm_cm1(x_sorted, y_pick, idx, prom_orig)
         out.append(
             FTIRPeak(
                 wn=float(x_sorted[idx]),
@@ -862,16 +862,14 @@ def _pick_candidates_scipy(
 
             lb = None
             rb = None
-            width = None
             try:
                 if left_bases is not None:
                     lb = float(x[int(left_bases[j])])
                 if right_bases is not None:
                     rb = float(x[int(right_bases[j])])
-                if lb is not None and rb is not None and math.isfinite(lb) and math.isfinite(rb):
-                    width = float(abs(rb - lb))
             except Exception:
-                lb = rb = width = None
+                lb = rb = None
+            width = _fwhm_cm1(x, y_pick, ii, prom)
 
             out.append(FTIRPeak(wn=wn0, y=y0, prominence=float(prom), left_base_wn=lb, right_base_wn=rb, width_cm1=width))
         except Exception:
@@ -915,12 +913,7 @@ def _pick_candidates_fallback(
 
         lb = float(x[lb_i]) if lb_i is not None else None
         rb = float(x[rb_i]) if rb_i is not None else None
-        width = None
-        try:
-            if lb is not None and rb is not None:
-                width = float(abs(rb - lb))
-        except Exception:
-            width = None
+        width = _fwhm_cm1(x, y_pick, i, prom)
 
         out.append(
             FTIRPeak(
@@ -934,6 +927,39 @@ def _pick_candidates_fallback(
         )
 
     return out
+
+
+def _fwhm_cm1(x: np.ndarray, y_pick: np.ndarray, i: int, prominence: float) -> Optional[float]:
+    """Full width at half prominence, in x units (cm^-1), interpolated between samples.
+
+    The distance between a peak's prominence bases is not a width: on a sloping or busy spectrum
+    the bases can lie hundreds of cm^-1 away, which made every band look "broad".
+    """
+    n = int(x.size)
+    if not (0 <= i < n) or not math.isfinite(float(prominence)) or prominence <= 0:
+        return None
+    level = float(y_pick[i]) - 0.5 * float(prominence)
+
+    def crossing(step: int) -> Optional[float]:
+        j = i
+        while 0 <= j + step < n:
+            k = j + step
+            if float(y_pick[k]) <= level:
+                y_j, y_k = float(y_pick[j]), float(y_pick[k])
+                frac = 0.0 if y_j == y_k else (y_j - level) / (y_j - y_k)
+                return float(x[j]) + frac * (float(x[k]) - float(x[j]))
+            j = k
+        return None
+
+    left, right = crossing(-1), crossing(1)
+    if left is None and right is None:
+        return None
+    # A peak at the edge of the range: mirror the side that was measured.
+    if left is None:
+        return float(2.0 * abs(right - float(x[i])))
+    if right is None:
+        return float(2.0 * abs(float(x[i]) - left))
+    return float(abs(right - left))
 
 
 def _approx_prominence(i: int, y: np.ndarray) -> float:

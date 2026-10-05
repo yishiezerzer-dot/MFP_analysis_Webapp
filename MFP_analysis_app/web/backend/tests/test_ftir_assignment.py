@@ -75,3 +75,40 @@ def test_categories_are_derived_from_v3_library():
     assert "ester" in meta["categories"]
     assert "amide" in meta["categories"]
     assert "amide I" in meta["subcategories_by_category"]["amide"]
+
+
+def test_aliphatic_polyester_is_not_called_phosphate_aromatic_or_nitro():
+    # PLGA film: ester C=O and C-O, CH bends, C-C skeletal and alkyl C-H stretches.
+    peaks = [
+        peak(1755, width=30), peak(1185, prominence=0.6, width=33), peak(1090, prominence=0.9, width=35),
+        peak(1454, prominence=0.15, width=21), peak(1384, prominence=0.15, width=16),
+        peak(870, prominence=0.1, width=20), peak(750, prominence=0.1, width=20),
+        peak(2950, prominence=0.1, width=26), peak(2995, prominence=0.08, width=18),
+    ]
+    assignments = assign_ftir_peaks(peaks, FTIR_LIBRARY_V3, top_n=3)
+    expected = {
+        1755: "ester_co", 1185: "ester_co_asym", 1090: "ester_co_sym", 1454: "ch2_ch3_bend",
+        1384: "ch3_sym_bend", 870: "cc_skeletal", 750: "cc_skeletal", 2950: "ch_sp3", 2995: "ch_sp3",
+    }
+    assert {wn: top_id(assignments, wn) for wn in expected} == expected
+
+
+def test_polystyrene_still_gets_aromatic_assignments():
+    peaks = [
+        peak(3060, prominence=0.2, width=10), peak(3026, prominence=0.3, width=10), peak(2920, prominence=0.5, width=20),
+        peak(1601, prominence=0.3, width=8), peak(1493, prominence=0.6, width=8), peak(1452, prominence=0.6, width=10),
+        peak(756, prominence=0.8, width=10), peak(698, prominence=1.0, width=10),
+    ]
+    assignments = assign_ftir_peaks(peaks, FTIR_LIBRARY_V3, top_n=3)
+    assert top_id(assignments, 1601) == "aromatic_cc"
+    assert top_id(assignments, 1493) == "aromatic_cc_1500"
+    assert top_id(assignments, 756) == "aromatic_ch_oop"
+    assert top_id(assignments, 698) == "aromatic_ch_oop"
+    assert top_id(assignments, 3026) == "ch_sp2"
+
+
+def test_carboxylic_acid_oh_needs_a_broad_band_and_an_acid_carbonyl():
+    acid = assign_ftir_peaks([peak(3000, prominence=0.6, width=500), peak(1710, width=25)], FTIR_LIBRARY_V3, top_n=3)
+    assert top_id(acid, 3000) == "oh_acid_broad"
+    ester = assign_ftir_peaks([peak(2950, prominence=0.2, width=25), peak(1750, width=25)], FTIR_LIBRARY_V3, top_n=3)
+    assert top_id(ester, 2950) == "ch_sp3"

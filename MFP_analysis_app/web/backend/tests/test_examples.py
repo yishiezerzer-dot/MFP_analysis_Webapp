@@ -54,3 +54,24 @@ def test_plate_example_opens_both_plates_laid_out_and_tagged():
 
 def test_unknown_example_is_404():
     assert client.post("/api/examples/nope/open", headers=WS).status_code == 404
+
+
+def test_reopening_an_example_returns_the_open_sessions_instead_of_a_copy():
+    ws = {"X-Workspace-Id": "examples_reopen_ws"}
+    first = client.post("/api/examples/ftir-plga/open", headers=ws).json()["session_ids"]
+    again = client.post("/api/examples/ftir-plga/open", headers=ws).json()["session_ids"]
+    assert again == first
+    assert len([s for s in client.get("/api/ftir/sessions", headers=ws).json() if s["display_name"].startswith("Example")]) == 1
+    # Another workspace gets its own copy.
+    other = client.post("/api/examples/ftir-plga/open", headers={"X-Workspace-Id": "examples_other_ws"}).json()["session_ids"]
+    assert other != first
+
+
+def test_reopening_the_plate_example_only_adds_the_plate_that_was_closed():
+    ws = {"X-Workspace-Id": "examples_plates_ws"}
+    gentamicin, polymers = client.post("/api/examples/plate-mic/open", headers=ws).json()["session_ids"]
+    assert client.delete(f"/api/plate-reader/sessions/{polymers}", headers=ws).status_code in (200, 204)
+    again = client.post("/api/examples/plate-mic/open", headers=ws).json()["session_ids"]
+    assert again[0] == gentamicin
+    assert again[1] != polymers
+    assert get_session_record(again[1])["experiment_tag"] == "Example"
