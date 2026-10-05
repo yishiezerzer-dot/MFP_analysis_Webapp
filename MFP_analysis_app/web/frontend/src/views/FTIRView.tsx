@@ -346,6 +346,16 @@ function mergeRemovedPeak(values: number[], wn: number): number[] {
   return [...values.filter((item) => Math.abs(item - wn) > manualPeakTolerance(wn)), wn].sort((a, b) => a - b);
 }
 
+// Processing, peak picking and the bond library work in absorbance; a transmittance spectrum is
+// shown (and exported) as %T again: T = 100·10^(−A) of the processed absorbance.
+export function displayY(value: number, mode: FTIRYMode): number {
+  return mode === "transmittance" ? 100 * 10 ** -value : value;
+}
+
+export function fromDisplayY(value: number, mode: FTIRYMode): number {
+  return mode === "transmittance" ? -Math.log10(Math.max(value, 0.01) / 100) : value;
+}
+
 function estimateYOffset(spectra: FTIRSpectrumResponse[]): number {
   const ranges = spectra.map((s) => {
     const min = Math.min(...s.y);
@@ -1144,7 +1154,7 @@ export function FTIRView() {
         const edit = activeSid ? labelEdits[peakLabelKey(activeSid, peak.wn)] : undefined;
         return [
           peak.wn,
-          peak.y,
+          displayY(peak.y, pre.mode),
           peak.prominence,
           peak.width_cm1 ?? "",
           top?.label ?? "",
@@ -1164,19 +1174,23 @@ export function FTIRView() {
 
   const exportJCAMP = () => {
     if (!spectrum || !active) return;
+    const transmittance = pre.mode === "transmittance";
     const lines = [
       "##TITLE=" + active.display_name,
       "##JCAMP-DX=5.00",
       "##DATA TYPE=INFRARED SPECTRUM",
       "##ORIGIN=MFP Analysis App",
       "##XUNITS=1/CM",
-      // Processed spectra are always absorbance (transmittance input is converted server-side).
-      "##YUNITS=ABSORBANCE",
+      // Transmittance spectra are exported as they are shown, as a fraction (JCAMP convention).
+      transmittance ? "##YUNITS=TRANSMITTANCE" : "##YUNITS=ABSORBANCE",
       `##FIRSTX=${spectrum.wn[0] ?? ""}`,
       `##LASTX=${spectrum.wn[spectrum.wn.length - 1] ?? ""}`,
       `##NPOINTS=${spectrum.wn.length}`,
       "##XYDATA=(X++(Y..Y))",
-      ...spectrum.wn.map((wn, i) => `${formatJcampNumber(wn)} ${formatJcampNumber(spectrum.y[i] ?? 0)}`),
+      ...spectrum.wn.map((wn, i) => {
+        const y = spectrum.y[i] ?? 0;
+        return `${formatJcampNumber(wn)} ${formatJcampNumber(transmittance ? displayY(y, "transmittance") / 100 : y)}`;
+      }),
       "##END=",
     ];
     downloadBlob(new Blob([lines.join("\n")], { type: "chemical/x-jcamp-dx" }), `${safeFilename(active.display_name)}.jdx`);
@@ -1186,9 +1200,9 @@ export function FTIRView() {
     if (!active) return;
     const assignmentRows = peaks.slice(0, 200).map((peak) => {
       const top = assignments?.find((item) => Math.abs(item.wn - peak.wn) < 0.01)?.candidates?.[0];
-      return `<tr><td>${peak.wn.toFixed(1)}</td><td>${formatNumber(peak.y)}</td><td>${formatNumber(peak.prominence)}</td><td>${escapeHtml(top?.label ?? "")}</td><td>${top?.score?.toFixed(0) ?? ""}</td></tr>`;
+      return `<tr><td>${peak.wn.toFixed(1)}</td><td>${formatNumber(displayY(peak.y, pre.mode))}</td><td>${formatNumber(peak.prominence)}</td><td>${escapeHtml(top?.label ?? "")}</td><td>${top?.score?.toFixed(0) ?? ""}</td></tr>`;
     }).join("");
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(active.display_name)} FTIR report</title><style>body{font-family:Arial,sans-serif;margin:32px;color:#111827}table{border-collapse:collapse;width:100%;font-size:12px}td,th{border:1px solid #d1d5db;padding:6px;text-align:left}h1{font-size:22px}.meta{color:#4b5563;font-size:13px}</style></head><body><h1>${escapeHtml(active.display_name)}</h1><p class="meta">Generated ${new Date().toLocaleString()} · ${peaks.length} peaks · mode ${pre.mode}</p><h2>Preprocessing</h2><p class="meta">baseline ${pre.baseline}, normalize ${pre.normalize}, smoothing ${pre.smoothing_window}</p><h2>Peak assignments</h2><table><thead><tr><th>cm^-1</th><th>Y</th><th>Prominence</th><th>Top assignment</th><th>Score</th></tr></thead><tbody>${assignmentRows}</tbody></table></body></html>`;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(active.display_name)} FTIR report</title><style>body{font-family:Arial,sans-serif;margin:32px;color:#111827}table{border-collapse:collapse;width:100%;font-size:12px}td,th{border:1px solid #d1d5db;padding:6px;text-align:left}h1{font-size:22px}.meta{color:#4b5563;font-size:13px}</style></head><body><h1>${escapeHtml(active.display_name)}</h1><p class="meta">Generated ${new Date().toLocaleString()} · ${peaks.length} peaks · mode ${pre.mode}</p><h2>Preprocessing</h2><p class="meta">baseline ${pre.baseline}, normalize ${pre.normalize}, smoothing ${pre.smoothing_window}</p><h2>Peak assignments</h2><table><thead><tr><th>cm^-1</th><th>${pre.mode === "transmittance" ? "%T" : "Y"}</th><th>Prominence</th><th>Top assignment</th><th>Score</th></tr></thead><tbody>${assignmentRows}</tbody></table></body></html>`;
     downloadBlob(new Blob([html], { type: "text/html" }), `${safeFilename(active.display_name)}.ftir-report.html`);
   };
 
@@ -1456,6 +1470,7 @@ export function FTIRView() {
                     assignments={assignmentsBySession[selectedPeakTableSid] ?? (selectedPeakTableSid === active.session_id ? assignments : null)}
                     labelEdits={labelEdits}
                     onLabelEdit={updateLabelEdit}
+                    mode={pre.mode}
                   />
                 </PeakTablesTabs>
               )}
@@ -2680,7 +2695,27 @@ function SpectrumChart(props: {
   showBaselineCurve: boolean;
   setShowBaselineCurve: React.Dispatch<React.SetStateAction<boolean>>;
 }) {
-  const { spectrum, mode } = props;
+  const { mode } = props;
+  const toShown = useCallback((values: number[]) => values.map((v) => displayY(v, mode)), [mode]);
+  const shownPeaks = useCallback((peaks: FTIRPeak[]) => peaks.map((p) => ({ ...p, y: displayY(p.y, mode) })), [mode]);
+  const spectrum = useMemo(
+    () =>
+      props.spectrum && mode === "transmittance"
+        ? {
+            ...props.spectrum,
+            y: toShown(props.spectrum.y),
+            baseline: props.spectrum.baseline ? toShown(props.spectrum.baseline) : props.spectrum.baseline,
+          }
+        : props.spectrum,
+    [mode, props.spectrum, toShown],
+  );
+  const activePeaksShown = useMemo(() => shownPeaks(props.activePeaks), [props.activePeaks, shownPeaks]);
+  const overlayPeaksShown = useMemo(
+    () => Object.fromEntries(Object.entries(props.overlayPeaksBySession).map(([sid, peaks]) => [sid, shownPeaks(peaks)])),
+    [props.overlayPeaksBySession, shownPeaks],
+  );
+  // Labels sit above absorbance peaks and below transmittance dips.
+  const labelAy = mode === "transmittance" ? 30 : -30;
   const pt = usePlotlyTheme();
   const [region, setRegion] = useState<FTIRRegion>("full");
   const [customMin, setCustomMin] = useState(400);
@@ -2693,8 +2728,13 @@ function SpectrumChart(props: {
   const xRange: [number, number] | undefined =
     region === "custom" ? [customMin, customMax] : FTIR_REGIONS[region];
   const visibleOverlays = useMemo(
-    () => props.overlays.filter((overlay) => overlay.session_id !== props.activeSessionId),
-    [props.activeSessionId, props.overlays],
+    () =>
+      props.overlays
+        .filter((overlay) => overlay.session_id !== props.activeSessionId)
+        .map((overlay) =>
+          mode === "transmittance" ? { ...overlay, spectrum: { ...overlay.spectrum, y: toShown(overlay.spectrum.y) } } : overlay,
+        ),
+    [mode, props.activeSessionId, props.overlays, toShown],
   );
   const colorRows = useMemo(
     () => [
@@ -2752,7 +2792,7 @@ function SpectrumChart(props: {
             type: "scatter",
             mode: "lines",
             x: props.differenceSpectrum.wn,
-            y: props.differenceSpectrum.y,
+            y: toShown(props.differenceSpectrum.y),
             line: { color: "#dc2626", width: Math.max(1.2, props.graphSettings.lineWidth), dash: "dot" },
             name: `difference k=${props.differenceSpectrum.k.toFixed(3)}`,
             hovertemplate: "difference<br>%{x:.1f} cmג»ֲ¹<br>%{y:.4g}<extra></extra>",
@@ -2780,7 +2820,7 @@ function SpectrumChart(props: {
             type: "scatter",
             mode: "lines",
             x: props.fitResult.fit.wn,
-            y: props.fitResult.fit.y,
+            y: toShown(props.fitResult.fit.y),
             line: { color: "#7c3aed", width: Math.max(1.4, props.graphSettings.lineWidth), dash: "solid" },
             name: "fit total",
             hovertemplate: "fit total<br>%{x:.1f} cmג»ֲ¹<br>%{y:.4g}<extra></extra>",
@@ -2789,7 +2829,7 @@ function SpectrumChart(props: {
             type: "scatter" as const,
             mode: "lines" as const,
             x: component.wn,
-            y: component.y,
+            y: toShown(component.y),
             line: {
               color: FIT_COMPONENT_COLORS[idx % FIT_COMPONENT_COLORS.length],
               width: Math.max(1, props.graphSettings.lineWidth),
@@ -2801,7 +2841,7 @@ function SpectrumChart(props: {
           })),
         ]
       : [];
-    const activePeaks = props.activePeaks;
+    const activePeaks = activePeaksShown;
     const markerTraces: Data[] = [];
     if (activePeaks.length > 0) {
       markerTraces.push({
@@ -2810,9 +2850,9 @@ function SpectrumChart(props: {
       x: activePeaks.map((p) => p.wn),
       y: activePeaks.map((p) => p.y),
       text: activePeaks.map((p) => p.wn.toFixed(0)),
-      textposition: "top center",
+      textposition: mode === "transmittance" ? "bottom center" : "top center",
       textfont: { size: props.graphSettings.peakLabelSize, color: props.graphSettings.peakLabelColor },
-      marker: { color: props.graphSettings.peakLabelColor, size: 7, symbol: "triangle-down" },
+      marker: { color: props.graphSettings.peakLabelColor, size: 7, symbol: mode === "transmittance" ? "triangle-up" : "triangle-down" },
       hovertemplate:
         "<b>%{customdata[0]}</b><br>conf %{customdata[1]}<br>%{x:.1f} cm⁻¹<br>I=%{y:.4g}<br>prom %{customdata[2]:.3g}<extra></extra>",
       customdata: activePeaks.map((p) => {
@@ -2824,7 +2864,7 @@ function SpectrumChart(props: {
     });
     }
     for (const [idx, overlay] of visibleOverlays.entries()) {
-      const overlayPeaks = props.overlayPeaksBySession[overlay.session_id] ?? [];
+      const overlayPeaks = overlayPeaksShown[overlay.session_id] ?? [];
       if (overlayPeaks.length === 0) continue;
       const color = resolveTraceColor(`sid:${overlay.session_id}`, OVERLAY_PALETTE[idx % OVERLAY_PALETTE.length]);
       markerTraces.push({
@@ -2891,14 +2931,16 @@ function SpectrumChart(props: {
     props.activeSessionId,
     props.activeAssignments,
     props.labelEdits,
-    props.activePeaks,
-    props.overlayPeaksBySession,
+    activePeaksShown,
+    overlayPeaksShown,
+    mode,
+    toShown,
     resolveTraceColor,
   ]);
 
   const annotationSpecs = useMemo(() => {
     const items: Array<{ key: string; annotation: Record<string, unknown> }> = [];
-    for (const peak of props.activePeaks) {
+    for (const peak of activePeaksShown) {
       const key = peakLabelKey(props.activeSessionId, peak.wn);
       const text = resolvedPeakLabel(props.activeSessionId, peak, props.activeAssignments, props.labelEdits);
       if (!text) continue;
@@ -2914,7 +2956,7 @@ function SpectrumChart(props: {
           arrowwidth: 1,
           arrowcolor: props.graphSettings.peakLabelColor,
           ax: edit?.ax ?? 0,
-          ay: edit?.ay ?? -30,
+          ay: edit?.ay ?? labelAy,
           bgcolor: pt.legendBg,
           bordercolor: props.graphSettings.peakLabelColor,
           borderpad: 2,
@@ -2927,7 +2969,7 @@ function SpectrumChart(props: {
       ? estimateYOffset([spectrum, ...visibleOverlays.map((o) => o.spectrum)])
       : 0;
     for (const [idx, overlay] of visibleOverlays.entries()) {
-      const overlayPeaks = props.overlayPeaksBySession[overlay.session_id] ?? [];
+      const overlayPeaks = overlayPeaksShown[overlay.session_id] ?? [];
       const assignments = props.assignmentsBySession[overlay.session_id] ?? null;
       const color = resolveTraceColor(`sid:${overlay.session_id}`, OVERLAY_PALETTE[idx % OVERLAY_PALETTE.length]);
       for (const peak of overlayPeaks) {
@@ -2947,7 +2989,7 @@ function SpectrumChart(props: {
             arrowwidth: 1,
             arrowcolor: color,
             ax: edit?.ax ?? 0,
-            ay: edit?.ay ?? -24,
+            ay: edit?.ay ?? (labelAy > 0 ? 24 : -24),
             bgcolor: pt.legendBg,
             bordercolor: color,
             borderpad: 2,
@@ -2959,14 +3001,15 @@ function SpectrumChart(props: {
     return items;
   }, [
     props.activeAssignments,
-    props.activePeaks,
+    activePeaksShown,
+    labelAy,
     props.activeSessionId,
     props.assignmentsBySession,
     props.graphSettings.overlayMode,
     props.graphSettings.peakLabelColor,
     props.graphSettings.peakLabelSize,
     props.labelEdits,
-    props.overlayPeaksBySession,
+    overlayPeaksShown,
     pt.legendBg,
     resolveTraceColor,
     spectrum,
@@ -3088,7 +3131,7 @@ function SpectrumChart(props: {
         titlefont: { size: props.graphSettings.axisTitleSize },
         tickfont: { size: props.graphSettings.axisTickSize },
         title: {
-          text: mode === "absorbance" ? "Absorbance" : "Absorbance (converted from transmittance)",
+          text: mode === "absorbance" ? "Absorbance" : "Transmittance (%)",
           font: { size: axisTitleSize },
           standoff: axisTitleStandoff,
         },
@@ -3444,7 +3487,7 @@ function SpectrumChart(props: {
             const point = event.points?.[0];
             const x = Number(point?.x);
             const y = Number(point?.y);
-            if (Number.isFinite(x) && Number.isFinite(y)) props.onChartPeakEdit(x, y);
+            if (Number.isFinite(x) && Number.isFinite(y)) props.onChartPeakEdit(x, fromDisplayY(y, mode));
           }}
           onInitialized={(_, graphDiv) => {
             plotRef.current = graphDiv;
@@ -3466,6 +3509,7 @@ function PeaksTable(props: {
   assignments: FTIRAssignment[] | null;
   labelEdits: FTIRLabelEdits;
   onLabelEdit: (key: string, patch: FTIRLabelEdit) => void;
+  mode: FTIRYMode;
 }) {
   const { peaks, assignments } = props;
   const [showLowConf, setShowLowConf] = useState(true);
@@ -3490,11 +3534,11 @@ function PeaksTable(props: {
     return [...filtered].sort((a, b) => {
       const topA = assignmentsByWn.get(a.wn)?.candidates?.[0]?.score ?? -Infinity;
       const topB = assignmentsByWn.get(b.wn)?.candidates?.[0]?.score ?? -Infinity;
-      const av = sortKey === "score" ? topA : Number(a[sortKey]);
-      const bv = sortKey === "score" ? topB : Number(b[sortKey]);
+      const av = sortKey === "score" ? topA : sortKey === "y" ? displayY(a.y, props.mode) : Number(a[sortKey]);
+      const bv = sortKey === "score" ? topB : sortKey === "y" ? displayY(b.y, props.mode) : Number(b[sortKey]);
       return (av - bv) * (sortDir === "asc" ? 1 : -1);
     });
-  }, [peaks, assignments, assignmentsByWn, showLowConf, filterText, sortKey, sortDir]);
+  }, [peaks, assignments, assignmentsByWn, showLowConf, filterText, sortKey, sortDir, props.mode]);
 
   const copyCSV = () => {
     const esc = (v: string | number | null | undefined) => {
@@ -3508,7 +3552,7 @@ function PeaksTable(props: {
         const edit = props.labelEdits[peakLabelKey(props.sessionId, p.wn)];
         return [
           p.wn,
-          p.y,
+          displayY(p.y, props.mode),
           p.prominence,
           p.width_cm1 ?? "",
           top?.label ?? "",
@@ -3569,7 +3613,7 @@ function PeaksTable(props: {
             <tr>
               <Th>#</Th>
               <Th align="right">Wavenumber (cm⁻¹)</Th>
-              <Th align="right"><SortButton label="Y" field="y" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} /></Th>
+              <Th align="right"><SortButton label={props.mode === "transmittance" ? "%T" : "Y"} field="y" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} /></Th>
               <Th align="right"><SortButton label="Prominence" field="prominence" sortKey={sortKey} sortDir={sortDir} setSortKey={setSortKey} setSortDir={setSortDir} /></Th>
               <Th align="right">Width (cm⁻¹)</Th>
               {assignments && <Th>Top candidate</Th>}
@@ -3598,7 +3642,7 @@ function PeaksTable(props: {
                 <tr key={i} className="odd:bg-ink-50/40">
                   <Td>{i + 1}</Td>
                   <Td align="right">{p.wn.toFixed(1)}</Td>
-                  <Td align="right">{formatNumber(p.y)}</Td>
+                  <Td align="right">{formatNumber(displayY(p.y, props.mode))}</Td>
                   <Td align="right">{formatNumber(p.prominence)}</Td>
                   <Td align="right">
                     {p.width_cm1 == null ? "—" : p.width_cm1.toFixed(1)}

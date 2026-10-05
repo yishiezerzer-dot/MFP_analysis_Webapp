@@ -29,6 +29,7 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **FTIR transmittance spectra are shown in %T.** With Mode set to transmittance, the chart (dips, labels underneath, axis "Transmittance (%)"), the peak table's %T column, the peaks CSV, the HTML report and the JDX export (YUNITS=TRANSMITTANCE) now show transmittance instead of the absorbance it was converted to. Processing, peak picking and the bond library still work in absorbance.
 - **Try with example data / the guides no longer make duplicate example files.** Opening an example that is already open in the workspace selects the open copy; for the plates, only a plate you closed is added back.
 - **Easier for new users, stage 4: recorded walkthroughs.** Each guided workflow has a short animated walkthrough, recorded on the example data, in the help: LCMS and FTIR *Overview*, Plate Reader *Overview*, and *Prepare for paper* under LCMS *Exports* and Plate Reader *Experiment*. `frontend/scripts/walkthroughs` re-records them when the screens change.
 - **Analyse a MIC plate** now prefills the dilution series, growth control, blank rows and a same-plate reference from a plate that already has a layout, not just the compounds. Before, running it on such a plate could clear its blank rows.

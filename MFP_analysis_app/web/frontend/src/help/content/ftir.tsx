@@ -65,8 +65,10 @@ export const ftirHelpModule: HelpModule = {
           <DocP>Changes apply to the chart straight away; use undo/redo next to the section title.</DocP>
           <DocUl>
             <DocLi>
-              <strong>Mode</strong>: transmittance is converted to absorbance (A = −log₁₀T) before anything else, so
-              heights, areas and fits are always in absorbance.
+              <strong>Mode</strong>: a transmittance spectrum is shown as %T (dips, labels underneath) in the chart,
+              peak table and exports. Processing, peak picking and the bond library work on absorbance
+              (A = −log₁₀T), so integrated areas and fits are in absorbance; with normalisation on, %T is computed
+              from the normalised absorbance.
             </DocLi>
             <DocLi>
               <strong>Smoothing</strong>: Savitzky–Golay over N points (0 = off); larger windows broaden sharp bands.
