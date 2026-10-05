@@ -9,9 +9,14 @@ export function useOpenFromUrl(sessionIds: string[], select: (sid: string) => vo
   useEffect(() => {
     if (!wanted || !sessionIds.includes(wanted)) return;
     select(wanted);
-    const next = new URLSearchParams(params);
-    next.delete("open");
-    setParams(next, { replace: true });
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("open");
+        return next;
+      },
+      { replace: true },
+    );
     // Only when the wanted id or the list changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wanted, known]);

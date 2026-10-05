@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, FlaskConical, FolderOpen, Palette, Spline, X } from "lucide-react";
+import { Activity, FlaskConical, FolderOpen, Palette, Spline, Wand2, X } from "lucide-react";
 import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../components/common/ChartCardParts";
 import { SideRail } from "../components/common/SideRail";
 import { useContainerSize } from "../lcms/viewShared";
@@ -39,6 +39,10 @@ import { ExampleTips } from "../components/ExampleData";
 import { Hint } from "../components/Hint";
 import { useRevealPanel } from "../help/reveal";
 import { useOpenFromUrl } from "../hooks/useOpenFromUrl";
+import { FTIR_PRESETS } from "../utils/ftirPresets";
+import { useViewRequest } from "../hooks/useViewRequest";
+import { useWorkflow } from "../workflows/WorkflowProvider";
+import type { FtirPeaksRequest } from "../workflows/ftirPeaks";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -73,13 +77,6 @@ const DEFAULT_PRE: FTIRPreprocessOptions = {
   mask_atmospheric: false,
   atr_correction: false,
   atr_n_crystal: 1.5,
-};
-
-const FTIR_PRESETS: Record<string, Partial<FTIRPreprocessOptions>> = {
-  "KBr disc": { smoothing_window: 5, poly_order: 2, baseline: "asls", normalize: "max", baseline_lambda: 100000, baseline_p: 0.01 },
-  "ATR sample": { smoothing_window: 5, poly_order: 2, baseline: "rubberband", normalize: "vector", atr_correction: true, atr_n_crystal: 1.5 },
-  "Polymer thin film": { smoothing_window: 5, poly_order: 2, baseline: "airpls", normalize: "snv" },
-  "Raw film": { smoothing_window: 0, poly_order: 2, baseline: "none", normalize: "none" },
 };
 
 const DEFAULT_PEAK: PeakPickOptions = {
@@ -441,6 +438,8 @@ function mergeQuantState(value: Partial<FTIRQuantState>): FTIRQuantState {
 export function FTIRView() {
   const { activeWorkspaceId } = useWorkspace();
   const [sessions, setSessions] = useState<FTIRSessionSummary[]>([]);
+  // Set once the saved workspace has chosen the active spectrum, so later choices are not overridden.
+  const [sessionsRestored, setSessionsRestored] = useState(false);
   const [activeSid, setActiveSid] = useStoredState<string | null>(
     `${FTIR_STORAGE_PREFIX}.activeSessionId`,
     null,
@@ -602,6 +601,7 @@ export function FTIRView() {
             ? current
             : list[0]?.session_id ?? null;
         });
+        setSessionsRestored(true);
       })
       .catch((e) => {
         if (!cancelled) setError(String(e));
@@ -768,6 +768,28 @@ export function FTIRView() {
     addLoadedSessions(await Promise.all(sessionIds.map((sid) => api.ftir.get(sid))));
   };
 
+  const { startWorkflow } = useWorkflow();
+  const guide = () => startWorkflow({ id: "ftir-peaks", initial: activeSid ? { source: "spectrum", sid: activeSid } : undefined });
+
+  // "Identify peaks" workflow: apply the settings now, pick peaks once they are active.
+  const [pendingPick, setPendingPick] = useState<string | null>(null);
+  useViewRequest<FtirPeaksRequest>("ftir", sessionsRestored, async (request) => {
+    if (!sessions.some((s) => s.session_id === request.sid)) {
+      try {
+        addLoadedSessions([await api.ftir.get(request.sid)]);
+      } catch (err) {
+        setError(String(err));
+        return;
+      }
+    }
+    setActiveSid(request.sid);
+    setPre({ ...pre, ...request.preprocess });
+    setPk({ ...pk, ...request.peaks, assign: true });
+    setAssignmentConstraints((prev) => ({ ...prev, excluded_categories: request.exclude }));
+    setInspectorTab("peaks");
+    setPendingPick(request.sid);
+  });
+
   const onUpload = async (files: File[]) => {
     if (files.length === 0) return;
     setBusy(true);
@@ -848,6 +870,14 @@ export function FTIRView() {
       setPicking(false);
     }
   }, [activeSid, pre, pk, assignmentConstraints, pickAcrossOverlay, overlayEnabled, overlaySessionIds, sessions, manualPeakEdits]);
+
+  useEffect(() => {
+    if (!pendingPick || activeSid !== pendingPick || !active) return;
+    // Wait for the file's absorbance/transmittance mode to be applied.
+    if (active.y_mode && pre.mode !== active.y_mode) return;
+    setPendingPick(null);
+    void runPick();
+  }, [pendingPick, activeSid, active, pre.mode, runPick]);
 
   const updateLabelEdit = useCallback((key: string, patch: FTIRLabelEdit) => {
     setLabelEdits((prev) => {
@@ -1283,6 +1313,12 @@ export function FTIRView() {
               </button>
             </span>
           </Hint>
+          <Hint id="ftir.guide" placement="bottom">
+            <button type="button" className="btn-ghost border border-ink-200" onClick={guide}>
+                <Wand2 {...ICON_PROPS} />
+                Guide me
+              </button>
+          </Hint>
           <Hint id="ftir.open" placement="bottom">
             <button
               className="btn-primary"
@@ -1352,6 +1388,12 @@ export function FTIRView() {
               onPick={() => fileRef.current?.click()}
               exampleModule="ftir"
               onExampleOpened={openExample}
+              extra={
+                <button type="button" className="btn-ghost border border-ink-200" onClick={guide}>
+                  <Wand2 {...ICON_PROPS} />
+                  Guide me
+                </button>
+              }
             />
           </div>
         ) : (

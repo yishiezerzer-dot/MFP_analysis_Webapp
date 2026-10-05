@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import { Grid3X3, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Grid3X3, Wand2, X } from "lucide-react";
 import { api, type PlateLayout, type PlateMetadata, type PlateSummary, type PlateTemplate, type PlateWell } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton } from "../help/HelpShell";
@@ -20,6 +21,8 @@ import { ResultsTab } from "../components/plate/ResultsTab";
 import { ExperimentTab } from "../components/plate/ExperimentTab";
 import { useStoredState } from "../hooks/useStoredState";
 import { useOpenFromUrl } from "../hooks/useOpenFromUrl";
+import { useSessionsChanged } from "../hooks/useSessionsChanged";
+import { useWorkflow } from "../workflows/WorkflowProvider";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
 import {
@@ -91,7 +94,31 @@ export function PlateReaderView() {
     plates.map((p) => p.session_id),
     (sid) => setActiveSid(sid),
   );
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const wanted = params.get("view");
+    if (wanted !== "map" && wanted !== "results" && wanted !== "experiment") return;
+    setTab(wanted);
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("view");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [params, setParams, setTab]);
+  const { startWorkflow } = useWorkflow();
+  const guide = () =>
+    startWorkflow({
+      id: "mic-plate",
+      initial: active ? { source: "plate", plateId: active.session_id } : undefined,
+    });
 
+  // listVersion counts completed list loads; a workflow that rewrote a layout bumps reloadKey.
+  const [reloadKey, setReloadKey] = useState(0);
+  const [listVersion, setListVersion] = useState(0);
+  useSessionsChanged("plate_reader", () => setReloadKey((k) => k + 1));
   useEffect(() => {
     let cancelled = false;
     api.plateReader
@@ -100,12 +127,13 @@ export function PlateReaderView() {
         if (cancelled) return;
         setPlates(list);
         setActiveSid((sid) => (list.some((p) => p.session_id === sid) ? sid : list[0]?.session_id ?? null));
+        setListVersion((v) => v + 1);
       })
       .catch((e) => !cancelled && setError(String(e)));
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceId, setActiveSid]);
+  }, [activeWorkspaceId, setActiveSid, reloadKey]);
 
   useEffect(() => {
     api.plateReader.templates().then(setTemplates).catch((e) => setError(String(e)));
@@ -171,9 +199,9 @@ export function PlateReaderView() {
     } else {
       commitLayout(active.session_id, initial);
     }
-    // Only when the plate changes; later edits go through commitLayout.
+    // Only when the plate changes or the list is reloaded; later edits go through commitLayout.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey]);
+  }, [activeKey, listVersion]);
 
   const problems = useMemo(() => (form ? validateForm(form) : []), [form]);
   const dirty = useMemo(
@@ -291,6 +319,12 @@ export function PlateReaderView() {
               e.target.value = "";
             }}
           />
+          <Hint id="plate.guide" placement="bottom">
+            <button type="button" className="btn-ghost border border-ink-200" onClick={guide}>
+              <Wand2 {...ICON_PROPS} />
+              Guide me
+            </button>
+          </Hint>
           <Hint id="plate.open" placement="bottom">
             <button className="btn-primary" disabled={busy} onClick={() => fileRef.current?.click()}>
               {busy ? "Opening…" : "Open plate…"}
@@ -319,6 +353,12 @@ export function PlateReaderView() {
               onPick={() => fileRef.current?.click()}
               exampleModule="plate_reader"
               onExampleOpened={openExample}
+              extra={
+                <button type="button" className="btn-ghost border border-ink-200" onClick={guide}>
+                  <Wand2 {...ICON_PROPS} />
+                  Guide me
+                </button>
+              }
             />
           </div>
         ) : (

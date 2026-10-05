@@ -7,6 +7,8 @@ import { HelpOpenButton } from "../help/HelpShell";
 import { Hint } from "../components/Hint";
 import { useRevealPanel } from "../help/reveal";
 import { useOpenFromUrl } from "../hooks/useOpenFromUrl";
+import { useViewRequest } from "../hooks/useViewRequest";
+import type { LcmsProductRequest } from "../workflows/lcmsProduct";
 import { useHelp } from "../help/HelpProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
@@ -37,7 +39,9 @@ import { SpectrumChart } from "../components/lcms/SpectrumChart";
 import { StatusBar, FindMzDialog, CustomUvLabelDialog, EICDialog } from "../components/lcms/LCMSViewDialogs";
 import { TabEmptyState } from "../components/common/TabEmptyState";
 import { ExampleTips } from "../components/ExampleData";
-import { ChartLine } from "lucide-react";
+import { ChartLine, Wand2 } from "lucide-react";
+import { ICON_PROPS } from "../components/common/ChartCardParts";
+import { useWorkflow } from "../workflows/WorkflowProvider";
 
 export function LCMSView() {
   const browserAutomation = useBrowserAutomation();
@@ -48,6 +52,8 @@ export function LCMSView() {
   // Sessions / data
   const [sessions, setSessions] = useState<LCMSSessionSummary[]>([]);
   const [sessionsHydrated, setSessionsHydrated] = useState(false);
+  // Set once the saved workspace has chosen the active run, so later choices are not overridden.
+  const [sessionsRestored, setSessionsRestored] = useState(false);
   const [activeSid, setActiveSid] = useStoredState<string | null>(
     `${LCMS_STORAGE_PREFIX}.activeSessionId`,
     null,
@@ -691,6 +697,7 @@ export function LCMSView() {
             ? current
             : list[0]?.session_id ?? null;
         });
+        setSessionsRestored(true);
       })
       .catch((err) => {
         if (!cancelled) setError(String(err));
@@ -1778,9 +1785,45 @@ export function LCMSView() {
     [actionDispatch, active?.display_name, activeSid, eicTol, eicUnit, pol, sessions],
   );
 
+  const { startWorkflow } = useWorkflow();
+  const guide = () =>
+    startWorkflow({ id: "lcms-product", initial: active ? { source: "run", sid: active.session_id, runPolarities: active.polarities } : undefined });
+
   const runEIC = async () => {
     await createEICForMz(parseFloat(eicInput), "dialog");
   };
+
+  // "Find my product" workflow: select the run and settings now, draw EICs once they are active.
+  const productRequestRef = useRef<LcmsProductRequest | null>(null);
+  const [productRequestTick, setProductRequestTick] = useState(0);
+  useViewRequest<LcmsProductRequest>("lcms", sessionsRestored, async (request) => {
+    if (!sessions.some((s) => s.session_id === request.sid)) {
+      try {
+        addLoadedSessions([await api.lcms.get(request.sid)]);
+      } catch (err) {
+        setError(String(err));
+        return;
+      }
+    }
+    setActiveProjectId("__all");
+    setActiveSid(request.sid);
+    setPolarity(request.polarity);
+    setPolymerSettingsForSession(request.sid, request.configure);
+    productRequestRef.current = request;
+    setProductRequestTick((t) => t + 1);
+  });
+  useEffect(() => {
+    const request = productRequestRef.current;
+    if (!request || activeSid !== request.sid || pol !== request.polarity) return;
+    productRequestRef.current = null;
+    void (async () => {
+      for (const target of request.targets) {
+        await createEICForMz(target.mz, "expected", request.toleranceDa, { label: target.label, expectedProduct: target.label }, "da", request.sid);
+      }
+      if (request.spectrumRt !== null) loadSpectrum(request.spectrumRt);
+      if (request.openExpected) await openExpectedProductsWithCompute();
+    })();
+  }, [productRequestTick, activeSid, pol, createEICForMz, loadSpectrum, openExpectedProductsWithCompute]);
 
   const onSpectrumPeakClick = useCallback(
     (
@@ -3088,6 +3131,12 @@ export function LCMSView() {
               </button>
             </span>
           </Hint>
+          <Hint id="lcms.guide" placement="bottom">
+            <button type="button" className="btn-ghost border border-ink-200" onClick={guide}>
+                <Wand2 {...ICON_PROPS} />
+                Guide me
+              </button>
+          </Hint>
           <Hint id="lcms.open" placement="bottom">
             <button
               className="btn-primary"
@@ -3201,6 +3250,12 @@ export function LCMSView() {
               onPick={() => fileRef.current?.click()}
               exampleModule="lcms"
               onExampleOpened={openExample}
+              extra={
+                <button type="button" className="btn-ghost border border-ink-200" onClick={guide}>
+                  <Wand2 {...ICON_PROPS} />
+                  Guide me
+                </button>
+              }
             />
           )}
 

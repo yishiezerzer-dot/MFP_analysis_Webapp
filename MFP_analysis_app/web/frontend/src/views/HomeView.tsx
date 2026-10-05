@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChartLine, Compass, FileUp, FlaskConical, Grid3X3, MessageSquare, MousePointerClick, Search } from "lucide-react";
+import { ChartLine, Compass, FileUp, Wand2, FlaskConical, Grid3X3, MessageSquare, MousePointerClick, Search } from "lucide-react";
 import { api } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { TryExampleButton } from "../components/ExampleData";
@@ -11,6 +11,7 @@ import { OPEN_ON_KEY, type OpenOn } from "../layout/startPage";
 import { useTour } from "../help/TourProvider";
 import { tourForTab } from "../help/tours";
 import { tabOfRoute } from "../help/controls";
+import { useWorkflow, type WorkflowId } from "../workflows/WorkflowProvider";
 
 interface OpenFile {
   id: string;
@@ -20,6 +21,7 @@ interface OpenFile {
 interface Task {
   route: string;
   module?: "lcms" | "ftir" | "plate_reader";
+  workflow?: WorkflowId;
   icon: ReactNode;
   title: string;
   text: string;
@@ -30,6 +32,7 @@ const TASKS: Task[] = [
   {
     route: "/plate-reader",
     module: "plate_reader",
+    workflow: "mic-plate",
     icon: <Grid3X3 size={22} strokeWidth={1.6} aria-hidden />,
     title: "Analyse a MIC plate",
     text: "Lay out a Gen5 plate (compounds, growth control, blank) and read % growth, dose–response and the MIC.",
@@ -38,6 +41,7 @@ const TASKS: Task[] = [
   {
     route: "/lcms",
     module: "lcms",
+    workflow: "lcms-product",
     icon: <ChartLine size={22} strokeWidth={1.6} aria-hidden />,
     title: "Find my product in an LCMS run",
     text: "Open an mzML run, follow masses with EICs and label polymer series and expected products.",
@@ -46,6 +50,7 @@ const TASKS: Task[] = [
   {
     route: "/ftir",
     module: "ftir",
+    workflow: "ftir-peaks",
     icon: <FlaskConical size={22} strokeWidth={1.6} aria-hidden />,
     title: "Identify FTIR peaks",
     text: "Clean up a spectrum, pick peaks and see which functional groups the bond library suggests.",
@@ -83,6 +88,7 @@ function useOpenFiles(): Record<string, OpenFile[]> {
 function TaskCard({ task, files }: { task: Task; files: OpenFile[] | undefined }) {
   const navigate = useNavigate();
   const { startTour } = useTour();
+  const { startWorkflow } = useWorkflow();
   const tour = tourForTab(tabOfRoute(task.route));
   const recent = (files ?? []).slice(-3).reverse();
   return (
@@ -115,7 +121,17 @@ function TaskCard({ task, files }: { task: Task; files: OpenFile[] | undefined }
         </div>
       )}
       <div className="mt-auto flex flex-wrap gap-2">
-        <button type="button" className="btn-primary" onClick={() => navigate(task.route)}>
+        {task.workflow && (
+          <button type="button" className="btn-primary" onClick={() => startWorkflow({ id: task.workflow as WorkflowId })}>
+            <Wand2 {...ICON_PROPS} />
+            Guide me
+          </button>
+        )}
+        <button
+          type="button"
+          className={task.workflow ? "btn-ghost border border-ink-200" : "btn-primary"}
+          onClick={() => navigate(task.route)}
+        >
           {task.open}
         </button>
         {task.module && (
@@ -155,6 +171,7 @@ export function HomeView() {
   const files = useOpenFiles();
   const [openOn, setOpenOn] = useStoredState<OpenOn>(OPEN_ON_KEY, "home");
 
+  const { startWorkflow } = useWorkflow();
   usePageHeader(<PageHeaderContent title="Home" subtitle="What do you want to do?" />);
 
   return (
@@ -178,6 +195,13 @@ export function HomeView() {
             </Tip>
             <Tip icon={<FileUp {...ICON_PROPS} />}>
               Drop files anywhere in the window to open them in the right tab.
+            </Tip>
+            <Tip icon={<Wand2 {...ICON_PROPS} />}>
+              Writing up?{" "}
+              <button type="button" className="font-medium text-brand-700 hover:underline" onClick={() => startWorkflow({ id: "paper-prep" })}>
+                Prepare for paper
+              </button>{" "}
+              downloads an experiment's SI package; start it from the experiment tag on a tab to also save that tab's charts at journal size.
             </Tip>
           </ul>
         </div>
