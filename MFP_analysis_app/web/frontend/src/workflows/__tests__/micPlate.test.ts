@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MIC_DEFAULTS, micForm, referencePlateForm, type MicAnswers } from "../micPlate";
+import { MIC_DEFAULTS, answersFrom, micForm, referencePlateForm, type MicAnswers } from "../micPlate";
+import type { PlateSummary } from "../../api";
 import { buildLayout } from "../../utils/plateLayout";
 
 const polymers: MicAnswers = {
@@ -41,5 +42,27 @@ describe("MIC plate answers → plate layout", () => {
     expect(ref.groups[0]).toMatchObject({ name: "Gentamicin", kind: "reference" });
     expect(ref.blank).toHaveLength(60);
     expect(ref.dilution.top).toBe(64);
+  });
+});
+
+describe("MIC answers from a plate that already has a layout", () => {
+  it("prefills compounds, dilution, controls, blank and a same-plate reference", () => {
+    const layout = buildLayout(micForm({ ...polymers, compounds: [polymers.compounds[0]], reference: "same", referenceRows: "D–F", top: 512 }));
+    const answers = answersFrom({ layout } as PlateSummary);
+    expect(answers).toMatchObject({
+      compounds: [{ name: "LacGlyDOH 5:1:1", rows: "A–C" }],
+      top: 512,
+      factor: 2,
+      control: "12",
+      blank: "G–H",
+      reference: "same",
+      referenceName: "Gentamicin",
+      referenceRows: "D–F",
+    });
+  });
+
+  it("leaves the answers alone for a plate without a layout", () => {
+    const layout = buildLayout(micForm({ ...polymers, compounds: [], blank: "" }));
+    expect(answersFrom({ layout } as PlateSummary)).toEqual({});
   });
 });

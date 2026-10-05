@@ -1,5 +1,6 @@
 import type { HelpModule } from "../types";
-import { DocCode, DocLead, DocLi, DocNote, DocOl, DocP, DocUl } from "../docPrimitives";
+import { DocCode, DocLead, DocLi, DocNote, DocOl, DocP, DocUl, DocWalkthrough } from "../docPrimitives";
+import ftirGif from "../media/workflow-ftir.gif";
 
 export const ftirHelpModule: HelpModule = {
   title: "FTIR — help",
@@ -14,6 +15,7 @@ export const ftirHelpModule: HelpModule = {
             Open a spectrum, clean it up (baseline, normalisation), pick peaks and let the bond library suggest what
             each peak is. Quantify bands, subtract spectra or match against reference spectra when you need more.
           </DocLead>
+          <DocWalkthrough src={ftirGif} caption="Guide me → Identify FTIR peaks, on the example PLGA film" />
           <DocOl>
             <DocLi>
               <strong>Open FTIR file(s)…</strong> or drop files on the page.

@@ -1,5 +1,7 @@
 import type { HelpModule } from "../types";
-import { DocCode, DocLead, DocLi, DocNote, DocOl, DocP, DocUl } from "../docPrimitives";
+import { DocCode, DocLead, DocLi, DocNote, DocOl, DocP, DocUl, DocWalkthrough } from "../docPrimitives";
+import productGif from "../media/workflow-product.gif";
+import paperGif from "../media/workflow-paper.gif";
 
 export const lcmsHelpModule: HelpModule = {
   title: "LCMS — help",
@@ -14,6 +16,7 @@ export const lcmsHelpModule: HelpModule = {
             Open an mzML run, click the total ion chromatogram (TIC) to see the MS1 spectrum at that time, and use
             extracted ion chromatograms (EICs) and polymer matching to find your products.
           </DocLead>
+          <DocWalkthrough src={productGif} caption="Guide me → Find my product, on the example PLGA run" />
           <DocOl>
             <DocLi>
               <strong>Open mzML…</strong> (or drop files on the page). Each file appears in the sessions list on the
@@ -389,19 +392,22 @@ export const lcmsHelpModule: HelpModule = {
       title: "Exports",
       keywords: ["export", "csv", "svg", "png", "publication", "download"],
       body: (
-        <DocUl>
-          <DocLi>
-            <strong>Export</strong> on each chart: 1:1 as on screen, or at a journal size (ACS, Nature, RSC) as SVG
-            (vector) or PNG at the chosen DPI, with a white background.
-          </DocLi>
-          <DocLi>
-            Display tab: <strong>Spectrum CSV</strong>, <strong>UV CSV</strong>, <strong>TIC overlay CSV</strong>.
-          </DocLi>
-          <DocLi>
-            Analysis tab: <strong>Export labels (all scans)</strong> — the labelled peaks of every MS1 scan.
-          </DocLi>
-          <DocLi>Feature table, comparison, deconvolution and expected products each have their own CSV export.</DocLi>
-        </DocUl>
+        <>
+          <DocWalkthrough src={paperGif} caption="Prepare for paper: the charts on the page at a journal size, plus the SI package" />
+          <DocUl>
+            <DocLi>
+              <strong>Export</strong> on each chart: 1:1 as on screen, or at a journal size (ACS, Nature, RSC) as SVG
+              (vector) or PNG at the chosen DPI, with a white background.
+            </DocLi>
+            <DocLi>
+              Display tab: <strong>Spectrum CSV</strong>, <strong>UV CSV</strong>, <strong>TIC overlay CSV</strong>.
+            </DocLi>
+            <DocLi>
+              Analysis tab: <strong>Export labels (all scans)</strong> — the labelled peaks of every MS1 scan.
+            </DocLi>
+            <DocLi>Feature table, comparison, deconvolution and expected products each have their own CSV export.</DocLi>
+          </DocUl>
+        </>
       ),
     },
     {
