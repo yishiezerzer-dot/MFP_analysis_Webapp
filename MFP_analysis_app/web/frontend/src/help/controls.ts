@@ -48,6 +48,14 @@ export const CONTROLS: ControlHint[] = [
     keywords: ["search", "command", "where", "locate"],
   },
   {
+    id: "app.paperGuide",
+    tab: "app",
+    label: "Prepare for paper",
+    what: "A guide that saves the charts on the page at a journal's figure size (SVG and PNG) and downloads the experiment's SI package.",
+    typical: "ACS single column, 600 dpi",
+    keywords: ["publication", "journal", "figures", "export all", "supplementary", "si package", "wizard"],
+  },
+  {
     id: "app.experimentTag",
     tab: "app",
     label: "Experiment tag",

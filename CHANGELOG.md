@@ -23,6 +23,11 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **Easier for new users, stage 3: guided workflows.** A **Guide me** button asks one question per screen, with an "I don't know" explanation for each and a summary of what it will do before it runs. Answers are remembered for next time.
+  - **Analyse a MIC plate** (Plate Reader, Home): which plate, compounds and rows (filled in from Gen5 notes), dilution series, growth control and blank, and the reference antibiotic on the same or another plate. It lays out the plate and opens Results.
+  - **Find my product** (LCMS, Home): which run, its monomers and/or the product's mass, and the ionisation (polarity, adducts, charges). It switches polarity, turns on chain labels for those monomers, and draws an EIC for each ion of the product. It then shows the spectrum where the product is strongest; with only monomers, it opens Expected Products at the biggest TIC peak.
+  - **Identify FTIR peaks** (FTIR, Home): which spectrum, how it was measured (ATR, KBr, film), groups that cannot be present, and how many peaks. It applies the preset, picks the peaks and assigns them from the bond library.
+  - **Prepare for paper** (experiment tag menu, Home): saves the charts on screen as SVG and PNG at a journal's size (ACS, Nature, RSC; 300–1200 dpi) and downloads the experiment's SI package.
 - **Easier for new users, stage 2: Home page, example data and tours.**
   - **Home** (new first item in the sidebar) asks what you want to do: analyse a MIC plate, find a product in an LCMS run, identify FTIR peaks, or ask the AI. Each card has Open, Try with example data, Take the tour, and the files you already have open. The app opens on Home; choose "the last tab I used" at the bottom of Home to change that.
   - **Try with example data** on every tab's empty page and on Home:

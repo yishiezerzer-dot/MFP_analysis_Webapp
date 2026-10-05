@@ -31,6 +31,20 @@ export interface PaperFigureExportToolbarProps {
   currentSizePx?: { width?: number; height?: number };
 }
 
+const EXPORT_ALL_EVENT = "mfp:export-all-figures";
+const mounted = new Set<{ el: () => HTMLElement | null; enabled: () => boolean }>();
+
+const isShown = (el: HTMLElement | null) => Boolean(el && el.offsetParent !== null);
+
+// Charts whose export button is on screen now (the "Prepare for paper" workflow exports these).
+export function shownFigureCount(): number {
+  return [...mounted].filter((m) => m.enabled() && isShown(m.el())).length;
+}
+
+export function exportShownFigures(settings: PublicationExportSettings, formats: PublicationExportFormat[]): void {
+  window.dispatchEvent(new CustomEvent(EXPORT_ALL_EVENT, { detail: { settings, formats } }));
+}
+
 function reconcileSettings(value: unknown, fallback: PublicationExportSettings): PublicationExportSettings {
   if (!value || typeof value !== "object") return fallback;
   const raw = value as Partial<PublicationExportSettings>;
@@ -82,6 +96,24 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"current" | "journal">("current");
   const containerRef = useRef<HTMLDivElement>(null);
+  const latest = useRef({ props, setSettings });
+  latest.current = { props, setSettings };
+
+  useEffect(() => {
+    const entry = { el: () => containerRef.current, enabled: () => !latest.current.props.disabled };
+    mounted.add(entry);
+    const onExportAll = (e: Event) => {
+      const { settings: next, formats } = (e as CustomEvent<{ settings: PublicationExportSettings; formats: PublicationExportFormat[] }>).detail;
+      if (!entry.enabled() || !isShown(containerRef.current)) return;
+      latest.current.setSettings(next);
+      formats.forEach((format) => latest.current.props.onExport(format, next));
+    };
+    window.addEventListener(EXPORT_ALL_EVENT, onExportAll);
+    return () => {
+      mounted.delete(entry);
+      window.removeEventListener(EXPORT_ALL_EVENT, onExportAll);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -132,6 +164,7 @@ export function PaperFigureExportToolbar(props: PaperFigureExportToolbarProps) {
   if (mode === "inline") {
     return (
       <div
+        ref={containerRef}
         className={
           props.className ??
           "flex flex-wrap items-center gap-1.5 rounded-md border border-ink-200 bg-ink-50/40 px-2 py-1 text-xs"

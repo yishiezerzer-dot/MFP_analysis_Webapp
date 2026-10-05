@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import { api, ExperimentBundle } from "../api";
 import { Hint } from "./Hint";
+import { useWorkflow } from "../workflows/WorkflowProvider";
 
 interface ExperimentTagEditorProps {
   sessionId: string | null;
@@ -20,6 +21,7 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
   className,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const { startWorkflow } = useWorkflow();
   const [tagInput, setTagInput] = useState(currentTag);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [bundle, setBundle] = useState<ExperimentBundle | null>(null);
@@ -259,6 +261,18 @@ export const ExperimentTagEditor: React.FC<ExperimentTagEditorProps> = ({
                 >
                   {isDownloadingSI ? "Packaging…" : "Download SI package"}
                 </button>
+                <Hint id="app.paperGuide" placement="bottom">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      startWorkflow({ id: "paper-prep", initial: { tag: currentTag } });
+                    }}
+                    className="rounded border border-ink-200 px-2 py-1 text-[11px] font-medium text-ink-700 hover:bg-ink-100"
+                  >
+                    Prepare for paper…
+                  </button>
+                </Hint>
               </div>
             </div>
           )}

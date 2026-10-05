@@ -171,6 +171,7 @@ export function HomeView() {
   const files = useOpenFiles();
   const [openOn, setOpenOn] = useStoredState<OpenOn>(OPEN_ON_KEY, "home");
 
+  const { startWorkflow } = useWorkflow();
   usePageHeader(<PageHeaderContent title="Home" subtitle="What do you want to do?" />);
 
   return (
@@ -194,6 +195,13 @@ export function HomeView() {
             </Tip>
             <Tip icon={<FileUp {...ICON_PROPS} />}>
               Drop files anywhere in the window to open them in the right tab.
+            </Tip>
+            <Tip icon={<Wand2 {...ICON_PROPS} />}>
+              Writing up?{" "}
+              <button type="button" className="font-medium text-brand-700 hover:underline" onClick={() => startWorkflow({ id: "paper-prep" })}>
+                Prepare for paper
+              </button>{" "}
+              downloads an experiment's SI package; start it from the experiment tag on a tab to also save that tab's charts at journal size.
             </Tip>
           </ul>
         </div>
