@@ -234,7 +234,8 @@ export function PlateReaderView() {
   const openExample = async (sessionIds: string[]) => {
     const opened = await Promise.all(sessionIds.map((sid) => api.plateReader.get(sid)));
     if (opened.length === 0) return;
-    setPlates((prev) => [...prev, ...opened]);
+    // An example that was already open comes back as its existing plates.
+    setPlates((prev) => [...prev, ...opened.filter((p) => !prev.some((q) => q.session_id === p.session_id))]);
     setActiveSid(opened[0].session_id);
     setTab("results");
   };
