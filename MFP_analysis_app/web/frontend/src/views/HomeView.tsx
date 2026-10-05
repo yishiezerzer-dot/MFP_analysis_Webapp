@@ -50,6 +50,7 @@ const TASKS: Task[] = [
   {
     route: "/ftir",
     module: "ftir",
+    workflow: "ftir-peaks",
     icon: <FlaskConical size={22} strokeWidth={1.6} aria-hidden />,
     title: "Identify FTIR peaks",
     text: "Clean up a spectrum, pick peaks and see which functional groups the bond library suggests.",

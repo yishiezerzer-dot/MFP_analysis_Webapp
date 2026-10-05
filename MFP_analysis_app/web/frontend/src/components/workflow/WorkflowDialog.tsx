@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import clsx from "clsx";
 import { HelpCircle, Wand2, X } from "lucide-react";
 import { ICON_PROPS } from "../common/ChartCardParts";
 import { useToast } from "../Toast";
@@ -24,6 +25,23 @@ export interface Workflow<A> {
   run: (answers: A) => Promise<string>;
   // Answers not kept for next time (e.g. which file: it may be gone by then).
   transient?: (keyof A)[];
+}
+
+// A toggle for picking several answers (monomers, adducts, groups).
+export function WorkflowChip({ on, onClick, children }: { on: boolean; onClick: () => void; children: string }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={clsx(
+        "rounded-full border px-2.5 py-0.5 text-[12px]",
+        on ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-700 hover:border-ink-300",
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 const storeKey = (id: string) => `mfp.workflow.${id}`;

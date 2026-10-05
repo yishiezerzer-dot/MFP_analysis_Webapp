@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { api, type PlateSummary } from "../api";
 import type { Workflow } from "../components/workflow/WorkflowDialog";
+import { SessionPick } from "../components/workflow/SessionPick";
 import { ICON_PROPS } from "../components/common/ChartCardParts";
 import { notifySessionsChanged } from "../hooks/useSessionsChanged";
 import {
@@ -82,67 +82,18 @@ export function referencePlateForm(a: MicAnswers): LayoutForm {
   };
 }
 
-function usePlates(): [PlateSummary[], (p: PlateSummary) => void] {
-  const [plates, setPlates] = useState<PlateSummary[]>([]);
-  useEffect(() => {
-    api.plateReader.list().then(setPlates).catch(() => setPlates([]));
-  }, []);
-  return [plates, (p) => setPlates((prev) => [...prev, p])];
-}
-
 function PlatePick({ value, onPick, exclude }: { value: string; onPick: (p: PlateSummary) => void; exclude?: string }) {
-  const [plates, addPlate] = usePlates();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const choices = plates.filter((p) => p.session_id !== exclude);
   return (
-    <div className="flex flex-col gap-2">
-      {choices.length > 0 && (
-        <select
-          className="input"
-          aria-label="Plate"
-          value={value}
-          onChange={(e) => {
-            const p = choices.find((x) => x.session_id === e.target.value);
-            if (p) onPick(p);
-          }}
-        >
-          <option value="">Choose an open plate…</option>
-          {choices.map((p) => (
-            <option key={p.session_id} value={p.session_id}>
-              {p.display_name}
-            </option>
-          ))}
-        </select>
-      )}
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv"
-        className="hidden"
-        onChange={async (e) => {
-          const file = e.target.files?.[0];
-          e.target.value = "";
-          if (!file) return;
-          setBusy(true);
-          setError(null);
-          try {
-            const p = await api.plateReader.upload(file);
-            addPlate(p);
-            onPick(p);
-          } catch (err) {
-            setError(String(err).replace(/^Error: (HTTP \d+: )?/, ""));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      />
-      <button type="button" className="btn-ghost self-start border border-ink-200" disabled={busy} onClick={() => fileRef.current?.click()}>
-        {busy ? "Opening…" : "Open a plate file…"}
-      </button>
-      {error && <p className="text-[12px] text-danger-fg">{error}</p>}
-    </div>
+    <SessionPick
+      value={value}
+      onPick={onPick}
+      exclude={exclude}
+      list={api.plateReader.list}
+      upload={api.plateReader.upload}
+      accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv"
+      noun="Plate"
+      openLabel="Open a plate file…"
+    />
   );
 }
 

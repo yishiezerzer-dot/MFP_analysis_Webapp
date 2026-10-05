@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import clsx from "clsx";
 import { api, type LCMSSessionSummary } from "../api";
-import type { Workflow } from "../components/workflow/WorkflowDialog";
+import { WorkflowChip as Chip, type Workflow } from "../components/workflow/WorkflowDialog";
+import { SessionPick } from "../components/workflow/SessionPick";
 import { requestView } from "../hooks/useViewRequest";
 import {
   ACETATE_MASS,
@@ -116,76 +115,16 @@ export function productSettings(a: ProductAnswers, current: PolymerUiSettings): 
 const hasMonomers = (a: ProductAnswers) => a.monomers.length > 0 || parseExpectedProductMonomers(a.otherMonomers).length > 0;
 
 function RunPick({ value, onPick }: { value: string; onPick: (run: LCMSSessionSummary) => void }) {
-  const [runs, setRuns] = useState<LCMSSessionSummary[]>([]);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    api.lcms.list().then(setRuns).catch(() => setRuns([]));
-  }, []);
   return (
-    <div className="flex flex-col gap-2">
-      {runs.length > 0 && (
-        <select
-          className="input"
-          aria-label="Run"
-          value={value}
-          onChange={(e) => {
-            const run = runs.find((r) => r.session_id === e.target.value);
-            if (run) onPick(run);
-          }}
-        >
-          <option value="">Choose an open run…</option>
-          {runs.map((r) => (
-            <option key={r.session_id} value={r.session_id}>
-              {r.display_name}
-            </option>
-          ))}
-        </select>
-      )}
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".mzML,.mzml,.mzML.gz,.mzml.gz"
-        className="hidden"
-        onChange={async (e) => {
-          const file = e.target.files?.[0];
-          e.target.value = "";
-          if (!file) return;
-          setBusy(true);
-          setError(null);
-          try {
-            const run = await api.lcms.upload(file);
-            setRuns((prev) => [...prev, run]);
-            onPick(run);
-          } catch (err) {
-            setError(String(err).replace(/^Error: (HTTP \d+: )?/, ""));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      />
-      <button type="button" className="btn-ghost self-start border border-ink-200" disabled={busy} onClick={() => fileRef.current?.click()}>
-        {busy ? "Opening… (large files take a minute)" : "Open an mzML file…"}
-      </button>
-      {error && <p className="text-[12px] text-danger-fg">{error}</p>}
-    </div>
-  );
-}
-
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: string }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      className={clsx(
-        "rounded-full border px-2.5 py-0.5 text-[12px]",
-        on ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-700 hover:border-ink-300",
-      )}
-    >
-      {children}
-    </button>
+    <SessionPick
+      value={value}
+      onPick={onPick}
+      list={api.lcms.list}
+      upload={(file) => api.lcms.upload(file)}
+      accept=".mzML,.mzml,.mzML.gz,.mzml.gz"
+      noun="Run"
+      openLabel="Open an mzML file…"
+    />
   );
 }
 
@@ -203,7 +142,7 @@ export function lcmsProductWorkflow(go: (path: string) => void): Workflow<Produc
         id: "run",
         question: "Which run do you want to search?",
         explain:
-          "An mzML file exported from the instrument software (e.g. with MSConvert). Runs you opened before are listed here. No run yet? Use the example: a PLGA oligomer run with GA–LA chains eluting at 2–6 min.",
+          "An mzML file exported from the instrument software (e.g. with MSConvert). Runs you opened before are listed here. No run yet? Use the example: a positive-mode run of PLGA oligomers (glycolic and lactic acid chains).",
         render: (a, set) => (
           <div className="flex flex-col gap-3">
             <label className="flex items-center gap-2">
