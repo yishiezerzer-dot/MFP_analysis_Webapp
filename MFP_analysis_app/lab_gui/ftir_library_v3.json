@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "library_version": "3.0",
+  "library_version": "3.1",
   "name": "Built-in FTIR correlation library v3",
   "notes": "Broad organic/inorganic FTIR correlation bands for automated candidate suggestions. Ranges are in cm^-1. The matcher uses these bands as suggestions, not definitive identifications.",
   "sources": [
@@ -100,7 +100,7 @@
       "confirm_if_present": [
         {
           "range_cm1": [
-            1760,
+            1725,
             1680
           ],
           "text": "carbonyl supports carboxylic acid",
@@ -114,7 +114,17 @@
           "text": "acid C-O stretch supports carboxylic acid",
           "boost": 8
         }
-      ]
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1725,
+            1680
+          ],
+          "text": "acid C=O (1725-1680)"
+        }
+      ],
+      "missing_penalty": 20
     },
     {
       "id": "nh_stretch",
@@ -238,9 +248,11 @@
         "category": "alkane",
         "subcategory": "sp3 C-H",
         "shape": [
-          "sharp"
+          "sharp",
+          "medium"
         ],
         "intensity": [
+          "weak",
           "medium",
           "strong",
           "variable"
@@ -285,7 +297,17 @@
           "text": "aldehyde carbonyl supports aldehyde C-H",
           "boost": 14
         }
-      ]
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1740,
+            1720
+          ],
+          "text": "aldehyde C=O (1740-1720)"
+        }
+      ],
+      "missing_penalty": 25
     },
     {
       "id": "nitrile_cn",
@@ -385,7 +407,17 @@
           "text": "strong carbonyl peak argues against aromatic overtone in this region",
           "penalty": 25
         }
-      ]
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1620,
+            1585
+          ],
+          "text": "aromatic C=C near 1600 cm^-1"
+        }
+      ],
+      "missing_penalty": 20
     },
     {
       "id": "anhydride_co_asym",
@@ -443,7 +475,17 @@
           "text": "higher anhydride C=O band supports anhydride",
           "boost": 16
         }
-      ]
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1820,
+            1780
+          ],
+          "text": "second anhydride C=O (1820-1780)"
+        }
+      ],
+      "missing_penalty": 30
     },
     {
       "id": "acid_halide_co",
@@ -752,8 +794,8 @@
       "confirm_if_present": [
         {
           "range_cm1": [
-            1515,
-            1450
+            1520,
+            1480
           ],
           "text": "aromatic ~1500 band supports ring",
           "boost": 14
@@ -766,7 +808,24 @@
           "text": "aromatic C-H out-of-plane supports ring",
           "boost": 8
         }
-      ]
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1520,
+            1480
+          ],
+          "text": "aromatic C=C near 1500 cm^-1"
+        },
+        {
+          "range_cm1": [
+            3100,
+            3000
+          ],
+          "text": "sp2 C-H above 3000 cm^-1"
+        }
+      ],
+      "missing_penalty": 20
     },
     {
       "id": "aromatic_cc_1500",
@@ -805,6 +864,87 @@
           "text": "aromatic C-H out-of-plane supports ring",
           "boost": 8
         }
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1620,
+            1585
+          ],
+          "text": "aromatic C=C near 1600 cm^-1"
+        },
+        {
+          "range_cm1": [
+            3100,
+            3000
+          ],
+          "text": "sp2 C-H above 3000 cm^-1"
+        }
+      ],
+      "missing_penalty": 25
+    },
+    {
+      "id": "ch2_ch3_bend",
+      "range_cm1": [
+        1470,
+        1430
+      ],
+      "primary": {
+        "label": "CH2 scissor / CH3 asymmetric bend",
+        "group": "bending",
+        "category": "alkane",
+        "subcategory": "CH2/CH3 bend",
+        "shape": [
+          "sharp",
+          "medium"
+        ],
+        "intensity": [
+          "weak",
+          "medium",
+          "variable"
+        ]
+      },
+      "confirm_if_present": [
+        {
+          "range_cm1": [
+            3000,
+            2840
+          ],
+          "text": "sp3 C-H stretch supports alkyl groups",
+          "boost": 14
+        }
+      ]
+    },
+    {
+      "id": "ch3_sym_bend",
+      "range_cm1": [
+        1390,
+        1360
+      ],
+      "primary": {
+        "label": "CH3 symmetric bend (umbrella)",
+        "group": "bending",
+        "category": "alkane",
+        "subcategory": "CH3 bend",
+        "shape": [
+          "sharp",
+          "medium"
+        ],
+        "intensity": [
+          "weak",
+          "medium",
+          "variable"
+        ]
+      },
+      "confirm_if_present": [
+        {
+          "range_cm1": [
+            3000,
+            2840
+          ],
+          "text": "sp3 C-H stretch supports alkyl groups",
+          "boost": 14
+        }
       ]
     },
     {
@@ -835,7 +975,17 @@
           "text": "NO2 symmetric stretch supports nitro",
           "boost": 18
         }
-      ]
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1390,
+            1320
+          ],
+          "text": "NO2 symmetric stretch (1390-1320)"
+        }
+      ],
+      "missing_penalty": 25
     },
     {
       "id": "nitro_no2_sym",
@@ -865,7 +1015,17 @@
           "text": "NO2 asymmetric stretch supports nitro",
           "boost": 18
         }
-      ]
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1570,
+            1500
+          ],
+          "text": "NO2 asymmetric stretch (1570-1500)"
+        }
+      ],
+      "missing_penalty": 25
     },
     {
       "id": "ester_co_asym",
@@ -957,6 +1117,16 @@
           "text": "O-H stretch supports alcohol C-O",
           "boost": 12
         }
+      ],
+      "exclude_if_present": [
+        {
+          "range_cm1": [
+            1760,
+            1715
+          ],
+          "text": "ester C=O present: this region is more likely ester C-O",
+          "penalty": 10
+        }
       ]
     },
     {
@@ -978,7 +1148,17 @@
           "strong",
           "variable"
         ]
-      }
+      },
+      "exclude_if_present": [
+        {
+          "range_cm1": [
+            1760,
+            1715
+          ],
+          "text": "ester C=O present: this region is more likely ester C-O",
+          "penalty": 10
+        }
+      ]
     },
     {
       "id": "sulfoxide_so",
@@ -998,7 +1178,17 @@
         "intensity": [
           "strong"
         ]
-      }
+      },
+      "exclude_if_present": [
+        {
+          "range_cm1": [
+            1760,
+            1715
+          ],
+          "text": "ester C=O present: this region is more likely ester C-O",
+          "penalty": 12
+        }
+      ]
     },
     {
       "id": "sulfone_so2_asym",
@@ -1028,7 +1218,17 @@
           "text": "SO2 symmetric stretch supports sulfone",
           "boost": 18
         }
-      ]
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1170,
+            1120
+          ],
+          "text": "SO2 symmetric stretch (1170-1120)"
+        }
+      ],
+      "missing_penalty": 20
     },
     {
       "id": "sulfone_so2_sym",
@@ -1058,7 +1258,17 @@
           "text": "SO2 asymmetric stretch supports sulfone",
           "boost": 18
         }
-      ]
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1350,
+            1290
+          ],
+          "text": "SO2 asymmetric stretch (1350-1290)"
+        }
+      ],
+      "missing_penalty": 20
     },
     {
       "id": "phosphate_po",
@@ -1088,6 +1298,16 @@
           ],
           "text": "P-O region supports phosphate",
           "boost": 10
+        }
+      ],
+      "exclude_if_present": [
+        {
+          "range_cm1": [
+            1760,
+            1715
+          ],
+          "text": "ester C=O present: this region is more likely ester C-O",
+          "penalty": 18
         }
       ]
     },
@@ -1120,6 +1340,16 @@
           "text": "P=O supports phosphate",
           "boost": 10
         }
+      ],
+      "exclude_if_present": [
+        {
+          "range_cm1": [
+            1760,
+            1715
+          ],
+          "text": "ester C=O present: this region is more likely ester C-O",
+          "penalty": 18
+        }
       ]
     },
     {
@@ -1141,7 +1371,49 @@
           "strong",
           "variable"
         ]
-      }
+      },
+      "exclude_if_present": [
+        {
+          "range_cm1": [
+            1760,
+            1715
+          ],
+          "text": "ester C=O present: this region is more likely ester C-O",
+          "penalty": 12
+        }
+      ]
+    },
+    {
+      "id": "cc_skeletal",
+      "range_cm1": [
+        950,
+        720
+      ],
+      "primary": {
+        "label": "C-C skeletal stretch / CH2 rock (aliphatic)",
+        "group": "skeletal",
+        "category": "alkane",
+        "subcategory": "C-C skeletal / CH2 rock",
+        "shape": [
+          "sharp",
+          "medium"
+        ],
+        "intensity": [
+          "weak",
+          "medium",
+          "variable"
+        ]
+      },
+      "confirm_if_present": [
+        {
+          "range_cm1": [
+            3000,
+            2840
+          ],
+          "text": "sp3 C-H stretch supports alkyl groups",
+          "boost": 10
+        }
+      ]
     },
     {
       "id": "aromatic_ch_oop",
@@ -1168,12 +1440,37 @@
         {
           "range_cm1": [
             1620,
-            1450
+            1585
           ],
-          "text": "aromatic ring bands support out-of-plane bend",
+          "text": "aromatic C=C near 1600 supports the ring",
           "boost": 12
+        },
+        {
+          "range_cm1": [
+            1520,
+            1480
+          ],
+          "text": "aromatic C=C near 1500 supports the ring",
+          "boost": 8
         }
-      ]
+      ],
+      "require_one_of": [
+        {
+          "range_cm1": [
+            1620,
+            1585
+          ],
+          "text": "aromatic C=C near 1600 cm^-1"
+        },
+        {
+          "range_cm1": [
+            3100,
+            3000
+          ],
+          "text": "sp2 C-H above 3000 cm^-1"
+        }
+      ],
+      "missing_penalty": 30
     }
   ]
 }

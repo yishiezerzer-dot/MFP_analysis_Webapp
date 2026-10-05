@@ -183,6 +183,7 @@ def _normalize_entry(e: Dict[str, Any]) -> Dict[str, Any]:
     ctx = dict(d.get("context_hints") or {})
     confirm = list(d.get("confirm_if_present") or ctx.get("positive") or [])
     exclude = list(d.get("exclude_if_present") or ctx.get("negative") or [])
+    require = list(d.get("require_one_of") or [])
 
     return {
         "id": str(d.get("id") or "").strip(),
@@ -196,6 +197,8 @@ def _normalize_entry(e: Dict[str, Any]) -> Dict[str, Any]:
         "notes": str(d.get("notes") or "").strip(),
         "confirm_if_present": confirm,
         "exclude_if_present": exclude,
+        "require_one_of": require,
+        "missing_penalty": _to_float(d.get("missing_penalty"), default=25.0) or 25.0,
     }
 
 
@@ -268,6 +271,10 @@ def _score_entry(
         if peak_shape in shapes:
             score += 8.0
             reasons.append(f"shape matches ({peak_shape})")
+        elif shapes == {"broad"}:
+            # Bands that are only ever broad (H-bonded O-H) are not explained by a narrow peak.
+            score -= 20.0
+            reasons.append(f"expected a broad band ({peak_shape} here)")
         elif "medium" in shapes and peak_shape in {"sharp", "broad"}:
             score -= 2.0
         else:
@@ -296,6 +303,13 @@ def _score_entry(
         if matched:
             score -= _to_float(dict(pat).get("penalty"), default=18.0) or 18.0
             reasons.append(text)
+
+    # A band that never occurs alone (aromatic ring modes, NO2, SO2 pairs) needs one of its partners.
+    required = entry.get("require_one_of") or []
+    if required and not any(_pattern_present(pat, other)[0] for pat in required):
+        score -= float(entry.get("missing_penalty") or 25.0)
+        wanted = " or ".join(str(dict(pat).get("text") or "partner band") for pat in required)
+        reasons.append(f"no {wanted}")
 
     return float(_clamp(score, 0.0, 120.0)), reasons
 
