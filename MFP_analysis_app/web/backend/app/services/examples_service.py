@@ -77,14 +77,25 @@ EXAMPLES: List[Example] = [
         module="plate_reader",
         route="/plate-reader",
         title="MIC plates: two polymers + gentamicin (real Gen5 data)",
-        description="Two BioTek Gen5 plates, already laid out: LacGlyDOH 5:1:1 (rows A–C) and 1:1:1 (D–F) "
-                    "with blank rows G–H, and a gentamicin reference plate. F1 and B12 are excluded.",
+        description="Two BioTek Gen5 plates, already laid out: a gentamicin reference plate, and LacGlyDOH 5:1:1 "
+                    "(rows A–C) and 1:1:1 (D–F) with blank rows G–H. B12 and F1 are excluded.",
         try_this=[
             "Results: read gentamicin's MIC (no growth down to 4 µg/mL).",
             "Open How is this calculated? on the % growth chart.",
             "Experiment: both plates side by side in the MIC reading grid.",
         ],
         plates=[
+            ExamplePlate(
+                file="example_mic_gentamicin.xlsx",
+                display_name="Example – gentamicin.xlsx",
+                layout={
+                    "dilution": _DILUTION,
+                    "groups": [{"id": "g-gentamicin", "name": "Gentamicin", "kind": "reference", "colour": "#b45309", "wells": _rows("ABC")}],
+                    "growth_control": ["A12", "B12", "C12"],
+                    "blank": _rows("DEFGH", range(1, 13)),
+                    "excluded": ["B12"],
+                },
+            ),
             ExamplePlate(
                 file="example_mic_polymers.xlsx",
                 display_name="Example – LacGlyDOH 511 and 111.xlsx",
@@ -97,17 +108,6 @@ EXAMPLES: List[Example] = [
                     "growth_control": [f"{r}12" for r in "ABCDEF"],
                     "blank": _rows("GH", range(1, 13)),
                     "excluded": ["F1"],
-                },
-            ),
-            ExamplePlate(
-                file="example_mic_gentamicin.xlsx",
-                display_name="Example – gentamicin.xlsx",
-                layout={
-                    "dilution": _DILUTION,
-                    "groups": [{"id": "g-gentamicin", "name": "Gentamicin", "kind": "reference", "colour": "#b45309", "wells": _rows("ABC")}],
-                    "growth_control": ["A12", "B12", "C12"],
-                    "blank": _rows("DEFGH", range(1, 13)),
-                    "excluded": ["B12"],
                 },
             ),
         ],
