@@ -6,6 +6,7 @@ import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton } from "../help/HelpShell";
 import { Hint } from "../components/Hint";
 import { useRevealPanel } from "../help/reveal";
+import { useOpenFromUrl } from "../hooks/useOpenFromUrl";
 import { useHelp } from "../help/HelpProvider";
 import { AlertBanner } from "../components/AlertBanner";
 import { useBrowserAutomation } from "../automation/BrowserBridge";
@@ -33,7 +34,10 @@ import { TICChart } from "../components/lcms/TICChart";
 import { EICChart } from "../components/lcms/EICChart";
 import { UVChromatogramChart } from "../components/lcms/UVChromatogramChart";
 import { SpectrumChart } from "../components/lcms/SpectrumChart";
-import { EmptyState, StatusBar, FindMzDialog, CustomUvLabelDialog, EICDialog } from "../components/lcms/LCMSViewDialogs";
+import { StatusBar, FindMzDialog, CustomUvLabelDialog, EICDialog } from "../components/lcms/LCMSViewDialogs";
+import { TabEmptyState } from "../components/common/TabEmptyState";
+import { ExampleTips } from "../components/ExampleData";
+import { ChartLine } from "lucide-react";
 
 export function LCMSView() {
   const browserAutomation = useBrowserAutomation();
@@ -1354,6 +1358,44 @@ export function LCMSView() {
     prevUvBunchLabelsRef.current = uvBunchLabels;
   }, [uvBunchLabels]);
 
+  // New sessions (uploads or an opened example) join the list unassigned and become active.
+  const addLoadedSessions = (loaded: LCMSSessionSummary[]) => {
+    if (loaded.length === 0) return;
+    setSessions((prev) => [...prev, ...loaded]);
+    setPolymerSettingsBySessionId((prev) => {
+      const next = { ...prev };
+      loaded.forEach((session) => {
+        if (!next[session.session_id]) {
+          next[session.session_id] = loadPolymerUiSettings();
+        }
+      });
+      return next;
+    });
+    setSessionProjectById((prev) => {
+      const next = { ...prev };
+      loaded.forEach((session) => {
+        next[session.session_id] = null;
+      });
+      return next;
+    });
+    if (activeProjectId !== "__all" && activeProjectId !== "__unassigned") {
+      setActiveProjectId("__unassigned");
+    }
+    setActiveSid(loaded[loaded.length - 1].session_id);
+  };
+
+  useOpenFromUrl(
+    sessions.map((s) => s.session_id),
+    (sid) => {
+      setActiveProjectId("__all");
+      setActiveSid(sid);
+    },
+  );
+
+  const openExample = async (sessionIds: string[]) => {
+    addLoadedSessions(await Promise.all(sessionIds.map((sid) => api.lcms.get(sid))));
+  };
+
   const onUpload = async (files: File[]) => {
     if (files.length === 0) return;
     setBusy(true);
@@ -1401,29 +1443,7 @@ export function LCMSView() {
 
       const uploaded = await Promise.all(uploadPromises);
 
-      if (uploaded.length > 0) {
-        setSessions((prev) => [...prev, ...uploaded]);
-        setPolymerSettingsBySessionId((prev) => {
-          const next = { ...prev };
-          uploaded.forEach((session) => {
-            if (!next[session.session_id]) {
-              next[session.session_id] = loadPolymerUiSettings();
-            }
-          });
-          return next;
-        });
-        setSessionProjectById((prev) => {
-          const next = { ...prev };
-          uploaded.forEach((session) => {
-            next[session.session_id] = null;
-          });
-          return next;
-        });
-        if (activeProjectId !== "__all" && activeProjectId !== "__unassigned") {
-          setActiveProjectId("__unassigned");
-        }
-        setActiveSid(uploaded[uploaded.length - 1].session_id);
-      }
+      addLoadedSessions(uploaded);
       if (uploaded.length > 1) {
         setInfo(`Loaded ${uploaded.length} mzML files in parallel.`);
       }
@@ -3169,7 +3189,20 @@ export function LCMSView() {
             setDualLayout={setDualLayout}
           />
 
-          {!active && <EmptyState onPick={() => fileRef.current?.click()} />}
+          <ExampleTips module="lcms" activeName={active?.display_name} />
+
+          {!active && (
+            <TabEmptyState
+              icon={<ChartLine size={40} strokeWidth={1.5} aria-hidden />}
+              title="Open an mzML file to begin"
+              purpose="Look at an LC–MS run: click the total ion chromatogram to see the spectrum at that time, follow masses with EICs, and label polymer series and expected products."
+              accepts="Accepts .mzML and .mzML.gz (several at once). Attach a UV/DAD trace as CSV afterwards."
+              pickLabel="Open mzML…"
+              onPick={() => fileRef.current?.click()}
+              exampleModule="lcms"
+              onExampleOpened={openExample}
+            />
+          )}
 
           {active && (
             <>

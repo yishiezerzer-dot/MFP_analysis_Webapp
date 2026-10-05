@@ -23,6 +23,16 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **Easier for new users, stage 2: Home page, example data and tours.**
+  - **Home** (new first item in the sidebar) asks what you want to do: analyse a MIC plate, find a product in an LCMS run, identify FTIR peaks, or ask the AI. Each card has Open, Try with example data, Take the tour, and the files you already have open. The app opens on Home; choose "the last tab I used" at the bottom of Home to change that.
+  - **Try with example data** on every tab's empty page and on Home:
+    - a synthetic PLGA (glycolic/lactic acid) oligomer LCMS run with a UV trace;
+    - a synthetic PLGA film FTIR spectrum;
+    - the two real Gen5 MIC plates, already laid out.
+
+    Examples are ordinary sessions named "Example – …" and tagged "Example"; while one is open, a card lists what to try.
+  - **Empty pages** now say what each tab is for and which files it accepts. The FTIR page listed .spa/.dpt, which can't be opened.
+  - **Tours:** a one-minute tour per tab, offered once on the first visit, and replayable from Help or Home.
 - **Easier for new users, stage 1: hints, a control finder and up-to-date help.**
   - **Hover hints on every control** (about 250): what it does, a typical value from the real defaults, and the help topic. Press **F1** on a control to open help at that topic.
   - **Find a control** (header, or **Ctrl+K** / ⌘K anywhere): type a name or what you want to do ("baseline", "exclude well", "condensation") and press Enter. The app switches tab, opens the right panel or dialog, scrolls to the control and highlights it.

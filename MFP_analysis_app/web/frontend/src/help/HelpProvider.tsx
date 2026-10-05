@@ -5,6 +5,8 @@ import { getHelpModule } from "./registry";
 import { flattenTopics } from "./topicUtils";
 import { TAB_ROUTES, getControl, tabOfRoute, type ControlHint } from "./controls";
 import { useShowControl } from "./useShowControl";
+import { useTour } from "./TourProvider";
+import { tourForTab } from "./tours";
 
 interface HelpContextValue {
   openHelp: (topicId?: string, route?: string) => void;
@@ -32,6 +34,7 @@ export function HelpProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState<{ route: string; topic?: string } | null>(null);
   const activeHint = useRef<string | null>(null);
   const showControl = useShowControl();
+  const { startTour } = useTour();
 
   const openHelp = useCallback(
     (topicId?: string, route?: string) => setOpen({ route: route ?? location.pathname, topic: topicId }),
@@ -67,6 +70,12 @@ export function HelpProvider({ children }: { children: ReactNode }) {
           module={module}
           initialTopic={open?.topic}
           tab={open ? tabOfRoute(open.route) : null}
+          tourTitle={open ? tourForTab(tabOfRoute(open.route))?.title : undefined}
+          onStartTour={() => {
+            const tour = open ? tourForTab(tabOfRoute(open.route)) : undefined;
+            setOpen(null);
+            if (tour) startTour(tour.id);
+          }}
           onShowControl={(id) => {
             setOpen(null);
             void showControl(id);

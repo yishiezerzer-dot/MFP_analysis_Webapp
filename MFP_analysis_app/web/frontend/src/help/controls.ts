@@ -64,6 +64,7 @@ export const CONTROLS: ControlHint[] = [
     keywords: ["save", "image", "png", "svg", "publication", "download"],
   },
 
+  { id: "app.tryExample", tab: "app", label: "Try with example data", what: "Opens a ready-made example on this tab (marked \"Example\") with steps to try, so you can learn without your own files.", keywords: ["demo", "sample data", "practice", "tutorial", "example"] },
   { id: "app.workspace", tab: "app", label: "Lab member profile", what: "Each lab member's workspace keeps its own open files and settings. Switch to yours, or add a new member.", keywords: ["workspace", "user", "profile", "switch", "member"] },
   { id: "app.userMenu", tab: "app", label: "Profile menu", what: "Your profile, switching lab member, and the colour theme (day, night, night vision).", keywords: ["account", "settings", "menu"] },
   { id: "app.theme", tab: "app", label: "Theme", what: "Day, night or night-vision colours for the whole app; charts follow the theme on screen, exports stay white.", typical: "Day", keywords: ["dark mode", "night", "colours", "appearance"], panel: "app.menu" },

@@ -25,7 +25,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from .automation import router as automation  # noqa: E402
 from .backup import start_nightly_backups  # noqa: E402
 from .db import init_db  # noqa: E402
-from .routers import ai, experiments, ftir, lcms, plate_reader, publication, workspaces  # noqa: E402
+from .routers import ai, examples, experiments, ftir, lcms, plate_reader, publication, workspaces  # noqa: E402
 
 init_db()
 
@@ -87,6 +87,7 @@ app.include_router(ftir.router, prefix="/api/ftir", tags=["ftir"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(workspaces.router, prefix="/api/workspaces", tags=["workspaces"])
 app.include_router(experiments.router, prefix="/api/experiments", tags=["experiments"])
+app.include_router(examples.router, prefix="/api/examples", tags=["examples"])
 app.include_router(publication.router, prefix="/api/publication", tags=["publication"])
 app.include_router(automation.router, prefix="/api/automation", tags=["automation"])
 

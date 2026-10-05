@@ -8,6 +8,7 @@ const LCMSView = lazy(() => import("./views/LCMSView").then((m) => ({ default: m
 const PlateReaderView = lazy(() => import("./views/PlateReaderView").then((m) => ({ default: m.PlateReaderView })));
 const FTIRView = lazy(() => import("./views/FTIRView").then((m) => ({ default: m.FTIRView })));
 const AIView = lazy(() => import("./views/AIView").then((m) => ({ default: m.AIView })));
+const HomeView = lazy(() => import("./views/HomeView").then((m) => ({ default: m.HomeView })));
 import type { PageHeaderContextValue } from "./layout/PageHeader";
 import { UserMenu, type AppUser } from "./layout/UserMenu";
 import { Tooltip } from "./components/Tooltip";
@@ -15,6 +16,8 @@ import { BrowserBridgeProvider } from "./automation/BrowserBridge";
 import { useWorkspace } from "./context/WorkspaceContext";
 import { FileIngestionProvider } from "./context/FileIngestionContext";
 import { HelpProvider } from "./help/HelpProvider";
+import { TourProvider } from "./help/TourProvider";
+import { entryRoute, rememberTab } from "./layout/startPage";
 import { Hint } from "./components/Hint";
 import { GlobalDropOverlay } from "./components/GlobalDropOverlay";
 import { AlertBanner } from "./components/AlertBanner";
@@ -36,6 +39,7 @@ interface TabDef {
 }
 
 const TABS: TabDef[] = [
+  { to: "/home", label: "Home", hint: "start here", status: "ready", icon: IconHome },
   { to: "/lcms", label: "LCMS", hint: "mzML viewer", status: "ready", icon: IconLCMS },
   { to: "/ftir", label: "FTIR", hint: "spectra + peaks", status: "ready", icon: IconFTIR },
   { to: "/plate-reader", label: "Plate Reader", hint: "MIC plate maps", status: "ready", icon: IconPlate },
@@ -333,8 +337,17 @@ function Sidebar() {
  * Views register their header content with the `usePageHeader` hook, which
  * reads the outlet context we provide below.
  */
+// Analysis tabs the app can reopen on start (Home itself is not "last used").
+const TAB_ROUTES = TABS.map((t) => t.to).filter((to) => to !== "/home");
+
+function EntryRedirect() {
+  return <Navigate to={entryRoute(TAB_ROUTES)} replace />;
+}
+
 function Layout() {
   usePlotlyAutoResize();
+  const location = useLocation();
+  useEffect(() => rememberTab(location.pathname, TAB_ROUTES), [location.pathname]);
   const [headerNode, setHeaderNode] = useState<ReactNode>(null);
   const ctx = useMemo<PageHeaderContextValue>(
     () => ({ setHeader: setHeaderNode }),
@@ -411,21 +424,24 @@ export default function App() {
   return (
     <BrowserBridgeProvider>
       <FileIngestionProvider>
-        <HelpProvider>
-          <Suspense fallback={<ViewLoadingFallback />}>
-            <Routes>
-              <Route element={<Layout />}>
-                <Route path="/" element={<Navigate to="/lcms" replace />} />
-                <Route path="/lcms" element={<LCMSView />} />
-                <Route path="/ftir" element={<FTIRView />} />
-                <Route path="/plate-reader" element={<PlateReaderView />} />
-                <Route path="/ai" element={<AIView />} />
-              {/* Old links (e.g. the removed /data-studio and /figures tabs) land on LCMS instead of a blank page. */}
-              <Route path="*" element={<Navigate to="/lcms" replace />} />
-              </Route>
-            </Routes>
-          </Suspense>
-        </HelpProvider>
+        <TourProvider>
+          <HelpProvider>
+            <Suspense fallback={<ViewLoadingFallback />}>
+              <Routes>
+                <Route element={<Layout />}>
+                  <Route path="/" element={<EntryRedirect />} />
+                <Route path="/home" element={<HomeView />} />
+                  <Route path="/lcms" element={<LCMSView />} />
+                  <Route path="/ftir" element={<FTIRView />} />
+                  <Route path="/plate-reader" element={<PlateReaderView />} />
+                  <Route path="/ai" element={<AIView />} />
+                {/* Old links (e.g. the removed /data-studio and /figures tabs) go to the start page instead of a blank page. */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
+              </Routes>
+            </Suspense>
+          </HelpProvider>
+        </TourProvider>
       </FileIngestionProvider>
     </BrowserBridgeProvider>
   );
@@ -446,6 +462,16 @@ function svgProps(className?: string) {
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
   };
+}
+
+function IconHome({ className }: { className?: string }) {
+  return (
+    <svg {...svgProps(className)}>
+      <path d="M4 11l8-6 8 6" />
+      <path d="M6 10v9h12v-9" />
+      <path d="M10 19v-5h4v5" />
+    </svg>
+  );
 }
 
 function IconLCMS({ className }: { className?: string }) {

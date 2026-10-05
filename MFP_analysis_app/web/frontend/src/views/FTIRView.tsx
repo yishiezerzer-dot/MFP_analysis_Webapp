@@ -34,8 +34,11 @@ import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
 import { useUndoRedo } from "../hooks/useUndoRedo";
 import { ExperimentTagEditor } from "../components/ExperimentTagEditor";
+import { TabEmptyState } from "../components/common/TabEmptyState";
+import { ExampleTips } from "../components/ExampleData";
 import { Hint } from "../components/Hint";
 import { useRevealPanel } from "../help/reveal";
+import { useOpenFromUrl } from "../hooks/useOpenFromUrl";
 import {
   exportPlotlyPublicationImage,
   PublicationExportFormat,
@@ -537,6 +540,10 @@ export function FTIRView() {
     (value) => ({ ...DEFAULT_CONTROL_PANELS, ...value }),
   );
   const [inspectorTab, setInspectorTab] = useState<FTIRInspectorTab>("preprocess");
+  useOpenFromUrl(
+    sessions.map((s) => s.session_id),
+    (sid) => setActiveSid(sid),
+  );
   useRevealPanel({
     "ftir.inspector.preprocess": () => setInspectorTab("preprocess"),
     "ftir.inspector.peaks": () => setInspectorTab("peaks"),
@@ -749,6 +756,18 @@ export function FTIRView() {
     };
   }, [overlayEnabled, overlaySessionIds, pre, sessions]);
 
+  const addLoadedSessions = (loaded: FTIRSessionSummary[]) => {
+    if (loaded.length === 0) return;
+    setSessions((prev) => [...prev, ...loaded]);
+    setActiveSid(loaded[loaded.length - 1].session_id);
+    setPeaks([]);
+    setAssignments(null);
+  };
+
+  const openExample = async (sessionIds: string[]) => {
+    addLoadedSessions(await Promise.all(sessionIds.map((sid) => api.ftir.get(sid))));
+  };
+
   const onUpload = async (files: File[]) => {
     if (files.length === 0) return;
     setBusy(true);
@@ -759,12 +778,7 @@ export function FTIRView() {
         const s = await api.ftir.upload(file);
         uploaded.push(s);
       }
-      if (uploaded.length > 0) {
-        setSessions((prev) => [...prev, ...uploaded]);
-        setActiveSid(uploaded[uploaded.length - 1].session_id);
-        setPeaks([]);
-        setAssignments(null);
-      }
+      addLoadedSessions(uploaded);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -1329,12 +1343,22 @@ export function FTIRView() {
 
         {!active ? (
           <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-6">
-            <EmptyState onPick={() => fileRef.current?.click()} />
+            <TabEmptyState
+              icon={<FlaskConical size={40} strokeWidth={1.5} aria-hidden />}
+              title="Open FTIR spectra"
+              purpose="Clean up a spectrum (baseline, normalisation), pick peaks and let the bond library suggest what each one is; integrate bands, subtract spectra or deconvolute amide I when you need more."
+              accepts="Accepts .csv .txt .tsv .dx .jdx .spc — two columns, wavenumber and absorbance or transmittance. Several files at once."
+              pickLabel="Choose file(s)…"
+              onPick={() => fileRef.current?.click()}
+              exampleModule="ftir"
+              onExampleOpened={openExample}
+            />
           </div>
         ) : (
           <div className="flex min-w-0 flex-1 overflow-hidden">
             {/* Left 65% Canvas: Summary, Floating Canvas Toolbar, SpectrumChart, PeakTable */}
             <div className="flex min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:p-5">
+              <ExampleTips module="ftir" activeName={active.display_name} />
               <SummaryCard active={active} spectrum={spectrum} peaks={peaks} onTagUpdated={handleTagUpdated} />
 
               <SpectrumChart
@@ -1582,23 +1606,6 @@ function SessionsSidebar(props: {
         </>
       )}
     </SideRail>
-  );
-}
-
-function EmptyState(props: { onPick: () => void }) {
-  return (
-    <div className="card flex shrink-0 flex-col items-center justify-center gap-3 p-12 text-center">
-      <FlaskConical size={40} strokeWidth={1.5} className="text-ink-500" aria-hidden />
-      <div className="text-card-title">Open FTIR files</div>
-      <div className="max-w-md text-sm text-ink-500">
-        CSV, TXT/TSV or JASCO-style files with <code>XYDATA</code> blocks. Select or drop
-        multiple files at once. The backend uses the same parser as the desktop app and
-        ignores header text automatically. Supported formats: .spa, .csv, .txt, .dpt
-      </div>
-      <button className="btn-primary mt-2" onClick={props.onPick}>
-        Choose file(s)…
-      </button>
-    </div>
   );
 }
 

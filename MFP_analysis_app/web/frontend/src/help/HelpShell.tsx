@@ -4,7 +4,7 @@ import type { HelpModule, HelpTopic } from "./types";
 import { filterTopicTree, flattenTopics } from "./topicUtils";
 import { useHelp } from "./HelpProvider";
 import { CONTROLS, type ControlHint, type ControlTab } from "./controls";
-import { Crosshair } from "lucide-react";
+import { Compass, Crosshair } from "lucide-react";
 import { Hint } from "../components/Hint";
 
 function TocRow({
@@ -100,6 +100,8 @@ export function HelpShell({
   initialTopic,
   tab,
   onShowControl,
+  tourTitle,
+  onStartTour,
   onClose,
 }: {
   open: boolean;
@@ -108,6 +110,8 @@ export function HelpShell({
   // The tab this help belongs to; its controls get "Show me" buttons on their help topic.
   tab?: ControlTab | null;
   onShowControl?: (id: string) => void;
+  tourTitle?: string;
+  onStartTour?: () => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
@@ -190,6 +194,12 @@ export function HelpShell({
               autoComplete="off"
             />
           </label>
+          {tourTitle && onStartTour && (
+            <button type="button" className="btn-ghost border border-ink-200" onClick={onStartTour} title={tourTitle}>
+              <Compass size={15} strokeWidth={1.8} aria-hidden />
+              Take the tour
+            </button>
+          )}
           <button
             type="button"
             className="rounded-md border border-ink-200 bg-surface px-3 py-1.5 text-sm text-ink-700 hover:bg-ink-100"
