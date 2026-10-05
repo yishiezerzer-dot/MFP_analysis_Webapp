@@ -41,3 +41,13 @@ export function DocNote({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+// A recorded walkthrough (GIF made from the example data by scripts/record-walkthroughs).
+export function DocWalkthrough({ src, caption }: { src: string; caption: string }) {
+  return (
+    <figure className="mb-4 overflow-hidden rounded-md border border-ink-200">
+      <img src={src} alt={`Walkthrough: ${caption}`} loading="lazy" className="block w-full" />
+      <figcaption className="border-t border-ink-200 bg-ink-50/60 px-3 py-1.5 text-[12px] text-ink-600">{caption}</figcaption>
+    </figure>
+  );
+}

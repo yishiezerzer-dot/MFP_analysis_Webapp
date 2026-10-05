@@ -97,11 +97,23 @@ function PlatePick({ value, onPick, exclude }: { value: string; onPick: (p: Plat
   );
 }
 
-function compoundsFrom(plate: PlateSummary): MicCompound[] | null {
-  const samples = plate.layout.groups.filter((g) => g.kind === "sample");
-  if (samples.length === 0) return null;
-  const form = formFromLayout(plate.layout);
-  return samples.map((g) => ({ name: g.name, rows: form.compounds.find((c) => c.id === g.id)?.lines ?? "" }));
+// A plate that already has a layout (e.g. read from its Gen5 notes) prefills every answer it can.
+export function answersFrom(plate: PlateSummary): Partial<MicAnswers> {
+  const { layout } = plate;
+  if (layout.groups.length === 0 || layout.dilution.direction !== "columns") return {};
+  const form = formFromLayout(layout);
+  const lines = (id: string) => form.compounds.find((c) => c.id === id)?.lines ?? "";
+  const samples = layout.groups.filter((g) => g.kind === "sample");
+  const reference = layout.groups.find((g) => g.kind === "reference");
+  return {
+    ...(samples.length ? { compounds: samples.map((g) => ({ name: g.name, rows: lines(g.id) })) } : {}),
+    top: layout.dilution.top,
+    unit: layout.dilution.unit,
+    factor: layout.dilution.factor,
+    control: form.control,
+    blank: form.blank,
+    ...(reference ? { reference: "same" as const, referenceName: reference.name, referenceRows: lines(reference.id) } : {}),
+  };
 }
 
 const field = "flex flex-col gap-1";
@@ -117,7 +129,7 @@ export function micPlateWorkflow(go: (path: string) => void): Workflow<MicAnswer
         id: "plate",
         question: "Which plate do you want to analyse?",
         explain:
-          "A BioTek Gen5 Excel export works best (notes typed under the plate fill in the compounds), but any sheet or CSV with an 8×12 block labelled A–H and 1–12 is fine. No plate yet? Use the example plates.",
+          "A BioTek Gen5 Excel export works best (notes typed under the plate fill in the compounds, controls and blank), but any sheet or CSV with an 8×12 block labelled A–H and 1–12 is fine. No plate yet? Use the example plates.",
         render: (a, set) => (
           <div className="flex flex-col gap-3">
             <label className="flex items-center gap-2">
@@ -127,7 +139,7 @@ export function micPlateWorkflow(go: (path: string) => void): Workflow<MicAnswer
             {a.source === "plate" && (
               <PlatePick
                 value={a.plateId}
-                onPick={(p) => set({ plateId: p.session_id, ...(compoundsFrom(p) ? { compounds: compoundsFrom(p) as MicCompound[] } : {}) })}
+                onPick={(p) => set({ plateId: p.session_id, ...answersFrom(p) })}
               />
             )}
             <label className="flex items-center gap-2">

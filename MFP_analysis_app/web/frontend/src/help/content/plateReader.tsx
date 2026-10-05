@@ -1,5 +1,7 @@
 import type { HelpModule } from "../types";
-import { DocCode, DocH4, DocLead, DocLi, DocNote, DocOl, DocP, DocUl } from "../docPrimitives";
+import { DocCode, DocH4, DocLead, DocLi, DocNote, DocOl, DocP, DocUl, DocWalkthrough } from "../docPrimitives";
+import micGif from "../media/workflow-mic.gif";
+import paperGif from "../media/workflow-paper.gif";
 
 export const plateReaderHelpModule: HelpModule = {
   title: "Plate Reader — help",
@@ -14,6 +16,7 @@ export const plateReaderHelpModule: HelpModule = {
             Open a BioTek Gen5 plate export, say which wells are which on the plate map, and read the MIC by eye from
             the % growth charts. Every number can be traced back to the wells it came from.
           </DocLead>
+          <DocWalkthrough src={micGif} caption="Guide me → Analyse a MIC plate, on the example LacGlyDOH plate" />
           <DocOl>
             <DocLi>
               <strong>Open plate…</strong> (or drop the file on the page).
@@ -183,6 +186,7 @@ export const plateReaderHelpModule: HelpModule = {
       keywords: ["tag", "combine", "grid", "si package"],
       body: (
         <>
+          <DocWalkthrough src={paperGif} caption="Prepare for paper (experiment tag menu): charts at a journal size and the SI package" />
           <DocP>
             Plates with the same experiment tag are combined. Each compound is compared with the growth control on its
             own plate, so a gentamicin plate and a sample plate can be read side by side.

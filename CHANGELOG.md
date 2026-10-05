@@ -23,6 +23,8 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **Easier for new users, stage 4: recorded walkthroughs.** Each guided workflow has a short animated walkthrough, recorded on the example data, in the help: LCMS and FTIR *Overview*, Plate Reader *Overview*, and *Prepare for paper* under LCMS *Exports* and Plate Reader *Experiment*. `frontend/scripts/walkthroughs` re-records them when the screens change.
+- **Analyse a MIC plate** now prefills the dilution series, growth control, blank rows and a same-plate reference from a plate that already has a layout, not just the compounds. Before, running it on such a plate could clear its blank rows.
 - **Easier for new users, stage 3: guided workflows.** A **Guide me** button asks one question per screen, with an "I don't know" explanation for each and a summary of what it will do before it runs. Answers are remembered for next time.
   - **Analyse a MIC plate** (Plate Reader, Home): which plate, compounds and rows (filled in from Gen5 notes), dilution series, growth control and blank, and the reference antibiotic on the same or another plate. It lays out the plate and opens Results.
   - **Find my product** (LCMS, Home): which run, its monomers and/or the product's mass, and the ionisation (polarity, adducts, charges). It switches polarity, turns on chain labels for those monomers, and draws an EIC for each ion of the product. It then shows the spectrum where the product is strongest; with only monomers, it opens Expected Products at the biggest TIC peak.
