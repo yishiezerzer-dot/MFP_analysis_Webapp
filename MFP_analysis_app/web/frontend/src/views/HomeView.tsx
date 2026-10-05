@@ -41,6 +41,7 @@ const TASKS: Task[] = [
   {
     route: "/lcms",
     module: "lcms",
+    workflow: "lcms-product",
     icon: <ChartLine size={22} strokeWidth={1.6} aria-hidden />,
     title: "Find my product in an LCMS run",
     text: "Open an mzML run, follow masses with EICs and label polymer series and expected products.",

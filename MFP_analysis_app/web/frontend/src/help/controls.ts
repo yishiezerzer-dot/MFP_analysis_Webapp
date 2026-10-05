@@ -366,6 +366,7 @@ export const CONTROLS: ControlHint[] = [
   },
   // LCMS
   { id: "lcms.open", tab: "lcms", label: "Open mzML", what: "Loads one or more mzML files (MS1 scans are indexed on upload). You can also drop files on the page.", typical: ".mzML exported from the instrument", keywords: ["upload", "import", "file", "mzml"], helpTopic: "files-workspace" },
+  { id: "lcms.guide", tab: "lcms", label: "Guide me", what: "Answer a few questions (which run, monomers or product mass, ionisation) and the app labels your chains, draws EICs for your product and shows the spectrum where it is strongest.", keywords: ["wizard", "guided", "step by step", "find my product", "help me"], helpTopic: "overview" },
   { id: "lcms.loadWorkspace", tab: "lcms", label: "Load workspace", what: "Restores files and settings from a workspace JSON file saved earlier.", keywords: ["restore", "json"], helpTopic: "files-workspace" },
   { id: "lcms.saveWorkspace", tab: "lcms", label: "Save workspace", what: "Saves the open files and all settings to a JSON file you can load later or send to someone.", keywords: ["json", "store"], helpTopic: "files-workspace" },
   { id: "lcms.polarity", tab: "lcms", label: "Polarity", what: "Which scans to show: all, positive (ESI+), negative (ESI−), or both side by side (Dual). Polymer matching needs ESI+ or ESI−.", typical: "ESI+ for most polymers", keywords: ["positive", "negative", "esi", "ion mode", "dual"], helpTopic: "view-tab" },
