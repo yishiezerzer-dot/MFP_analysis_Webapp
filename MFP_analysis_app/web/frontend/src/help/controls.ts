@@ -101,6 +101,14 @@ export const CONTROLS: ControlHint[] = [
     helpTopic: "files",
   },
   {
+    id: "plate.guide",
+    tab: "plate-reader",
+    label: "Guide me",
+    what: "Answer a few questions (which plate, compounds and rows, dilution, controls, reference) and the plate is laid out for you.",
+    keywords: ["wizard", "guided", "step by step", "setup", "help me"],
+    helpTopic: "overview",
+  },
+  {
     id: "plate.view",
     tab: "plate-reader",
     label: "Plate map / Results / Experiment",

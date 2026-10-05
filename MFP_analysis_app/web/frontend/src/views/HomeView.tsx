@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChartLine, Compass, FileUp, FlaskConical, Grid3X3, MessageSquare, MousePointerClick, Search } from "lucide-react";
+import { ChartLine, Compass, FileUp, Wand2, FlaskConical, Grid3X3, MessageSquare, MousePointerClick, Search } from "lucide-react";
 import { api } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { TryExampleButton } from "../components/ExampleData";
@@ -11,6 +11,7 @@ import { OPEN_ON_KEY, type OpenOn } from "../layout/startPage";
 import { useTour } from "../help/TourProvider";
 import { tourForTab } from "../help/tours";
 import { tabOfRoute } from "../help/controls";
+import { useWorkflow, type WorkflowId } from "../workflows/WorkflowProvider";
 
 interface OpenFile {
   id: string;
@@ -20,6 +21,7 @@ interface OpenFile {
 interface Task {
   route: string;
   module?: "lcms" | "ftir" | "plate_reader";
+  workflow?: WorkflowId;
   icon: ReactNode;
   title: string;
   text: string;
@@ -30,6 +32,7 @@ const TASKS: Task[] = [
   {
     route: "/plate-reader",
     module: "plate_reader",
+    workflow: "mic-plate",
     icon: <Grid3X3 size={22} strokeWidth={1.6} aria-hidden />,
     title: "Analyse a MIC plate",
     text: "Lay out a Gen5 plate (compounds, growth control, blank) and read % growth, dose–response and the MIC.",
@@ -83,6 +86,7 @@ function useOpenFiles(): Record<string, OpenFile[]> {
 function TaskCard({ task, files }: { task: Task; files: OpenFile[] | undefined }) {
   const navigate = useNavigate();
   const { startTour } = useTour();
+  const { startWorkflow } = useWorkflow();
   const tour = tourForTab(tabOfRoute(task.route));
   const recent = (files ?? []).slice(-3).reverse();
   return (
@@ -115,7 +119,17 @@ function TaskCard({ task, files }: { task: Task; files: OpenFile[] | undefined }
         </div>
       )}
       <div className="mt-auto flex flex-wrap gap-2">
-        <button type="button" className="btn-primary" onClick={() => navigate(task.route)}>
+        {task.workflow && (
+          <button type="button" className="btn-primary" onClick={() => startWorkflow({ id: task.workflow as WorkflowId })}>
+            <Wand2 {...ICON_PROPS} />
+            Guide me
+          </button>
+        )}
+        <button
+          type="button"
+          className={task.workflow ? "btn-ghost border border-ink-200" : "btn-primary"}
+          onClick={() => navigate(task.route)}
+        >
           {task.open}
         </button>
         {task.module && (
