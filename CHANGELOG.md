@@ -29,6 +29,15 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **FTIR opens files as plain data.** Preprocessing (smoothing, baseline, normalisation, ATR) now starts off, so a spectrum is shown exactly as measured until you choose a preset or a setting. Saved preprocessing settings were reset once for this.
+- **FTIR chart design** (Design button), now in groups:
+  - Style: Screen, Paper and Slide presets, plus Save as my default.
+  - Axes: tick direction, minor ticks, tick and axis-line thickness, tick step, y range.
+  - Text: font, bold titles and tick labels, legend position.
+  - Peak labels: horizontal or vertical, boxed or text only, bold, the ▼ markers can be turned off, and Auto-arrange / Reset positions.
+
+  Exports use the chosen font. Zoom is kept while you drag labels.
+- **FTIR y axis no longer moves when you change text or labels.** Its range came from Plotly's autorange, which grows to fit the peak labels, so changing label size or orientation, or tick and title sizes, changed the axis numbers (e.g. 0–1.2 became −0.2–1.4). The range now comes from the data only.
 - **FTIR transmittance spectra are shown in %T.** With Mode set to transmittance, the chart (dips, labels underneath, axis "Transmittance (%)"), the peak table's %T column, the peaks CSV, the HTML report and the JDX export (YUNITS=TRANSMITTANCE) now show transmittance instead of the absorbance it was converted to. Processing, peak picking and the bond library still work in absorbance.
 - **Try with example data / the guides no longer make duplicate example files.** Opening an example that is already open in the workspace selects the open copy; for the plates, only a plate you closed is added back.
 - **Easier for new users, stage 4: recorded walkthroughs.** Each guided workflow has a short animated walkthrough, recorded on the example data, in the help: LCMS and FTIR *Overview*, Plate Reader *Overview*, and *Prepare for paper* under LCMS *Exports* and Plate Reader *Experiment*. `frontend/scripts/walkthroughs` re-records them when the screens change.
