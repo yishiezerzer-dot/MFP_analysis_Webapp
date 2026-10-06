@@ -52,6 +52,20 @@ import {
 } from "../utils/publicationPlotExport";
 import { FTIRInspectorPanel, type FTIRInspectorTab } from "../components/ftir/FTIRInspectorPanel";
 import { FTIRCanvasToolbar } from "../components/ftir/FTIRCanvasToolbar";
+import { FTIRDesignPanel } from "../components/ftir/FTIRDesignPanel";
+import {
+  DEFAULT_GRAPH_SETTINGS,
+  arrangeLabels,
+  axisStyle,
+  dataYRange,
+  font,
+  legendLayout,
+  mergeGraphSettings,
+  peakLabelStyle,
+  readDesignDefault,
+  writeDesignDefault,
+  type GraphSettings,
+} from "../components/ftir/plotDesign";
 
 // --- types local to this view ---
 
@@ -70,7 +84,7 @@ const DEFAULT_PRE: FTIRPreprocessOptions = {
   mode: "absorbance",
   smoothing_window: 0,
   poly_order: 2,
-  baseline: "airpls",
+  baseline: "none",
   normalize: "none",
   baseline_lambda: 100000,
   baseline_p: 0.01,
@@ -97,22 +111,6 @@ interface ManualPeakEdits {
   removed: number[];
 }
 
-type PlotFrameMode = "none" | "half" | "full";
-
-interface GraphSettings {
-  lineWidth: number;
-  frame: PlotFrameMode;
-  showTicks: boolean;
-  showGrid: boolean;
-  showScaleBars?: boolean;
-  showGroupRegions?: boolean;
-  overlayMode?: "overlay" | "offset" | "stacked";
-  peakLabelColor: string;
-  peakLabelSize: number;
-  axisTitleSize: number;
-  axisTickSize: number;
-  traceColors: Record<string, string>;
-}
 
 interface FTIRLabelEdit {
   text?: string;
@@ -169,20 +167,6 @@ const DEFAULT_QUANT_STATE: FTIRQuantState = {
   fitRegion: { lo: 1600, hi: 1750 },
   fitComponents: 2,
   fitProfile: "gauss",
-};
-
-const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
-  lineWidth: 1.4,
-  frame: "half",
-  showTicks: true,
-  showGrid: true,
-  showGroupRegions: false,
-  overlayMode: "overlay",
-  peakLabelColor: "#dc2626",
-  peakLabelSize: 10,
-  axisTitleSize: 13,
-  axisTickSize: 12,
-  traceColors: {},
 };
 
 type FTIRControlPanelKey = "preprocess" | "overlay" | "peaks" | "assignments" | "quant";
@@ -365,14 +349,9 @@ function estimateYOffset(spectra: FTIRSpectrumResponse[]): number {
   return Math.max(...ranges, 1) * 1.15;
 }
 
-function buildStackedAxes(
-  mode: GraphSettings["overlayMode"],
-  count: number,
-  color: string,
-  showGrid: boolean,
-  axisTitleSize: number,
-  axisTickSize: number,
-): Partial<Layout> {
+function buildStackedAxes(settings: GraphSettings, count: number, color: string): Partial<Layout> {
+  const mode = settings.overlayMode;
+  const axisTickSize = settings.axisTickSize;
   if (mode !== "stacked" || count <= 0) return {};
   const total = count + 1;
   const axes: Partial<Layout> = {};
@@ -381,16 +360,12 @@ function buildStackedAxes(
     const end = (i + 1) / total - 0.02;
     const key = i === 0 ? "yaxis" : (`yaxis${i + 1}` as keyof Layout);
     (axes as Record<string, unknown>)[key] = {
+      ...axisStyle(settings, color, null),
       domain: [start, Math.max(start + 0.05, end)],
-      zeroline: false,
-      showgrid: showGrid,
-      linecolor: color,
-      tickfont: { size: axisTickSize },
-      automargin: true,
       title: i === 0
         ? {
             text: "Active",
-            font: { size: axisTitleSize },
+            font: font(settings.axisTitleSize, settings.fontFamily, settings.axisTitleBold),
             standoff: Math.max(8, Math.round(axisTickSize * 0.8)),
           }
         : undefined,
@@ -456,7 +431,8 @@ export function FTIRView() {
     (value) => (typeof value === "string" ? value : null),
   );
   const [storedPre, setStoredPre] = useStoredState<FTIRPreprocessOptions>(
-    `${FTIR_STORAGE_PREFIX}.preprocess`,
+    // v2: preprocessing now starts off (plain data); older saved settings are not carried over.
+    `${FTIR_STORAGE_PREFIX}.preprocess.v2`,
     DEFAULT_PRE,
     (value) => {
       const merged = { ...DEFAULT_PRE, ...value };
@@ -520,14 +496,7 @@ export function FTIRView() {
   const [graphSettings, setGraphSettings] = useStoredState<GraphSettings>(
     `${FTIR_STORAGE_PREFIX}.graphSettings`,
     DEFAULT_GRAPH_SETTINGS,
-    (value) => ({
-      ...DEFAULT_GRAPH_SETTINGS,
-      ...value,
-      peakLabelSize: Math.max(6, Math.min(28, Number(value.peakLabelSize) || DEFAULT_GRAPH_SETTINGS.peakLabelSize)),
-      axisTitleSize: Math.max(8, Math.min(28, Number(value.axisTitleSize) || DEFAULT_GRAPH_SETTINGS.axisTitleSize)),
-      axisTickSize: Math.max(8, Math.min(24, Number(value.axisTickSize) || DEFAULT_GRAPH_SETTINGS.axisTickSize)),
-      traceColors: value.traceColors ?? {},
-    }),
+    mergeGraphSettings,
   );
   const [assignments, setAssignments] = useState<FTIRAssignment[] | null>(null);
   const [pickAcrossOverlay, setPickAcrossOverlay] = useStoredState<boolean>(`${FTIR_STORAGE_PREFIX}.pickAcrossOverlay`, false);
@@ -2843,7 +2812,8 @@ function SpectrumChart(props: {
       : [];
     const activePeaks = activePeaksShown;
     const markerTraces: Data[] = [];
-    if (activePeaks.length > 0) {
+    const showMarkers = props.graphSettings.showPeakMarkers;
+    if (showMarkers && activePeaks.length > 0) {
       markerTraces.push({
       type: "scatter",
       mode: "markers",
@@ -2865,7 +2835,7 @@ function SpectrumChart(props: {
     }
     for (const [idx, overlay] of visibleOverlays.entries()) {
       const overlayPeaks = overlayPeaksShown[overlay.session_id] ?? [];
-      if (overlayPeaks.length === 0) continue;
+      if (!showMarkers || overlayPeaks.length === 0) continue;
       const color = resolveTraceColor(`sid:${overlay.session_id}`, OVERLAY_PALETTE[idx % OVERLAY_PALETTE.length]);
       markerTraces.push({
         type: "scatter",
@@ -2928,6 +2898,7 @@ function SpectrumChart(props: {
     props.graphSettings.peakLabelColor,
     props.graphSettings.peakLabelSize,
     props.graphSettings.overlayMode,
+    props.graphSettings.showPeakMarkers,
     props.activeSessionId,
     props.activeAssignments,
     props.labelEdits,
@@ -2957,10 +2928,7 @@ function SpectrumChart(props: {
           arrowcolor: props.graphSettings.peakLabelColor,
           ax: edit?.ax ?? 0,
           ay: edit?.ay ?? labelAy,
-          bgcolor: pt.legendBg,
-          bordercolor: props.graphSettings.peakLabelColor,
-          borderpad: 2,
-          font: { size: props.graphSettings.peakLabelSize, color: props.graphSettings.peakLabelColor },
+          ...peakLabelStyle(props.graphSettings, props.graphSettings.peakLabelColor, pt.legendBg),
         },
       });
     }
@@ -2990,10 +2958,7 @@ function SpectrumChart(props: {
             arrowcolor: color,
             ax: edit?.ax ?? 0,
             ay: edit?.ay ?? (labelAy > 0 ? 24 : -24),
-            bgcolor: pt.legendBg,
-            bordercolor: color,
-            borderpad: 2,
-            font: { size: Math.max(6, props.graphSettings.peakLabelSize - 1), color },
+            ...peakLabelStyle({ ...props.graphSettings, peakLabelSize: Math.max(6, props.graphSettings.peakLabelSize - 1) }, color, pt.legendBg),
           },
         });
       }
@@ -3005,9 +2970,7 @@ function SpectrumChart(props: {
     labelAy,
     props.activeSessionId,
     props.assignmentsBySession,
-    props.graphSettings.overlayMode,
-    props.graphSettings.peakLabelColor,
-    props.graphSettings.peakLabelSize,
+    props.graphSettings,
     props.labelEdits,
     overlayPeaksShown,
     pt.legendBg,
@@ -3015,6 +2978,43 @@ function SpectrumChart(props: {
     spectrum,
     visibleOverlays,
   ]);
+
+  const [hasDesignDefault, setHasDesignDefault] = useState(() => readDesignDefault() !== null);
+
+  const arrangePeakLabels = useCallback(() => {
+    type PlotAxis = { d2p: (v: number) => number; p2d: (v: number) => number; _length: number };
+    const full = (plotRef.current as { _fullLayout?: { xaxis?: PlotAxis; yaxis?: PlotAxis } } | null)?._fullLayout;
+    const xa = full?.xaxis;
+    const ya = full?.yaxis;
+    if (!xa || !ya || !spectrum) return;
+    const up = mode !== "transmittance";
+    const pxs = spectrum.wn.map((w) => xa.d2p(w));
+    const pys = spectrum.y.map((v) => ya.d2p(v));
+    const curveEdge = (x0: number, x1: number) => {
+      let edge = up ? Infinity : -Infinity;
+      pxs.forEach((x, i) => {
+        if (x >= Math.min(x0, x1) && x <= Math.max(x0, x1) && Number.isFinite(pys[i])) edge = up ? Math.min(edge, pys[i]) : Math.max(edge, pys[i]);
+      });
+      return Number.isFinite(edge) ? edge : up ? ya._length : 0;
+    };
+    const labels = annotationSpecs
+      .filter((item) => (item.annotation.yref ?? "y") === "y")
+      .map((item) => ({
+        key: item.key,
+        px: xa.d2p(Number(item.annotation.x)),
+        py: ya.d2p(Number(item.annotation.y)),
+        text: String(item.annotation.text ?? ""),
+      }));
+    const placed = arrangeLabels(labels, {
+      direction: up ? "up" : "down",
+      fontSize: props.graphSettings.peakLabelSize,
+      vertical: props.graphSettings.peakLabelOrientation === "vertical",
+      plotWidth: xa._length,
+      plotHeight: ya._length,
+      curveEdge,
+    });
+    Object.entries(placed).forEach(([key, offset]) => props.onLabelEdit(key, offset));
+  }, [annotationSpecs, mode, props.graphSettings.peakLabelOrientation, props.graphSettings.peakLabelSize, props.onLabelEdit, spectrum]);
 
   const handleRelayout = useCallback(
     (event: Readonly<Record<string, unknown>>) => {
@@ -3098,48 +3098,38 @@ function SpectrumChart(props: {
 
   const layout: Partial<Layout> = useMemo(
     () => {
-      const axisTitleSize = props.graphSettings.axisTitleSize;
-      const axisTickSize = props.graphSettings.axisTickSize;
-      const axisTitleStandoff = Math.max(8, Math.round(axisTickSize * 0.8));
-      const bottomMargin = Math.max(45, Math.round(20 + axisTickSize * 1.5 + axisTitleSize * 1.6));
-      const leftMargin = Math.max(65, Math.round(34 + axisTickSize * 1.8 + axisTitleSize * 1.2));
-      const stackedAxes = buildStackedAxes(
-        props.graphSettings.overlayMode ?? "overlay",
-        visibleOverlays.length,
-        pt.fontColor,
-        props.graphSettings.showGrid,
-        axisTitleSize,
-        axisTickSize,
-      );
+      const s = props.graphSettings;
+      const axisTitleStandoff = Math.max(8, Math.round(s.axisTickSize * 0.8));
+      const bottomMargin = Math.max(45, Math.round(20 + s.axisTickSize * 1.5 + s.axisTitleSize * 1.6));
+      const leftMargin = Math.max(65, Math.round(34 + s.axisTickSize * 1.8 + s.axisTitleSize * 1.2));
+      const titleFont = font(s.axisTitleSize, s.fontFamily, s.axisTitleBold);
+      const stackedAxes = buildStackedAxes(s, visibleOverlays.length, pt.fontColor);
+      const stacked = (s.overlayMode ?? "overlay") === "stacked" && visibleOverlays.length > 0;
+      const mainSeries = data
+        .filter((trace) => !("yaxis" in trace) || trace.yaxis === undefined || trace.yaxis === "y")
+        .map((trace) => ((trace as { y?: unknown }).y as number[] | undefined) ?? []);
+      const range = stacked ? null : dataYRange(mainSeries, mode === "transmittance" ? "bottom" : "top", { min: s.yMin, max: s.yMax });
+      const yRange = range ? { autorange: false, range } : {};
       return ({
-      margin: { l: leftMargin, r: 20, t: props.title ? 28 : 12, b: bottomMargin },
+      margin: { l: leftMargin, r: s.legend === "outside" ? 140 : 20, t: props.title ? 28 : 12, b: bottomMargin },
       height: 420,
+      // Zoom and pan survive re-renders (e.g. dragging a label) until the region or y range is changed.
+      uirevision: `${props.activeSessionId}|${region}|${customMin}|${customMax}|${s.yMin}|${s.yMax}|${mode}`,
       xaxis: {
-        titlefont: { size: props.graphSettings.axisTitleSize },
-        tickfont: { size: props.graphSettings.axisTickSize },
-        title: { text: "Wavenumber (cm\u207b\u00b9)", font: { size: axisTitleSize }, standoff: axisTitleStandoff },
+        ...axisStyle(s, pt.fontColor, s.xTickStep),
+        title: { text: "Wavenumber (cm\u207b\u00b9)", font: titleFont, standoff: axisTitleStandoff },
         autorange: xRange ? false : "reversed",
         range: xRange ? [xRange[1], xRange[0]] : undefined,
-        zeroline: false,
-        showgrid: props.graphSettings.showGrid,
-        ticks: props.graphSettings.showTicks ? "outside" : "",
-        linecolor: pt.fontColor,
-        automargin: true,
         ...axisFrameProps,
       },
       yaxis: {
-        titlefont: { size: props.graphSettings.axisTitleSize },
-        tickfont: { size: props.graphSettings.axisTickSize },
+        ...axisStyle(s, pt.fontColor, s.yTickStep),
         title: {
           text: mode === "absorbance" ? "Absorbance" : "Transmittance (%)",
-          font: { size: axisTitleSize },
+          font: titleFont,
           standoff: axisTitleStandoff,
         },
-        zeroline: false,
-        showgrid: props.graphSettings.showGrid,
-        ticks: props.graphSettings.showTicks ? "outside" : "",
-        linecolor: pt.fontColor,
-        automargin: true,
+        ...yRange,
         ...axisFrameProps,
       },
       yaxis2: {
@@ -3150,28 +3140,31 @@ function SpectrumChart(props: {
         showticklabels: false,
       },
       ...stackedAxes,
-      showlegend: props.overlays.length > 1,
+      ...legendLayout(s.legend, props.overlays.length),
       shapes: [...groupRegionShapes, ...atmosphericShapes, ...integrationShape],
       annotations: annotationSpecs.map((item) => item.annotation),
-      font: { color: pt.screenFontColor },
+      font: { color: pt.screenFontColor, family: s.fontFamily },
       plot_bgcolor: pt.plot_bgcolor,
       paper_bgcolor: pt.paper_bgcolor,
       colorway: pt.colorway,
-    });
+    }) as Partial<Layout>;
     },
     [
       annotationSpecs,
       atmosphericShapes,
+      data,
       groupRegionShapes,
       integrationShape,
       axisFrameProps,
       mode,
-      props.graphSettings.axisTickSize,
-      props.graphSettings.axisTitleSize,
-      props.graphSettings.showGrid,
-      props.graphSettings.overlayMode,
-      props.graphSettings.showTicks,
+      props.graphSettings,
+      props.activeSessionId,
       props.overlays.length,
+      props.title,
+      visibleOverlays.length,
+      region,
+      customMin,
+      customMax,
       pt.plot_bgcolor,
       pt.paper_bgcolor,
       pt.fontColor,
@@ -3193,12 +3186,12 @@ function SpectrumChart(props: {
       }, {
         layoutOverrides: {
           margin: { l: 58, r: 18, t: props.graphSettings.overlayMode === "stacked" ? 18 : 12, b: 46 },
-          font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#111827" },
-          showlegend: props.overlays.length > 1,
+          font: { family: props.graphSettings.fontFamily, size: 9, color: "#111827" },
+          ...legendLayout(props.graphSettings.legend, props.overlays.length),
         },
       });
     },
-    [props.graphSettings.overlayMode, props.overlays.length, props.title],
+    [props.graphSettings.fontFamily, props.graphSettings.legend, props.graphSettings.overlayMode, props.overlays.length, props.title],
   );
 
   return (
@@ -3289,174 +3282,24 @@ function SpectrumChart(props: {
         </div>
       </div>
       {showGraphSettings && (
-        <div className="mb-3 grid gap-3 rounded-md border border-ink-200 bg-ink-50/50 p-3 md:grid-cols-2 xl:grid-cols-4">
-          <Field hint="ftir.lineWidth" label="Line width">
-            <input
-              type="number"
-              min={0.5}
-              max={8}
-              step={0.1}
-              className="input w-full"
-              value={props.graphSettings.lineWidth}
-              onChange={(e) =>
-                props.setGraphSettings({
-                  ...props.graphSettings,
-                  lineWidth: Math.max(0.5, Math.min(8, Number(e.target.value) || 1.4)),
-                })
-              }
-            />
-          </Field>
-          <Field hint="ftir.frame" label="Frame">
-            <select
-              className="input w-full"
-              value={props.graphSettings.frame}
-              onChange={(e) =>
-                props.setGraphSettings({
-                  ...props.graphSettings,
-                  frame: e.target.value as PlotFrameMode,
-                })
-              }
-            >
-              <option value="none">No frame</option>
-              <option value="half">Half frame</option>
-              <option value="full">Full frame</option>
-            </select>
-          </Field>
-          <Field hint="ftir.ticks" label="Show ticks">
-            <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
-              <input
-                type="checkbox"
-                checked={props.graphSettings.showTicks}
-                onChange={(e) =>
-                  props.setGraphSettings({
-                    ...props.graphSettings,
-                    showTicks: e.target.checked,
-                  })
-                }
-              />
-              Enable axis ticks
-            </label>
-          </Field>
-          <Field hint="ftir.grid" label="Show grid">
-            <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
-              <input
-                type="checkbox"
-                checked={props.graphSettings.showGrid}
-                onChange={(e) =>
-                  props.setGraphSettings({
-                    ...props.graphSettings,
-                    showGrid: e.target.checked,
-                  })
-                }
-              />
-              Enable gridlines
-            </label>
-          </Field>
-          <Field hint="ftir.groupRegions" label="Group regions">
-            <label className="flex min-h-9 items-center gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1 text-[13px]">
-              <input
-                type="checkbox"
-                checked={Boolean(props.graphSettings.showGroupRegions)}
-                onChange={(e) =>
-                  props.setGraphSettings({
-                    ...props.graphSettings,
-                    showGroupRegions: e.target.checked,
-                  })
-                }
-              />
-              Show regions
-            </label>
-          </Field>
-          <Field hint="ftir.labelColor" label="Peak label color">
-            <input
-              type="color"
-              className="h-9 w-full cursor-pointer rounded-md border border-ink-200 bg-surface px-2"
-              value={props.graphSettings.peakLabelColor}
-              onChange={(e) =>
-                props.setGraphSettings({
-                  ...props.graphSettings,
-                  peakLabelColor: e.target.value,
-                })
-              }
-            />
-          </Field>
-          <Field hint="ftir.labelSize" label="Peak label size">
-            <input
-              type="number"
-              min={6}
-              max={28}
-              step={1}
-              className="input w-full"
-              value={props.graphSettings.peakLabelSize}
-              onChange={(e) =>
-                props.setGraphSettings({
-                  ...props.graphSettings,
-                  peakLabelSize: Math.max(6, Math.min(28, Number(e.target.value) || DEFAULT_GRAPH_SETTINGS.peakLabelSize)),
-                })
-              }
-            />
-          </Field>
-          <Field hint="ftir.axisTitleSize" label="Axis title size">
-            <input
-              type="number"
-              min={8}
-              max={28}
-              step={1}
-              className="input w-full"
-              value={props.graphSettings.axisTitleSize}
-              onChange={(e) =>
-                props.setGraphSettings({
-                  ...props.graphSettings,
-                  axisTitleSize: Math.max(8, Math.min(28, Number(e.target.value) || DEFAULT_GRAPH_SETTINGS.axisTitleSize)),
-                })
-              }
-            />
-          </Field>
-          <Field hint="ftir.axisTickSize" label="Axis tick size">
-            <input
-              type="number"
-              min={8}
-              max={24}
-              step={1}
-              className="input w-full"
-              value={props.graphSettings.axisTickSize}
-              onChange={(e) =>
-                props.setGraphSettings({
-                  ...props.graphSettings,
-                  axisTickSize: Math.max(8, Math.min(24, Number(e.target.value) || DEFAULT_GRAPH_SETTINGS.axisTickSize)),
-                })
-              }
-            />
-          </Field>
-          <Hint id="ftir.traceColors" className="w-full">
-            <div className="md:col-span-2 xl:col-span-4">
-              <div className="label mb-1">Trace colors</div>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {colorRows.map((row) => (
-                  <label
-                    key={row.key}
-                    className="flex items-center justify-between gap-2 rounded-md border border-ink-200 bg-surface px-2 py-1.5 text-xs"
-                  >
-                    <span className="truncate">{row.label}</span>
-                    <input
-                      type="color"
-                      value={resolveTraceColor(row.key, row.defaultColor)}
-                      onChange={(event) =>
-                        props.setGraphSettings({
-                          ...props.graphSettings,
-                          traceColors: {
-                            ...props.graphSettings.traceColors,
-                            [row.key]: event.target.value,
-                          },
-                        })
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-          </Hint>
-        </div>
+        <FTIRDesignPanel
+          settings={props.graphSettings}
+          onChange={props.setGraphSettings}
+          colorRows={colorRows}
+          traceColor={resolveTraceColor}
+          yUnit={mode === "absorbance" ? "A" : "%T"}
+          canArrange={annotationSpecs.length > 0}
+          onArrangeLabels={arrangePeakLabels}
+          onResetLabels={() => annotationSpecs.forEach((item) => props.onLabelEdit(item.key, { ax: undefined, ay: undefined }))}
+          onSaveDefault={() => {
+            writeDesignDefault(props.graphSettings);
+            setHasDesignDefault(true);
+          }}
+          onUseDefault={hasDesignDefault ? () => {
+            const saved = readDesignDefault();
+            if (saved) props.setGraphSettings({ ...saved, traceColors: props.graphSettings.traceColors, overlayMode: props.graphSettings.overlayMode });
+          } : null}
+        />
       )}
       {!spectrum ? (
         <div className="flex h-64 items-center justify-center text-sm text-ink-500">
