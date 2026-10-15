@@ -29,6 +29,12 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **One-click LCMS pipeline** (LCMS → Run full pipeline). From an mzML and its UV CSV, or from the open run:
+  - **What it does:** aligns UV to MS, finds the UV peaks, sums each peak's spectrum and labels it from this sample's monomers (0.5 Da; H, Na, Cl by default).
+  - **Checks:** every label is checked for UV S/N, width and prominence, ion intensity and |Δm|, EIC apex vs UV apex, monomers, adducts, series support, elution order and ambiguity. Doubtful labels are flagged, never hidden.
+  - **Review:** you approve or reject labels in a review table. Approved labels go onto the UV chart with de-overlapped positions.
+  - **Downloads:** labelled figure as SVG/PNG, and an Excel workbook (Peaks, Candidates, Settings with provenance).
+  - **API and automation:** the same is available at `/api/lcms/pipeline` and as the automation action `lcms.run_pipeline`.
 - **FTIR opens files as plain data.** Preprocessing (smoothing, baseline, normalisation, ATR) now starts off, so a spectrum is shown exactly as measured until you choose a preset or a setting. Saved preprocessing settings were reset once for this.
 - **FTIR chart design** (Design button), now in groups:
   - Style: Screen, Paper and Slide presets, plus Save as my default.
