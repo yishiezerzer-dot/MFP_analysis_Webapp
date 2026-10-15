@@ -197,16 +197,26 @@ def elution_order(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str,
 
 
 def ambiguity(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str, List[str]]:
-    """The same species named on more than one UV peak (among the kept candidates)."""
-    peaks_by_species: Dict[str, Set[str]] = defaultdict(set)
+    """The same species named on more than one UV peak.
+
+    Top-ranked on two or more peaks: every one of those labels is 'ambiguous'. A runner-up (rank
+    2 … top_k) that is the top label of another peak is most likely that peak's tail.
+    """
+    top_peaks: Dict[str, List[str]] = defaultdict(list)
     for lab in labels:
-        if lab.rank <= rules.top_k:
-            peaks_by_species[lab.species].add(lab.peak_id)
+        if lab.rank == 1:
+            top_peaks[lab.species].append(lab.peak_id)
     out: Dict[str, List[str]] = {}
     for lab in labels:
-        n = len(peaks_by_species.get(lab.species, ()))
-        if lab.rank <= rules.top_k and n > 1:
-            out[lab.id] = [f"ambiguous: {lab.species} also assigned to {n - 1} other UV peak(s)"]
+        if lab.rank > rules.top_k:
+            continue
+        elsewhere = sorted(p for p in top_peaks.get(lab.species, []) if p != lab.peak_id)
+        if not elsewhere:
+            continue
+        if lab.rank == 1:
+            out[lab.id] = [f"ambiguous: {lab.species} is also the top label of {', '.join(elsewhere)}"]
+        else:
+            out[lab.id] = [f"probably the tail of {', '.join(elsewhere)}, where {lab.species} is the top label"]
     return out
 
 

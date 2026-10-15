@@ -117,7 +117,14 @@ def test_same_species_on_two_peaks_is_ambiguous():
     labs = [label(id="a", peak_id="p1"), label(id="b", peak_id="p2"), label(id="c", peak_id="p3", species="4-Ser", dp=4)]
     flagged = ambiguity(labs, RULES)
     assert set(flagged) == {"a", "b"}
-    assert "ambiguous" in flagged["a"][0]
+    assert "ambiguous" in flagged["a"][0] and "p2" in flagged["a"][0]
+
+
+def test_runner_up_that_tops_another_peak_is_a_tail():
+    labs = [label(id="top", peak_id="p1"), label(id="tail", peak_id="p2", rank=2), label(id="own", peak_id="p2", species="4-Ser", dp=4)]
+    flagged = ambiguity(labs, RULES)
+    assert set(flagged) == {"tail"}
+    assert "tail of p1" in flagged["tail"][0]
 
 
 def test_top_k_keeps_two_and_never_drops_labels():
