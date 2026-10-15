@@ -353,6 +353,149 @@ async function handleBlob(res: Response): Promise<Blob> {
   return res.blob();
 }
 
+// --- One-click LCMS pipeline (POST /api/lcms/pipeline) ---
+
+export type PipelineAdduct = "H" | "Na" | "K" | "NH4" | "Cl" | "HCOO" | "Ac";
+export type PipelineLabelStatus = "ok" | "flagged" | "alternative";
+export type PipelineReview = "approved" | "rejected" | "pending";
+
+export interface PipelineMonomer {
+  name: string;
+  mass: number;
+}
+
+export interface PipelineRules {
+  sn_ok?: number;
+  sn_weak?: number;
+  min_width_min?: number;
+  max_width_min?: number;
+  min_prominence_rel?: number;
+  min_rel_intensity?: number;
+  max_abs_err_da?: number;
+  eic_check?: boolean;
+  eic_apex_tol_min?: number;
+  require_protonated_for_adducts?: boolean;
+  series_lookback?: number;
+  isolated_min_dp?: number;
+  elution_direction?: "decreasing" | "increasing" | "off";
+  elution_rt_tol_min?: number;
+  top_k?: number;
+}
+
+export interface PipelineSettingsInput {
+  monomers: PipelineMonomer[];
+  polarity: "positive" | "negative";
+  tolerance_da: number;
+  adducts: PipelineAdduct[];
+  charges?: number[];
+  max_dp?: number;
+  rules?: PipelineRules;
+}
+
+export interface PipelineJobStatus {
+  job_id: string;
+  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  progress: number;
+  step: string;
+  messages: string[];
+  error: string | null;
+  session_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PipelineBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export interface PipelineLayout {
+  id: string;
+  ax: number;
+  ay: number;
+  axRef: "pixel";
+  ayRef: "pixel";
+  callout: number | null;
+  shown_text: string;
+  box: PipelineBox;
+  leader: PipelineBox;
+}
+
+export interface PipelineIon {
+  text: string;
+  mz: number;
+  intensity: number;
+  rel_intensity: number;
+  abs_err_da: number;
+  adduct: string;
+  charge: number;
+}
+
+export interface PipelineLabel {
+  id: string;
+  peak_id: string;
+  rank: number;
+  text: string;
+  species: string;
+  series: string;
+  dp: number;
+  counts: Record<string, number>;
+  variant: string;
+  adduct: string;
+  charge: number;
+  mz: number;
+  abs_err_da: number;
+  intensity: number;
+  rel_intensity: number;
+  score: number;
+  ions: PipelineIon[];
+  eic_apex_rt_min: number | null;
+  series_support: number;
+  support_members: number[];
+  status: PipelineLabelStatus;
+  reasons: string[];
+  review: PipelineReview;
+  layout: PipelineLayout | null;
+}
+
+export interface PipelineUVPeak {
+  id: string;
+  rt_min: number;
+  ms_rt_min: number;
+  apex: number;
+  start_min: number;
+  end_min: number;
+  width_min: number;
+  area: number;
+  sn: number;
+  prominence: number;
+  prominence_rel: number;
+  n_scans: number;
+  base_peak_intensity: number;
+  reasons: string[];
+  label_ids: string[];
+}
+
+export interface PipelineResult {
+  session_id: string;
+  display_name: string;
+  uv_filename: string | null;
+  polarity: string;
+  alignment: { offset_min: number; method: "xcorr" | "manual" | "none"; score: number | null; step_min: number | null };
+  uv_noise: number;
+  uv_rt: number[];
+  uv_signal: number[];
+  peaks: PipelineUVPeak[];
+  labels: PipelineLabel[];
+  settings: PipelineSettingsInput & { rules: Required<PipelineRules> };
+  messages: string[];
+  created_at: string;
+}
+
+export type PipelineFile = "figure.svg" | "figure.png" | "peaks.xlsx";
+
 // --- Example datasets ---
 
 export interface ExampleSummary {
@@ -872,6 +1015,38 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then((r) => handle<FTIRFitResponse>(r)),
+  },
+
+  lcmsPipeline: {
+    // Either new files (mzML + UV CSV) or an open run (sessionId) that already has its UV trace.
+    start: (settings: PipelineSettingsInput, source: { mzml: File; uv: File } | { sessionId: string; uv?: File }) => {
+      const fd = new FormData();
+      fd.append("settings", JSON.stringify(settings));
+      if ("mzml" in source) {
+        fd.append("mzml", source.mzml);
+        fd.append("uv", source.uv);
+      } else {
+        fd.append("session_id", source.sessionId);
+        if (source.uv) fd.append("uv", source.uv);
+      }
+      return apiFetch("/api/lcms/pipeline", { method: "POST", body: fd }).then((r) => handle<{ job_id: string }>(r));
+    },
+    status: (jobId: string) =>
+      apiFetch(`/api/lcms/pipeline/${encodeURIComponent(jobId)}`).then((r) => handle<PipelineJobStatus>(r)),
+    result: (jobId: string) =>
+      apiFetch(`/api/lcms/pipeline/${encodeURIComponent(jobId)}/result`).then((r) => handle<PipelineResult>(r)),
+    review: (jobId: string, updates: Array<{ id: string; review: PipelineReview }>) =>
+      apiFetch(`/api/lcms/pipeline/${encodeURIComponent(jobId)}/labels`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      }).then((r) => handle<PipelineResult>(r)),
+    cancel: (jobId: string) =>
+      apiFetch(`/api/lcms/pipeline/${encodeURIComponent(jobId)}`, { method: "DELETE" }).then((r) =>
+        handle<{ cancelled: boolean; status: string }>(r),
+      ),
+    download: (jobId: string, file: PipelineFile) =>
+      apiFetch(`/api/lcms/pipeline/${encodeURIComponent(jobId)}/${file}`).then(handleBlob),
   },
 
   examples: {

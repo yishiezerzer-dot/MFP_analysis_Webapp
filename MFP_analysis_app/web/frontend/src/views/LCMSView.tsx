@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PlotMouseEvent } from "plotly.js";
 import clsx from "clsx";
-import { api, LCMSEICData, LCMSRegionSpectrumData, LCMSTICOverlayTrace, LCMSFindMzResponse, LCMSSessionSummary, PolymerSettings, SpectrumData, SpectrumLabel, TICData, UVChromatogramResponse } from "../api";
+import { api, type PipelineResult, LCMSEICData, LCMSRegionSpectrumData, LCMSTICOverlayTrace, LCMSFindMzResponse, LCMSSessionSummary, PolymerSettings, SpectrumData, SpectrumLabel, TICData, UVChromatogramResponse } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton } from "../help/HelpShell";
 import { Hint } from "../components/Hint";
@@ -39,7 +39,10 @@ import { SpectrumChart } from "../components/lcms/SpectrumChart";
 import { StatusBar, FindMzDialog, CustomUvLabelDialog, EICDialog } from "../components/lcms/LCMSViewDialogs";
 import { TabEmptyState } from "../components/common/TabEmptyState";
 import { ExampleTips } from "../components/ExampleData";
-import { ChartLine, Wand2 } from "lucide-react";
+import { ChartLine, Wand2, Workflow } from "lucide-react";
+import { PipelineDialog } from "../components/lcms/PipelineDialog";
+import { PipelineReviewPanel } from "../components/lcms/PipelineReviewPanel";
+import { pipelineUvLabels } from "../lcms/pipelineLabels";
 import { ICON_PROPS } from "../components/common/ChartCardParts";
 import { useWorkflow } from "../workflows/WorkflowProvider";
 
@@ -1790,6 +1793,42 @@ export function LCMSView() {
   );
 
   const { startWorkflow } = useWorkflow();
+
+  // One-click pipeline: the dialog runs it; its result's approved labels become this run's UV labels.
+  const [pipelineOpen, setPipelineOpen] = useState(false);
+  const [pipelineJob, setPipelineJob] = useState<{ jobId: string; result: PipelineResult } | null>(null);
+  const applyPipelineResult = useCallback(
+    (jobId: string, result: PipelineResult) => {
+      setPipelineJob({ jobId, result });
+      setUvTextLabelsForSession(result.session_id, (prev) => [
+        ...prev.filter((label) => !label.id.startsWith("pipeline:")),
+        ...pipelineUvLabels(result),
+      ]);
+    },
+    [setUvTextLabelsForSession],
+  );
+  const onPipelineDone = async (jobId: string, result: PipelineResult) => {
+    setPipelineOpen(false);
+    const sid = result.session_id;
+    if (!sessions.some((s) => s.session_id === sid)) {
+      try {
+        addLoadedSessions([await api.lcms.get(sid)]);
+      } catch (err) {
+        setError(String(err));
+        return;
+      }
+    }
+    setActiveProjectId("__all");
+    setActiveSid(sid);
+    if (result.polarity === "positive" || result.polarity === "negative") setPolarity(result.polarity);
+    const offset = result.alignment.offset_min;
+    setUvOffsetBySessionId((prev) => ({ ...prev, [sid]: offset }));
+    setUvOffset(offset);
+    setUvOffsetText(offset.toFixed(3));
+    applyPipelineResult(jobId, result);
+    const approved = result.labels.filter((l) => l.review === "approved").length;
+    setInfo(`Pipeline finished: ${result.peaks.length} UV peaks, ${approved} label(s) approved. Review the rest in the Pipeline review panel.`);
+  };
   const guide = () =>
     startWorkflow({ id: "lcms-product", initial: active ? { source: "run", sid: active.session_id, runPolarities: active.polarities } : undefined });
 
@@ -3135,6 +3174,12 @@ export function LCMSView() {
               </button>
             </span>
           </Hint>
+          <Hint id="lcms.pipelineButton" placement="bottom">
+            <button type="button" className="btn-ghost border border-ink-200" onClick={() => setPipelineOpen(true)}>
+              <Workflow {...ICON_PROPS} />
+              Run full pipeline
+            </button>
+          </Hint>
           <Hint id="lcms.guide" placement="bottom">
             <button type="button" className="btn-ghost border border-ink-200" onClick={guide}>
                 <Wand2 {...ICON_PROPS} />
@@ -3260,6 +3305,24 @@ export function LCMSView() {
                   Guide me
                 </button>
               }
+            />
+          )}
+
+          {pipelineOpen && (
+            <PipelineDialog
+              openRun={active ? { sessionId: active.session_id, name: active.display_name, hasUv: Boolean(active.uv?.available) } : null}
+              onDone={(jobId, result) => void onPipelineDone(jobId, result)}
+              onClose={() => setPipelineOpen(false)}
+            />
+          )}
+
+          {active && pipelineJob && pipelineJob.result.session_id === active.session_id && (
+            <PipelineReviewPanel
+              jobId={pipelineJob.jobId}
+              result={pipelineJob.result}
+              onResult={(next) => applyPipelineResult(pipelineJob.jobId, next)}
+              onJump={(peak) => loadSpectrum(peak.ms_rt_min, { uvRtMin: peak.rt_min })}
+              onClose={() => setPipelineJob(null)}
             />
           )}
 
