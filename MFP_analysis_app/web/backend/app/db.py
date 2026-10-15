@@ -118,6 +118,25 @@ def _init_db_locked(conn: sqlite3.Connection) -> None:
             )
         """)
 
+        # Background jobs (e.g. the one-click LCMS pipeline): status, progress and log survive a reload.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS jobs (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                status TEXT NOT NULL,
+                progress REAL NOT NULL DEFAULT 0,
+                step TEXT NOT NULL DEFAULT '',
+                log_json TEXT NOT NULL DEFAULT '[]',
+                params_json TEXT NOT NULL DEFAULT '{}',
+                session_id TEXT,
+                workspace_id TEXT,
+                output_dir TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+
         # Ensure experiment_tag column exists in sessions
         cols = [r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()]
         if "experiment_tag" not in cols:
@@ -602,5 +621,90 @@ def delete_plate_template(template_id: str) -> bool:
             with conn:
                 cur = conn.execute("DELETE FROM plate_templates WHERE id = ?", (template_id,))
             return cur.rowcount > 0
+        finally:
+            conn.close()
+
+
+# --- Background jobs ------------------------------------------------------------
+
+_JOB_FIELDS = {"status", "progress", "step", "session_id", "output_dir", "error", "params"}
+
+
+def _job_row(row: sqlite3.Row) -> Dict[str, Any]:
+    out = dict(row)
+    out["log"] = json.loads(out.pop("log_json") or "[]")
+    out["params"] = json.loads(out.pop("params_json") or "{}")
+    return out
+
+
+def create_job(job_id: str, kind: str, *, params: Dict[str, Any], workspace_id: str, output_dir: str, session_id: Optional[str] = None) -> Dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            with conn:
+                conn.execute(
+                    """INSERT INTO jobs (id, kind, status, progress, step, log_json, params_json, session_id,
+                           workspace_id, output_dir, error, created_at, updated_at)
+                       VALUES (?, ?, 'queued', 0, 'Queued', '[]', ?, ?, ?, ?, NULL, ?, ?)""",
+                    (job_id, kind, json.dumps(params, default=str), session_id, workspace_id, output_dir, now, now),
+                )
+        finally:
+            conn.close()
+    job = get_job(job_id)
+    assert job is not None
+    return job
+
+
+def update_job(job_id: str, *, log: Optional[str] = None, **fields: Any) -> None:
+    """Set any of status/progress/step/session_id/output_dir/error/params; append `log` as a message."""
+    unknown = set(fields) - _JOB_FIELDS
+    if unknown:
+        raise ValueError(f"Unknown job fields: {sorted(unknown)}")
+    now = datetime.now(timezone.utc).isoformat()
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            with conn:
+                row = conn.execute("SELECT log_json FROM jobs WHERE id = ?", (job_id,)).fetchone()
+                if row is None:
+                    return
+                sets, values = ["updated_at = ?"], [now]
+                for key, value in fields.items():
+                    column = "params_json" if key == "params" else key
+                    sets.append(f"{column} = ?")
+                    values.append(json.dumps(value, default=str) if key == "params" else value)
+                if log:
+                    entries = json.loads(row["log_json"] or "[]")
+                    entries.append({"at": now, "message": log})
+                    sets.append("log_json = ?")
+                    values.append(json.dumps(entries[-200:]))
+                conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE id = ?", (*values, job_id))
+        finally:
+            conn.close()
+
+
+def get_job(job_id: str) -> Optional[Dict[str, Any]]:
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        finally:
+            conn.close()
+    return _job_row(row) if row else None
+
+
+def fail_unfinished_jobs(reason: str) -> int:
+    """Jobs still queued or running when the server starts were cut off by a restart."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            with conn:
+                cur = conn.execute(
+                    "UPDATE jobs SET status = 'failed', error = ?, updated_at = ? WHERE status IN ('queued', 'running')",
+                    (reason, now),
+                )
+                return int(cur.rowcount)
         finally:
             conn.close()

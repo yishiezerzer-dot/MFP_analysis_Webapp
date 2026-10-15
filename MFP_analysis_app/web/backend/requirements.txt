@@ -22,6 +22,8 @@ pyteomics>=4.7
 psims>=1.0
 scipy>=1.11
 openpyxl>=3.1
+# Figures from the one-click LCMS pipeline (SVG/PNG, no GUI backend).
+matplotlib>=3.8
 xlrd>=2.0
 lxml>=5.0
 

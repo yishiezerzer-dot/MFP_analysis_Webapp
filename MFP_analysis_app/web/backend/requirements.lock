@@ -17,10 +17,16 @@ certifi==2026.7.22
     #   httpx
 click==8.5.0
     # via uvicorn
+contourpy==1.4.0
+    # via matplotlib
+cycler==0.12.1
+    # via matplotlib
 et-xmlfile==2.0.0
     # via openpyxl
 fastapi==0.141.1
     # via -r requirements.txt
+fonttools==4.67.0
+    # via matplotlib
 greenlet==3.5.6 ; platform_machine == 'AMD64' or platform_machine == 'WIN32' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'ppc64le' or platform_machine == 'win32' or platform_machine == 'x86_64'
     # via sqlalchemy
 h11==0.16.0
@@ -47,13 +53,19 @@ idna==3.20
     #   httpx2
 jiter==0.17.0
     # via openai
+kiwisolver==1.5.1
+    # via matplotlib
 lxml==6.1.3
     # via
     #   -r requirements.txt
     #   psims
+matplotlib==3.11.2
+    # via -r requirements.txt
 numpy==2.5.3
     # via
     #   -r requirements.txt
+    #   contourpy
+    #   matplotlib
     #   pandas
     #   psims
     #   scipy
@@ -61,10 +73,14 @@ openai==3.19.0
     # via -r requirements.txt
 openpyxl==3.1.5
     # via -r requirements.txt
+packaging==26.3
+    # via matplotlib
 pandas==2.3.3
     # via -r requirements.txt
 pillow==12.3.0
-    # via -r requirements.txt
+    # via
+    #   -r requirements.txt
+    #   matplotlib
 psims==1.4.0
     # via -r requirements.txt
 pydantic==2.13.5
@@ -73,10 +89,14 @@ pydantic==2.13.5
     #   openai
 pydantic-core==2.46.5
     # via pydantic
+pyparsing==3.3.3
+    # via matplotlib
 pyteomics==5.0.1
     # via -r requirements.txt
 python-dateutil==2.9.0.post0
-    # via pandas
+    # via
+    #   matplotlib
+    #   pandas
 python-dotenv==1.2.3
     # via uvicorn
 python-multipart==0.0.32

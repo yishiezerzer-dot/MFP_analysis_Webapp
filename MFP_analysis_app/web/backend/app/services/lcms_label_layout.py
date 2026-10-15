@@ -1,8 +1,9 @@
 """Deterministic layout of UV peak labels: stairs plus sideways nudges, with leader lines.
 
-Works in pixel space (x right, y down) for a plot area of a given size. Each label is placed above
-its peak and above the trace under it, climbing in stair levels and trying small sideways nudges
-until it overlaps nothing already placed. A label that still collides becomes a numbered callout
+Works in pixel space (x right, y down) for a plot area of a given size. Labels are placed left to
+right, each above its peak and above the trace under it, climbing in stair levels and trying small
+sideways nudges until it overlaps nothing already placed. Label centres keep the left-to-right
+order of their peaks, so leader lines don't cross each other. A label that still collides becomes a numbered callout
 (the full text goes in the results table); nothing is hidden. Offsets come back in the frontend's
 UVLabelLayoutOffset shape: ax/ay are pixels from the peak to the label centre.
 """
@@ -81,13 +82,16 @@ def layout_labels(
     """Place every label; same input, same output (ties broken by x, then id)."""
     placed: List[Box] = []
     out: List[LayoutItem] = []
-    nudges = (0.0, 0.5, -0.5, 1.0, -1.0, 1.5, -1.5)
+    nudges = (0.0, 0.25, -0.25, 0.5, -0.5)
     next_callout = 1
+    last_cx = float("-inf")  # centre of the previous label: keep order, no crossing leaders
 
     def find(item: LayoutInput, w: float, h: float) -> Optional[Box]:
         for level in range(opts.max_levels):
             for nudge in nudges:
                 cx = min(max(item.x_px + nudge * w, w / 2), opts.plot_width_px - w / 2)
+                if cx < last_cx:
+                    continue
                 floor = item.y_px - opts.base_gap_px
                 if curve_top is not None:
                     floor = min(floor, curve_top(cx - w / 2, cx + w / 2) - opts.gap_px)
@@ -112,11 +116,12 @@ def layout_labels(
             box = find(item, w, h)
             if box is None:
                 # Truly no room: sit just above the peak, inside the plot.
-                cx = min(max(item.x_px, w / 2), opts.plot_width_px - w / 2)
+                cx = min(max(item.x_px, last_cx, w / 2), opts.plot_width_px - w / 2)
                 y1 = max(h, item.y_px - opts.base_gap_px)
                 box = Box(x0=cx - w / 2, y0=y1 - h, x1=cx + w / 2, y1=y1)
         placed.append(box)
         cx = (box.x0 + box.x1) / 2
+        last_cx = max(last_cx, cx)
         cy = (box.y0 + box.y1) / 2
         out.append(
             LayoutItem(
