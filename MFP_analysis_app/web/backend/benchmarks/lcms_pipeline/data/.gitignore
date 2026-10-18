@@ -1,0 +1,4 @@
+# Real benchmark runs (30-50 MB mzML + UV CSV) live here locally and are not committed.
+*
+!.gitignore
+!README.md
