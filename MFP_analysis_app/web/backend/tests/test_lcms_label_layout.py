@@ -1,6 +1,8 @@
 """Pipeline label layout: no overlaps, deterministic, collisions become numbered callouts."""
 import itertools
 
+import pytest
+
 from app.services.lcms_label_layout import LayoutInput, LayoutOptions, layout_labels, trace_top
 
 
@@ -14,8 +16,9 @@ def crowded_items():
     return [LayoutInput(id=f"L{i}", x_px=x, y_px=250 - (i % 3) * 30, text=f"{i + 2}-GA + {i}-LA [M+H]⁺") for i, x in enumerate(xs)]
 
 
-def test_layout_has_no_overlaps_and_stays_inside():
-    opts = LayoutOptions(plot_width_px=900, plot_height_px=300)
+@pytest.mark.parametrize("orientation", ["vertical", "horizontal"])
+def test_layout_has_no_overlaps_and_stays_inside(orientation):
+    opts = LayoutOptions(plot_width_px=900, plot_height_px=300, orientation=orientation)
     placed = layout_labels(crowded_items(), opts)
     assert len(placed) == 13  # nothing hidden
     for a, b in itertools.combinations(placed, 2):
@@ -26,8 +29,9 @@ def test_layout_has_no_overlaps_and_stays_inside():
         assert item.ay < 0  # above its peak
 
 
-def test_layout_is_deterministic():
-    opts = LayoutOptions()
+@pytest.mark.parametrize("orientation", ["vertical", "horizontal"])
+def test_layout_is_deterministic(orientation):
+    opts = LayoutOptions(orientation=orientation)
     first = [p.model_dump() for p in layout_labels(crowded_items(), opts)]
     again = [p.model_dump() for p in layout_labels(list(reversed(crowded_items())), opts)]
     assert sorted(first, key=lambda d: d["id"]) == sorted(again, key=lambda d: d["id"])
@@ -36,7 +40,7 @@ def test_layout_is_deterministic():
 def test_labels_clear_the_trace():
     xs = list(range(0, 900, 5))
     ys = [280 - 200 if 400 <= x <= 420 else 280 for x in xs]  # a tall narrow peak near x 410
-    placed = layout_labels([LayoutInput(id="a", x_px=330, y_px=280, text="2-GA [M+H]⁺")], LayoutOptions(), trace_top(xs, ys))
+    placed = layout_labels([LayoutInput(id="a", x_px=330, y_px=280, text="2-GA [M+H]⁺")], LayoutOptions(orientation="horizontal"), trace_top(xs, ys))
     box = placed[0].box
     if box.x1 >= 400 and box.x0 <= 420:
         assert box.y1 <= 80
@@ -44,9 +48,28 @@ def test_labels_clear_the_trace():
 
 def test_unplaceable_labels_become_numbered_callouts():
     # A very short plot: only one stair of full text fits, so the rest are numbered.
-    opts = LayoutOptions(plot_width_px=300, plot_height_px=60, max_levels=3)
+    opts = LayoutOptions(plot_width_px=300, plot_height_px=60, max_levels=3, orientation="horizontal")
     items = [LayoutInput(id=f"L{i}", x_px=150 + i, y_px=58, text="12-GA + 9-LA -H2O [M+Na]⁺") for i in range(4)]
     placed = layout_labels(items, opts)
     callouts = [p for p in placed if p.callout is not None]
     assert callouts and [p.callout for p in callouts] == list(range(1, len(callouts) + 1))
     assert all(p.shown_text == str(p.callout) for p in callouts)
+
+
+def test_vertical_labels_follow_retention_order_in_one_top_band():
+    placed = layout_labels(crowded_items(), LayoutOptions(orientation="vertical"))
+    by_x = sorted(placed, key=lambda p: p.leader.x0)  # peak order, left to right
+    centres = [(p.box.x0 + p.box.x1) / 2 for p in by_x]
+    assert centres == sorted(centres)  # labels in the same order as their peaks: no crossing leaders
+    assert len({round(p.box.y0, 3) for p in placed}) == 1  # all top-aligned in one band
+    for p in placed:
+        assert p.box.y1 - p.box.y0 > p.box.x1 - p.box.x0  # vertical boxes
+        assert p.callout is None
+
+
+def test_too_many_vertical_labels_alternate_between_bands():
+    items = [LayoutInput(id=f"L{i:02d}", x_px=400 + i, y_px=280, text="2-Lac + 1-Arg [M+H]⁺") for i in range(60)]
+    placed = layout_labels(items, LayoutOptions(orientation="vertical", plot_width_px=600))
+    assert len({round(p.box.y0, 3) for p in placed}) >= 2
+    for a, b in itertools.combinations(placed, 2):
+        assert not boxes_overlap(a.box, b.box), (a.id, b.id)

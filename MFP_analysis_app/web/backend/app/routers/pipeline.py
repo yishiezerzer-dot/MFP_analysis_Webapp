@@ -22,7 +22,7 @@ from pydantic import BaseModel, ValidationError
 from ..db import get_job, get_session_record
 from ..provenance import app_version, record, session_input_sha256
 from ..services.jobs import JobContext, job_manager
-from ..services.lcms_pipeline import PipelineResult, PipelineSettings, apply_layout, run_pipeline
+from ..services.lcms_pipeline import PipelineResult, PipelineSettings, apply_layout, peak_spectrum, run_pipeline
 from ..services.lcms_pipeline_report import write_outputs
 from ..services.lcms_service import LCMSSessionState, attach_uv_from_csv, registry
 from ..upload_utils import stream_upload_to_file
@@ -188,6 +188,19 @@ def _file(job_id: str, name: str, media_type: str) -> FileResponse:
     result = _load_result(job)
     stem = Path(result.display_name).stem or "lcms"
     return FileResponse(path, media_type=media_type, filename=f"{stem}_pipeline_{name}")
+
+
+@router.get("/{job_id}/peaks/{peak_id}/spectrum")
+def pipeline_peak_spectrum(job_id: str, peak_id: str) -> Dict[str, Any]:
+    """The summed (and background-subtracted) spectrum the pipeline labelled this UV peak from."""
+    result = _load_result(_require_done(job_id))
+    state = registry.get(result.session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="The LCMS run of this pipeline is no longer open.")
+    try:
+        return peak_spectrum(state, result, peak_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"No UV peak {peak_id} in this result.") from None
 
 
 @router.get("/{job_id}/figure.svg")

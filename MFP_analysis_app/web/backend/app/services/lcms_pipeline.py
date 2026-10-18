@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 from scipy.ndimage import minimum_filter1d, uniform_filter1d
 from scipy.signal import find_peaks, peak_prominences, peak_widths
 
-from .lcms_label_layout import LayoutInput, LayoutItem, LayoutOptions, layout_labels, trace_top
+from .lcms_label_layout import LayoutInput, LayoutItem, LayoutOptions, layout_labels, text_size, trace_top
 from .lcms_sanity import LabelFacts, LabelStatus, PeakFacts, SanityRules, apply_rules, check_peak
 from .lcms_service import LCMSSessionState, extracted_ion_chromatogram, polymer_match_labels, summed_spectrum_in_rt_range
 
@@ -57,6 +57,39 @@ class AlignSettings(BaseModel):
     manual_offset_min: Optional[float] = Field(None, description="Use this UV→MS offset instead of aligning.")
 
 
+class BackgroundSettings(BaseModel):
+    """Subtract what is in the MS just before and after a UV peak from the peak's summed spectrum."""
+
+    # On by default: on the benchmark it never lost a label, and without it constant ions (a plasticiser
+    # at m/z 391) won 2 of 3 peaks once cyclic forms were searched.
+    enabled: bool = True
+    gap_min: float = Field(0.05, ge=0, description="Space between the peak window and each background window.")
+    width_min: float = Field(0.3, gt=0, description="Width of each background window, before and after the peak.")
+    bin_da: float = Field(0.25, gt=0, le=2, description="Grid the subtraction works on (about half the tolerance).")
+    scale: float = Field(1.0, ge=0, le=3, description="How much of the per-scan background to remove.")
+
+
+class EndGroup(BaseModel):
+    name: str = Field(min_length=1, max_length=24)
+    mass: float = Field(description="Added to the linear chain's neutral mass (Da), e.g. +14.016 for a methyl ester.")
+
+
+class FormSettings(BaseModel):
+    """Which chain forms to look for. Linear: Σmonomers + (n−1)·bond; cyclic loses one more bond (water)."""
+
+    linear: bool = True
+    cyclic: bool = False
+    end_groups: List[EndGroup] = Field(default_factory=list, max_length=4)
+
+    def forms(self, bond_delta: float) -> List[Tuple[str, float]]:
+        """(name, mass added to the linear chain); the linear form is named "linear"."""
+        out: List[Tuple[str, float]] = [("linear", 0.0)] if self.linear else []
+        if self.cyclic:
+            out.append(("cyclic", bond_delta))
+        out += [(g.name.strip(), g.mass) for g in self.end_groups]
+        return out
+
+
 class PipelineSettings(BaseModel):
     monomers: List[Monomer] = Field(min_length=1)
     polarity: Literal["positive", "negative"] = "positive"
@@ -65,11 +98,28 @@ class PipelineSettings(BaseModel):
     charges: List[int] = Field(default_factory=lambda: [1])
     max_dp: int = Field(12, ge=1, le=60)
     bond_delta: float = -18.010565
+    forms: FormSettings = Field(default_factory=FormSettings)
+    background: BackgroundSettings = Field(default_factory=BackgroundSettings)
     uv: UVPeakSettings = Field(default_factory=UVPeakSettings)
     align: AlignSettings = Field(default_factory=AlignSettings)
     rules: SanityRules = Field(default_factory=SanityRules)
     max_candidates_per_peak: int = Field(8, ge=1, le=30)
     layout: LayoutOptions = Field(default_factory=LayoutOptions)
+
+    @field_validator("charges")
+    @classmethod
+    def _charges(cls, value: List[int]) -> List[int]:
+        clean = sorted({int(z) for z in value if 1 <= int(z) <= 4})
+        if not clean:
+            raise ValueError("Give at least one charge state between 1 and 4.")
+        return clean
+
+    @field_validator("forms")
+    @classmethod
+    def _some_form(cls, value: FormSettings) -> FormSettings:
+        if not value.forms(-18.0):
+            raise ValueError("Choose at least one chain form (linear, cyclic or an end group).")
+        return value
 
     @field_validator("adducts")
     @classmethod
@@ -133,6 +183,7 @@ class PipelineLabel(BaseModel):
     dp: int
     counts: Dict[str, int]
     variant: str = ""
+    form: str = "linear"
     adduct: str
     charge: int
     mz: float
@@ -335,7 +386,15 @@ def parse_label(text: str) -> Optional[Dict[str, object]]:
     }
 
 
-def polymer_settings(settings: PipelineSettings, min_rel_int: float) -> Dict[str, object]:
+def tag_form(parsed: Dict[str, object], text: str, form: str) -> Tuple[Dict[str, object], str]:
+    """Name a non-linear form in the species, series and label: "3-GA (cyclic) [M+H]⁺"."""
+    if form == "linear":
+        return parsed, text
+    tagged = dict(parsed, species=f"{parsed['species']} ({form})", series=f"{parsed['series']} ({form})", form=form)
+    return tagged, f"{tagged['species']} {text[text.index('['):]}"
+
+
+def polymer_settings(settings: PipelineSettings, min_rel_int: float, extra_delta: float = 0.0) -> Dict[str, object]:
     """The LCMS view's polymer settings dict for this pipeline's monomers, tolerance and adducts."""
     enabled = settings.enabled_adducts()
     custom = [{"name": "NH4", "mass": NH4, "charge": 1}] if "NH4" in enabled else []
@@ -345,7 +404,7 @@ def polymer_settings(settings: PipelineSettings, min_rel_int: float) -> Dict[str
         "charges": ",".join(str(z) for z in settings.charges),
         "max_dp": settings.max_dp,
         "bond_delta": settings.bond_delta,
-        "extra_delta": 0.0,
+        "extra_delta": extra_delta,
         "adduct_mass": PROTON,
         "cluster": False,
         "tol_value": settings.tolerance_da,
@@ -367,9 +426,10 @@ def rank_candidates(matches: List[Dict[str, object]], base_peak: float, toleranc
         parsed = parse_label(str(match["text"]))
         if parsed is None:
             continue
+        parsed, ion_text = tag_form(parsed, str(match["text"]), str(match.get("form") or "linear"))
         rel = float(match["intensity"]) / base_peak if base_peak > 0 else 0.0
         ion = Ion(
-            text=str(match["text"]),
+            text=ion_text,
             mz=float(match["mz"]),
             intensity=float(match["intensity"]),
             rel_intensity=rel,
@@ -389,6 +449,85 @@ def rank_candidates(matches: List[Dict[str, object]], base_peak: float, toleranc
         ranked.append({**group, "ions": ions, "score": score, "rep": (protonated or ions)[0]})
     ranked.sort(key=lambda g: (-float(g["score"]), str(g["species"])))
     return ranked
+
+
+class WindowSpectrum(BaseModel):
+    """The summed MS spectrum behind one UV peak, as matched (after background subtraction if on)."""
+
+    rt_start: float
+    rt_end: float
+    n_scans: int
+    mz: List[float]
+    intensity: List[float]
+    background_scans: int = 0
+    background_removed: float = 0.0  # fraction of the window's total intensity taken out
+
+
+def _per_scan(spec: Dict[str, object]) -> Tuple[np.ndarray, np.ndarray, int]:
+    return np.asarray(spec["mz"], float), np.asarray(spec["intensity"], float), int(spec["n_scans"])  # type: ignore[arg-type]
+
+
+def peak_window_spectrum(state: LCMSSessionState, peak: UVPeak, settings: PipelineSettings, offset: float, scan_step: float) -> WindowSpectrum:
+    """Sum the MS scans under a UV peak (half-height edges + offset, at least one scan).
+
+    With background subtraction on, the average spectrum of the scans just before and after the
+    peak is scaled to the peak's scan count and removed on a coarse m/z grid; each stick keeps its
+    own m/z, scaled down by what its grid cell lost, so ions present all through the run (solvent
+    clusters, plasticisers, the single-quad noise floor) stop matching compositions.
+    """
+    lo, hi = peak.start_min + offset, peak.end_min + offset
+    if hi - lo < scan_step:
+        mid = (lo + hi) / 2
+        lo, hi = mid - scan_step / 2, mid + scan_step / 2
+    pol = settings.polarity
+    mz, inten, n = _per_scan(summed_spectrum_in_rt_range(state, rt_min=lo, rt_max=hi, polarity=pol, bin_width=0.01))
+    out = WindowSpectrum(rt_start=lo, rt_end=hi, n_scans=n, mz=mz.tolist(), intensity=inten.tolist())
+    bg = settings.background
+    if not bg.enabled or mz.size == 0 or n == 0:
+        return out
+    sides = [
+        (lo - bg.gap_min - bg.width_min, lo - bg.gap_min),
+        (hi + bg.gap_min, hi + bg.gap_min + bg.width_min),
+    ]
+    bg_mz: List[np.ndarray] = []
+    bg_int: List[np.ndarray] = []
+    bg_scans = 0
+    for a, b in sides:
+        smz, sint, sn = _per_scan(summed_spectrum_in_rt_range(state, rt_min=a, rt_max=b, polarity=pol, bin_width=0.01))
+        if sn:
+            bg_mz.append(smz)
+            bg_int.append(sint)
+            bg_scans += sn
+    if bg_scans == 0:
+        return out
+    cell = np.rint(mz / bg.bin_da).astype(np.int64)
+    bg_cell = np.rint(np.concatenate(bg_mz) / bg.bin_da).astype(np.int64)
+    keys, inverse = np.unique(cell, return_inverse=True)
+    peak_sum = np.bincount(inverse, weights=inten)
+    pos = np.searchsorted(keys, bg_cell)
+    hit = (pos < keys.size) & (keys[np.minimum(pos, keys.size - 1)] == bg_cell)
+    bg_sum = np.bincount(pos[hit], weights=np.concatenate(bg_int)[hit], minlength=keys.size)
+    expected_bg = bg.scale * bg_sum / bg_scans * n  # background in the peak window
+    keep = np.clip(1.0 - expected_bg / np.where(peak_sum > 0, peak_sum, 1.0), 0.0, 1.0)
+    new_int = inten * keep[inverse]
+    out.intensity = new_int.tolist()
+    out.background_scans = bg_scans
+    total = float(inten.sum())
+    out.background_removed = float(1.0 - new_int.sum() / total) if total > 0 else 0.0
+    return out
+
+
+def match_window(spec: WindowSpectrum, settings: PipelineSettings) -> Tuple[List[Dict[str, object]], float]:
+    """Polymer matches in a window spectrum for every chosen chain form; returns (ranked, base peak)."""
+    mz, inten = np.asarray(spec.mz, float), np.asarray(spec.intensity, float)
+    base = float(inten.max()) if inten.size else 0.0
+    detect_rel = settings.rules.min_rel_intensity / 2  # ions below the rule still show up, flagged
+    matches: List[Dict[str, object]] = []
+    for form, extra in settings.forms.forms(settings.bond_delta):
+        poly = polymer_settings(settings, detect_rel, extra)
+        for m in polymer_match_labels(mz, inten, polarity=settings.polarity, settings=poly):
+            matches.append({**m, "form": form})
+    return rank_candidates(matches, base, settings.tolerance_da)[: settings.max_candidates_per_peak], base
 
 
 def _eic_apex(state: LCMSSessionState, mz: float, tol: float, polarity: str, center: float, half_window: float) -> Optional[float]:
@@ -447,23 +586,17 @@ def run_pipeline(
     )
     messages.append(f"{len(peaks)} UV peak(s) found.")
     scan_step = float(np.median(np.diff(ms_rt))) if ms_rt.size > 1 else 0.05
-    detect_rel = settings.rules.min_rel_intensity / 2  # ions below the rule still show up, flagged
-    poly = polymer_settings(settings, detect_rel)
     tol = settings.tolerance_da
+    removed: List[float] = []
 
     labels: List[PipelineLabel] = []
     for n, peak in enumerate(peaks, start=1):
         say(0.15 + 0.65 * (n - 1) / max(1, len(peaks)), f"Labelling UV peak {n} of {len(peaks)}")
-        lo, hi = peak.start_min + offset, peak.end_min + offset
-        if hi - lo < scan_step:  # at least one MS scan in the window
-            mid = (lo + hi) / 2
-            lo, hi = mid - scan_step / 2, mid + scan_step / 2
-        spec = summed_spectrum_in_rt_range(state, rt_min=lo, rt_max=hi, polarity=settings.polarity, bin_width=0.01)
-        mz, inten = np.asarray(spec["mz"], float), np.asarray(spec["intensity"], float)
-        peak.n_scans = int(spec["n_scans"])
-        peak.base_peak_intensity = float(inten.max()) if inten.size else 0.0
-        matches = polymer_match_labels(mz, inten, polarity=settings.polarity, settings=poly)
-        ranked = rank_candidates(matches, peak.base_peak_intensity, tol)[: settings.max_candidates_per_peak]
+        spec = peak_window_spectrum(state, peak, settings, offset, scan_step)
+        peak.n_scans = spec.n_scans
+        if spec.background_scans:
+            removed.append(spec.background_removed)
+        ranked, peak.base_peak_intensity = match_window(spec, settings)
         for rank, cand in enumerate(ranked, start=1):
             rep: Ion = cand["rep"]  # type: ignore[assignment]
             label = PipelineLabel(
@@ -476,6 +609,7 @@ def run_pipeline(
                 dp=int(cand["dp"]),  # type: ignore[arg-type]
                 counts=dict(cand["counts"]),  # type: ignore[arg-type]
                 variant=str(cand["variant"]),
+                form=str(cand.get("form") or "linear"),
                 adduct=rep.adduct,
                 charge=rep.charge,
                 mz=rep.mz,
@@ -491,6 +625,8 @@ def run_pipeline(
             labels.append(label)
             peak.label_ids.append(label.id)
 
+    if removed:
+        messages.append(f"Background subtraction removed {100 * float(np.median(removed)):.0f}% of the signal in a typical peak window.")
     say(0.85, "Checking labels")
     check_labels(peaks, labels, settings)
     for label in labels:
@@ -515,6 +651,51 @@ def run_pipeline(
     apply_layout(result)
     say(1.0, "Done")
     return result
+
+
+def peak_spectrum(state: LCMSSessionState, result: PipelineResult, peak_id: str) -> Dict[str, object]:
+    """The spectrum a UV peak was labelled from (same window, offset and background), shaped like the
+    LCMS view's SpectrumData, with the ions of its kept and approved candidates as labels."""
+    peak = next((p for p in result.peaks if p.id == peak_id), None)
+    if peak is None:
+        raise KeyError(peak_id)
+    ms_rt, _ = _ms_trace(state, result.settings.polarity)
+    scan_step = float(np.median(np.diff(ms_rt))) if ms_rt.size > 1 else 0.05
+    spec = peak_window_spectrum(state, peak, result.settings, result.alignment.offset_min, scan_step)
+    top_k = result.settings.rules.top_k
+    labels = [
+        {
+            "mz": ion.mz,
+            "intensity": ion.intensity,
+            "text": ion.text,
+            "kind": lab.status,
+            "abs_err": ion.abs_err_da,
+            "source": "polymer",
+        }
+        for lab in result.labels
+        if lab.peak_id == peak_id and (lab.rank <= top_k or lab.review == "approved")
+        for ion in lab.ions
+    ]
+    return {
+        "meta": {
+            "spectrum_id": f"pipeline:{peak_id}",
+            "rt_min": peak.ms_rt_min,
+            "rt_start": spec.rt_start,
+            "rt_end": spec.rt_end,
+            "rt_max": spec.rt_end,
+            "tic": float(sum(spec.intensity)),
+            "polarity": result.settings.polarity,
+            "n_peaks": len(spec.mz),
+            "n_scans": spec.n_scans,
+            "bin_width": 0.01,
+            "merge_mode": "pipeline (background removed)" if spec.background_scans else "pipeline",
+        },
+        "mz": spec.mz,
+        "intensity": spec.intensity,
+        "labels": labels,
+        "polymer_labels": labels,
+        "background_removed": spec.background_removed,
+    }
 
 
 def check_labels(peaks: List[UVPeak], labels: List[PipelineLabel], settings: PipelineSettings) -> None:
@@ -584,14 +765,22 @@ class PlotFrame(BaseModel):
 
 
 def plot_frame(result: PipelineResult) -> PlotFrame:
+    """Data → pixel frame; the y range leaves room above the trace for the label band."""
     rt = np.asarray(result.uv_rt, float)
     y = np.asarray(result.uv_signal, float)
     lo, hi = float(np.nanmin(y)), float(np.nanmax(y))
     span = hi - lo or 1.0
     opts = result.settings.layout
+    if opts.orientation == "vertical":
+        shown = displayed_labels(result)
+        band = max((text_size(lab.text, opts.font_px, vertical=True)[1] for lab in shown), default=0.0) + 3 * opts.gap_px
+        frac = min(0.6, band / opts.plot_height_px)  # share of the plot height the labels use
+        headroom = frac / (1.0 - frac)
+    else:
+        headroom = 0.45  # room for the label stairs
     return PlotFrame(
         x_min=float(rt.min()), x_max=float(rt.max()),
-        y_min=lo - 0.03 * span, y_max=hi + 0.45 * span,  # headroom for the label stairs
+        y_min=lo - 0.03 * span, y_max=hi + headroom * span,
         width_px=opts.plot_width_px, height_px=opts.plot_height_px,
     )
 

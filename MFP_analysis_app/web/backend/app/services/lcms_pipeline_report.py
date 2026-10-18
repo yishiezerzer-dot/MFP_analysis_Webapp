@@ -53,6 +53,7 @@ def build_figure(result: PipelineResult) -> Figure:
             textcoords="data",
             ha="center",
             va="center",
+            rotation=90 if result.settings.layout.orientation == "vertical" else 0,
             fontsize=font_pt,
             color=_STATUS_COLOUR.get(lab.status, "#111827"),
             arrowprops={"arrowstyle": "-", "lw": 0.6, "color": "#6b7280", "shrinkA": 0, "shrinkB": 0},
