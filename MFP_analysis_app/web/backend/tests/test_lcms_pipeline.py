@@ -84,6 +84,10 @@ def test_example_run_finds_the_oligomers():
     assert len(approved) >= 15
     assert all(l.status == "ok" and l.rank == 1 and l.layout is not None for l in approved)
     assert all(l.layout is None for l in result.labels if l.review != "approved")
+    peak_by_id = {p.id: p for p in result.peaks}
+    for lab in approved:  # label centres in data units: above the peak, near it in time
+        assert lab.layout.y_data > peak_by_id[lab.peak_id].apex
+        assert abs(lab.layout.x_data - peak_by_id[lab.peak_id].rt_min) < 1.0
     assert all(l.status == "alternative" for l in result.labels if l.rank > 2)
 
 

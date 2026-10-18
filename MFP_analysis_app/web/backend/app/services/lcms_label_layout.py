@@ -53,6 +53,10 @@ class LayoutItem(BaseModel):
     shown_text: str
     box: Box
     leader: Box  # from the peak (x0, y0) to the label's near edge (x1, y1)
+    # Label centre in data units (UV minutes, UV signal), filled in by the pipeline: the app places
+    # labels by these so they sit right on charts of any size.
+    x_data: Optional[float] = None
+    y_data: Optional[float] = None
 
 
 def text_size(text: str, font_px: float, vertical: bool = False) -> tuple[float, float]:

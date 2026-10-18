@@ -802,6 +802,9 @@ def apply_layout(result: PipelineResult) -> None:
         for lab in shown
     ]
     placed = {item.id: item for item in layout_labels(items, result.settings.layout, trace_top(xs, ys))}
+    for item in placed.values():
+        item.x_data = round(frame.x_data((item.box.x0 + item.box.x1) / 2), 4)
+        item.y_data = frame.y_data((item.box.y0 + item.box.y1) / 2)
     for lab in result.labels:
         lab.layout = placed.get(lab.id)
 
