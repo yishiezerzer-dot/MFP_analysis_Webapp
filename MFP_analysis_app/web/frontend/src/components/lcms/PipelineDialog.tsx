@@ -4,6 +4,7 @@ import { Plus, X } from "lucide-react";
 import {
   api,
   type PipelineAdduct,
+  type PipelineEndGroup,
   type PipelineJobStatus,
   type PipelineMonomer,
   type PipelineResult,
@@ -26,14 +27,45 @@ const ADDUCTS: { id: PipelineAdduct; label: string; mode: "positive" | "negative
 ];
 
 // Polarity, tolerance, adducts and rules carry over between runs; monomers are entered per sample.
-interface StoredSettings {
+export interface StoredSettings {
   polarity: "positive" | "negative";
   tolerance_da: number;
   adducts: PipelineAdduct[];
   elution: "decreasing" | "increasing" | "off";
+  linear: boolean;
+  cyclic: boolean;
+  endGroups: PipelineEndGroup[];
+  charges: "1" | "1,2";
+  background: boolean;
 }
 
-const STORED_DEFAULTS: StoredSettings = { polarity: "positive", tolerance_da: 0.5, adducts: ["H", "Na", "Cl"], elution: "decreasing" };
+export const STORED_DEFAULTS: StoredSettings = {
+  polarity: "positive",
+  tolerance_da: 0.5,
+  adducts: ["H", "Na", "Cl"],
+  elution: "decreasing",
+  linear: true,
+  cyclic: false,
+  endGroups: [],
+  charges: "1",
+  background: true,
+};
+
+const validEndGroups = (groups: PipelineEndGroup[]) =>
+  groups.filter((g) => g.name.trim() && Number.isFinite(g.mass)).map((g) => ({ name: g.name.trim(), mass: g.mass }));
+
+export function buildPipelineSettings(stored: StoredSettings, monomers: PipelineMonomer[]): PipelineSettingsInput {
+  return {
+    monomers: validMonomers(monomers),
+    polarity: stored.polarity,
+    tolerance_da: stored.tolerance_da,
+    adducts: stored.adducts,
+    charges: stored.charges === "1,2" ? [1, 2] : [1],
+    forms: { linear: stored.linear, cyclic: stored.cyclic, end_groups: validEndGroups(stored.endGroups) },
+    background: { enabled: stored.background },
+    rules: { elution_direction: stored.elution },
+  };
+}
 
 export interface OpenRun {
   sessionId: string;
@@ -76,10 +108,13 @@ export function PipelineDialog(props: {
   const [starting, setStarting] = useState(false);
 
   const usable = validMonomers(monomers);
+  const anyForm = stored.linear || stored.cyclic || validEndGroups(stored.endGroups).length > 0;
   const problem =
     usable.length === 0
       ? "Add this sample's monomers (name and monoisotopic mass)."
-      : source === "files" && (!mzml || !uv)
+      : !anyForm
+        ? "Choose at least one chain form."
+        : source === "files" && (!mzml || !uv)
         ? "Choose the mzML file and the UV CSV exported with it."
         : null;
 
@@ -113,13 +148,7 @@ export function PipelineDialog(props: {
 
   const run = async () => {
     if (problem) return;
-    const settings: PipelineSettingsInput = {
-      monomers: usable,
-      polarity: stored.polarity,
-      tolerance_da: stored.tolerance_da,
-      adducts: stored.adducts,
-      rules: { elution_direction: stored.elution },
-    };
+    const settings = buildPipelineSettings(stored, monomers);
     setStarting(true);
     setError(null);
     setStatus(null);
@@ -291,6 +320,77 @@ export function PipelineDialog(props: {
             </div>
           </section>
         </Hint>
+
+        <Hint id="lcms.pipeline.forms" className="w-full">
+          <section className="flex flex-1 flex-col gap-1.5">
+            <span className="label">Chain forms</span>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" checked={stored.linear} onChange={(e) => setStored({ ...stored, linear: e.target.checked })} />
+                Linear
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input type="checkbox" checked={stored.cyclic} onChange={(e) => setStored({ ...stored, cyclic: e.target.checked })} />
+                Cyclic (one more H₂O lost)
+              </label>
+              <button
+                type="button"
+                className="btn-ghost border border-ink-200 px-2 py-0.5 text-xs"
+                disabled={stored.endGroups.length >= 4}
+                onClick={() => setStored({ ...stored, endGroups: [...stored.endGroups, { name: "", mass: Number.NaN }] })}
+              >
+                <Plus {...ICON_PROPS} />
+                End group
+              </button>
+            </div>
+            {stored.endGroups.map((g, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  className="input w-40"
+                  aria-label={`End group ${i + 1} name`}
+                  placeholder="e.g. Me ester"
+                  value={g.name}
+                  onChange={(e) => setStored({ ...stored, endGroups: stored.endGroups.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)) })}
+                />
+                <input
+                  className="input w-44"
+                  type="number"
+                  step="any"
+                  aria-label={`End group ${i + 1} mass`}
+                  placeholder="Δ mass (Da), e.g. 14.0157"
+                  value={Number.isFinite(g.mass) ? g.mass : ""}
+                  onChange={(e) => setStored({ ...stored, endGroups: stored.endGroups.map((x, j) => (j === i ? { ...x, mass: e.target.valueAsNumber } : x)) })}
+                />
+                <button
+                  type="button"
+                  className="btn-ghost px-1.5"
+                  aria-label={`Remove end group ${i + 1}`}
+                  onClick={() => setStored({ ...stored, endGroups: stored.endGroups.filter((_, j) => j !== i) })}
+                >
+                  <X {...ICON_PROPS} />
+                </button>
+              </div>
+            ))}
+          </section>
+        </Hint>
+
+        <section className="grid grid-cols-2 gap-4">
+          <Hint id="lcms.pipeline.charges" className="w-full">
+            <label className="flex flex-1 flex-col gap-1">
+              <span className="label">Charge states</span>
+              <select className="input w-40" value={stored.charges} onChange={(e) => setStored({ ...stored, charges: e.target.value as StoredSettings["charges"] })}>
+                <option value="1">1 only</option>
+                <option value="1,2">1 and 2</option>
+              </select>
+            </label>
+          </Hint>
+          <Hint id="lcms.pipeline.background" className="w-full">
+            <label className="flex flex-1 items-center gap-2 self-end">
+              <input type="checkbox" checked={stored.background} onChange={(e) => setStored({ ...stored, background: e.target.checked })} />
+              Subtract background (MS just before and after each peak)
+            </label>
+          </Hint>
+        </section>
 
         <Hint id="lcms.pipeline.elution" className="w-full">
           <label className="flex flex-1 items-center gap-2">

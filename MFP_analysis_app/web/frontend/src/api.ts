@@ -382,6 +382,25 @@ export interface PipelineRules {
   top_k?: number;
 }
 
+export interface PipelineEndGroup {
+  name: string;
+  mass: number;
+}
+
+export interface PipelineForms {
+  linear: boolean;
+  cyclic: boolean;
+  end_groups: PipelineEndGroup[];
+}
+
+export interface PipelineBackground {
+  enabled: boolean;
+  gap_min?: number;
+  width_min?: number;
+  bin_da?: number;
+  scale?: number;
+}
+
 export interface PipelineSettingsInput {
   monomers: PipelineMonomer[];
   polarity: "positive" | "negative";
@@ -389,7 +408,10 @@ export interface PipelineSettingsInput {
   adducts: PipelineAdduct[];
   charges?: number[];
   max_dp?: number;
+  forms?: PipelineForms;
+  background?: PipelineBackground;
   rules?: PipelineRules;
+  layout?: { orientation?: "vertical" | "horizontal" };
 }
 
 export interface PipelineJobStatus {
@@ -421,6 +443,8 @@ export interface PipelineLayout {
   shown_text: string;
   box: PipelineBox;
   leader: PipelineBox;
+  x_data: number | null;
+  y_data: number | null;
 }
 
 export interface PipelineIon {
@@ -443,6 +467,7 @@ export interface PipelineLabel {
   dp: number;
   counts: Record<string, number>;
   variant: string;
+  form: string;
   adduct: string;
   charge: number;
   mz: number;
@@ -489,7 +514,7 @@ export interface PipelineResult {
   uv_signal: number[];
   peaks: PipelineUVPeak[];
   labels: PipelineLabel[];
-  settings: PipelineSettingsInput & { rules: Required<PipelineRules> };
+  settings: PipelineSettingsInput & { rules: Required<PipelineRules>; layout: { orientation: "vertical" | "horizontal" } };
   messages: string[];
   created_at: string;
 }
@@ -1044,6 +1069,11 @@ export const api = {
     cancel: (jobId: string) =>
       apiFetch(`/api/lcms/pipeline/${encodeURIComponent(jobId)}`, { method: "DELETE" }).then((r) =>
         handle<{ cancelled: boolean; status: string }>(r),
+      ),
+    // The summed (and background-subtracted) spectrum a UV peak was labelled from.
+    peakSpectrum: (jobId: string, peakId: string) =>
+      apiFetch(`/api/lcms/pipeline/${encodeURIComponent(jobId)}/peaks/${encodeURIComponent(peakId)}/spectrum`).then((r) =>
+        handle<SpectrumData & { background_removed: number }>(r),
       ),
     download: (jobId: string, file: PipelineFile) =>
       apiFetch(`/api/lcms/pipeline/${encodeURIComponent(jobId)}/${file}`).then(handleBlob),

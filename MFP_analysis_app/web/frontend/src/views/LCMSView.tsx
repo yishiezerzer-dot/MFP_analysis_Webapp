@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PlotMouseEvent } from "plotly.js";
 import clsx from "clsx";
-import { api, type PipelineResult, LCMSEICData, LCMSRegionSpectrumData, LCMSTICOverlayTrace, LCMSFindMzResponse, LCMSSessionSummary, PolymerSettings, SpectrumData, SpectrumLabel, TICData, UVChromatogramResponse } from "../api";
+import { api, type PipelineResult, type PipelineUVPeak, LCMSEICData, LCMSRegionSpectrumData, LCMSTICOverlayTrace, LCMSFindMzResponse, LCMSSessionSummary, PolymerSettings, SpectrumData, SpectrumLabel, TICData, UVChromatogramResponse } from "../api";
 import { PageHeaderContent, usePageHeader } from "../layout/PageHeader";
 import { HelpOpenButton } from "../help/HelpShell";
 import { Hint } from "../components/Hint";
@@ -1802,11 +1802,31 @@ export function LCMSView() {
       setPipelineJob({ jobId, result });
       setUvTextLabelsForSession(result.session_id, (prev) => [
         ...prev.filter((label) => !label.id.startsWith("pipeline:")),
-        ...pipelineUvLabels(result),
+        ...pipelineUvLabels(result, rtUnit === "seconds" ? 60 : 1),
       ]);
     },
-    [setUvTextLabelsForSession],
+    [rtUnit, setUvTextLabelsForSession],
   );
+  // Review: show the very spectrum the pipeline labelled this peak from (window, offset, background).
+  const showPipelinePeak = async (jobId: string, peak: PipelineUVPeak) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const sp = await api.lcmsPipeline.peakSpectrum(jobId, peak.id);
+      setSelectedRt(peak.ms_rt_min);
+      setSelectedUvRt(peak.rt_min);
+      setSpectrum(sp);
+      setInfo(
+        `${peak.id}: ${sp.meta.n_scans ?? 0} scan(s) summed, ${peak.start_min.toFixed(2)}–${peak.end_min.toFixed(2)} min (UV)` +
+          (sp.background_removed > 0 ? `, ${Math.round(sp.background_removed * 100)}% background removed.` : "."),
+      );
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onPipelineDone = async (jobId: string, result: PipelineResult) => {
     setPipelineOpen(false);
     const sid = result.session_id;
@@ -1826,6 +1846,8 @@ export function LCMSView() {
     setUvOffset(offset);
     setUvOffsetText(offset.toFixed(3));
     applyPipelineResult(jobId, result);
+    // The label offsets were laid out for this orientation.
+    setUvLabelOrientation(result.settings.layout.orientation);
     const approved = result.labels.filter((l) => l.review === "approved").length;
     setInfo(`Pipeline finished: ${result.peaks.length} UV peaks, ${approved} label(s) approved. Review the rest in the Pipeline review panel.`);
   };
@@ -3321,7 +3343,7 @@ export function LCMSView() {
               jobId={pipelineJob.jobId}
               result={pipelineJob.result}
               onResult={(next) => applyPipelineResult(pipelineJob.jobId, next)}
-              onJump={(peak) => loadSpectrum(peak.ms_rt_min, { uvRtMin: peak.rt_min })}
+              onJump={(peak) => void showPipelinePeak(pipelineJob.jobId, peak)}
               onClose={() => setPipelineJob(null)}
             />
           )}

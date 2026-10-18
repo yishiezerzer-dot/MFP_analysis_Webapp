@@ -35,6 +35,11 @@ Re-check analyses made before these fixes if they relied on the items below.
   - **Review:** you approve or reject labels in a review table. Approved labels go onto the UV chart with de-overlapped positions.
   - **Downloads:** labelled figure as SVG/PNG, and an Excel workbook (Peaks, Candidates, Settings with provenance).
   - **API and automation:** the same is available at `/api/lcms/pipeline` and as the automation action `lcms.run_pipeline`.
+  - **Background subtraction** (on by default): the MS just before and after each UV peak is subtracted before matching, so ions present all through the run (solvent, plasticisers, the noise floor of Agilent centroid exports) stop matching.
+  - **Chain forms and charges:** the dialog can also look for cyclic oligomers, up to four named end groups and 2+ charge states. Labels name the form, e.g. `3-GA (cyclic) [M+H]⁺`.
+  - **Spectrum used:** clicking a peak in the review table shows the exact summed, background-subtracted spectrum the labels came from.
+  - **Label layout:** labels are vertical and ordered left to right by retention time, in a band above the trace, as in the lab's hand-labelled figures. Horizontal labels are still available.
+  - **Accuracy benchmark:** `python -m benchmarks.lcms_pipeline.run_benchmark` (in `web/backend`) scores recall, precision, F1 and RT order against hand-labelled cases.
 - **FTIR opens files as plain data.** Preprocessing (smoothing, baseline, normalisation, ATR) now starts off, so a spectrum is shown exactly as measured until you choose a preset or a setting. Saved preprocessing settings were reset once for this.
 - **FTIR chart design** (Design button), now in groups:
   - Style: Screen, Paper and Slide presets, plus Save as my default.

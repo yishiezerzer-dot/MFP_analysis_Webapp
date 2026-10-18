@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PipelineLabel, PipelineResult } from "../../../api";
 import { PipelineReviewPanel } from "../PipelineReviewPanel";
-import { validMonomers } from "../PipelineDialog";
+import { STORED_DEFAULTS, buildPipelineSettings, validMonomers } from "../PipelineDialog";
 import { pipelineUvLabels } from "../../../lcms/pipelineLabels";
 
 const review = vi.fn();
@@ -14,10 +14,10 @@ vi.mock("../../../api", async (importOriginal) => {
 function label(over: Partial<PipelineLabel>): PipelineLabel {
   return {
     id: "P1-1", peak_id: "P1", rank: 1, text: "2-GA [M+H]⁺", species: "2-GA", series: "GA", dp: 2, counts: { GA: 2 },
-    variant: "", adduct: "H", charge: 1, mz: 135.03, abs_err_da: 0.01, intensity: 1e6, rel_intensity: 0.8, score: 0.8,
+    variant: "", form: "linear", adduct: "H", charge: 1, mz: 135.03, abs_err_da: 0.01, intensity: 1e6, rel_intensity: 0.8, score: 0.8,
     ions: [], eic_apex_rt_min: 3.9, series_support: 1, support_members: [1], status: "ok", reasons: [], review: "approved",
     layout: { id: "P1-1", ax: 4, ay: -40, axRef: "pixel", ayRef: "pixel", callout: null, shown_text: "2-GA [M+H]⁺",
-      box: { x0: 0, y0: 0, x1: 1, y1: 1 }, leader: { x0: 0, y0: 0, x1: 1, y1: 1 } },
+      box: { x0: 0, y0: 0, x1: 1, y1: 1 }, leader: { x0: 0, y0: 0, x1: 1, y1: 1 }, x_data: 3.8, y_data: 150 },
     ...over,
   };
 }
@@ -32,7 +32,7 @@ function result(labels: PipelineLabel[]): PipelineResult {
     ],
     labels,
     settings: { monomers: [{ name: "GA", mass: 76.016 }], polarity: "positive", tolerance_da: 0.5, adducts: ["H", "Na"],
-      rules: { top_k: 2 } as PipelineResult["settings"]["rules"] },
+      rules: { top_k: 2 } as PipelineResult["settings"]["rules"], layout: { orientation: "vertical" } },
     messages: [], created_at: "",
   };
 }
@@ -87,16 +87,44 @@ describe("PipelineReviewPanel", () => {
 });
 
 describe("pipeline labels on the UV chart", () => {
-  it("loads only approved labels, with the layout offsets and pipeline ids", () => {
-    const uv = pipelineUvLabels(result(LABELS));
-    expect(uv).toEqual([
-      expect.objectContaining({ id: "pipeline:P1-1", uv_rt_min: 3.78, signal: 57, ax: 4, ay: -40, axRef: "pixel", ayRef: "pixel", source_ms_rt_min: 3.9 }),
+  it("loads only approved labels, placed in data units on the chart's time axis", () => {
+    expect(pipelineUvLabels(result(LABELS))).toEqual([
+      expect.objectContaining({ id: "pipeline:P1-1", uv_rt_min: 3.78, signal: 57, axRef: "x", ayRef: "y", ay: 150, source_ms_rt_min: 3.9 }),
     ]);
+    const [min] = pipelineUvLabels(result(LABELS));
+    expect(min.ax).toBeCloseTo(3.8 + 0.12); // UV time + offset, minutes
+    expect(pipelineUvLabels(result(LABELS), 60)[0].ax).toBeCloseTo((3.8 + 0.12) * 60); // chart in seconds
+  });
+
+  it("falls back to pixel offsets without data positions", () => {
+    const labs = LABELS.map((l) => (l.layout ? { ...l, layout: { ...l.layout, x_data: null, y_data: null } } : l));
+    expect(pipelineUvLabels(result(labs))[0]).toMatchObject({ ax: 4, ay: -40, axRef: "pixel", ayRef: "pixel" });
   });
 
   it("accepts only monomers with a name and a positive mass", () => {
     expect(validMonomers([{ name: " Ser ", mass: 87.032 }, { name: "", mass: 75 }, { name: "Gly", mass: Number.NaN }, { name: "1x", mass: 5 }])).toEqual([
       { name: "Ser", mass: 87.032 },
     ]);
+  });
+});
+
+describe("pipeline dialog settings", () => {
+  it("defaults to linear chains, charge 1 and background subtraction on", () => {
+    const s = buildPipelineSettings(STORED_DEFAULTS, [{ name: "Lac", mass: 90.031694 }]);
+    expect(s.forms).toEqual({ linear: true, cyclic: false, end_groups: [] });
+    expect(s.charges).toEqual([1]);
+    expect(s.background).toEqual({ enabled: true });
+    expect(s.tolerance_da).toBe(0.5);
+  });
+
+  it("passes cyclic forms, named end groups and 2+ charges, dropping half-filled end groups", () => {
+    const s = buildPipelineSettings(
+      { ...STORED_DEFAULTS, cyclic: true, charges: "1,2", background: false,
+        endGroups: [{ name: " Me ester ", mass: 14.01565 }, { name: "", mass: 1 }, { name: "x", mass: Number.NaN }] },
+      [{ name: "Arg", mass: 174.111676 }],
+    );
+    expect(s.forms).toEqual({ linear: true, cyclic: true, end_groups: [{ name: "Me ester", mass: 14.01565 }] });
+    expect(s.charges).toEqual([1, 2]);
+    expect(s.background).toEqual({ enabled: false });
   });
 });
