@@ -85,3 +85,36 @@ def test_example_run_finds_the_oligomers():
     assert all(l.status == "ok" and l.rank == 1 and l.layout is not None for l in approved)
     assert all(l.layout is None for l in result.labels if l.review != "approved")
     assert all(l.status == "alternative" for l in result.labels if l.rank > 2)
+
+
+def test_background_subtraction_removes_ions_present_all_through_the_run():
+    from app.services.lcms_pipeline import peak_window_spectrum, pick_uv_peaks
+
+    state = open_example()
+    on = PipelineSettings(monomers=[{"name": "GA", "mass": GA}])
+    off = on.model_copy(update={"background": on.background.model_copy(update={"enabled": False})})
+    peaks, _ = pick_uv_peaks(state.uv.rt_min, state.uv.signal, offset_min=0.12)
+    peak = max(peaks, key=lambda p: p.prominence)
+
+    def near(spec, mz):
+        return sum(i for m, i in zip(spec.mz, spec.intensity) if abs(m - mz) < 0.3)
+
+    raw = peak_window_spectrum(state, peak, off, 0.12, 0.05)
+    clean = peak_window_spectrum(state, peak, on, 0.12, 0.05)
+    assert near(clean, 391.28) < 0.2 * near(raw, 391.28)  # the plasticiser in every scan
+    assert near(clean, 149.04) > 0.8 * near(raw, 149.04)  # the oligomer eluting in this peak stays
+    assert clean.background_scans > 0 and 0 < clean.background_removed < 1
+
+
+def test_chain_forms_and_charges_are_validated_and_named():
+    from app.services.lcms_pipeline import tag_form
+
+    s = PipelineSettings(monomers=[{"name": "GA", "mass": GA}], forms={"cyclic": True, "end_groups": [{"name": "Me ester", "mass": 14.01565}]}, charges=[2, 1, 1])
+    assert s.forms.forms(s.bond_delta) == [("linear", 0.0), ("cyclic", s.bond_delta), ("Me ester", 14.01565)]
+    assert s.charges == [1, 2]
+    parsed, text = tag_form(parse_label("3-GA [M+H]⁺"), "3-GA [M+H]⁺", "cyclic")
+    assert text == "3-GA (cyclic) [M+H]⁺" and parsed["series"] == "GA (cyclic)"
+    with pytest.raises(ValueError):
+        PipelineSettings(monomers=[{"name": "GA", "mass": GA}], forms={"linear": False})
+    with pytest.raises(ValueError):
+        PipelineSettings(monomers=[{"name": "GA", "mass": GA}], charges=[0, 9])
