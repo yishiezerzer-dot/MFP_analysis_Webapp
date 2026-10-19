@@ -850,6 +850,7 @@ def check_labels(peaks: List[UVPeak], labels: List[PipelineLabel], settings: Pip
             abs_err_da=lab.abs_err_da,
             ms_rt_min=peak_by_id[lab.peak_id].ms_rt_min,
             eic_apex_rt_min=lab.eic_apex_rt_min,
+            uv_apex=peak_by_id[lab.peak_id].apex,
             counts=dict(lab.counts),
             hydroxy_names=hydroxy_names,
             amino_acids=sum(n for m, n in lab.counts.items() if kinds.get(m) == "amino_acid"),

@@ -139,10 +139,10 @@ def test_same_species_on_two_distant_peaks_is_ambiguous():
 def test_same_species_on_neighbouring_peaks_are_isomers():
     # Chained: 5.0 → 5.8 → 6.6 are one isomer cluster (each gap ≤ 1 min); 12.0 is far away.
     rts = {"a": 5.0, "b": 5.8, "c": 6.6}
-    labs = [label(id=k, peak_id=f"p_{k}", ms_rt_min=rt) for k, rt in rts.items()]
+    labs = [label(id=k, peak_id=f"p_{k}", ms_rt_min=rt, uv_apex=300.0) for k, rt in rts.items()]
     assert ambiguity(labs, RULES) == {}
-    far = labs + [label(id="d", peak_id="p_d", ms_rt_min=12.0)]
-    flagged = ambiguity(far, RULES)  # the 3-peak cluster is the real one; the lone far peak is doubtful
+    far = labs + [label(id="d", peak_id="p_d", ms_rt_min=12.0, uv_apex=50.0)]
+    flagged = ambiguity(far, RULES)  # the cluster with the bigger UV peak is the real one
     assert flagged == {"d": ["ambiguous: 3-Ser is also the top label of p_a, p_b, p_c, more than 1 min away"]}
     assert set(ambiguity(labs, RULES.model_copy(update={"isomer_window_min": 0.0}))) == {"a", "b", "c"}
 
@@ -199,6 +199,23 @@ def test_ion_present_all_through_the_run_is_an_artifact():
     assert check_artifact(label(constant_ratio=0.8), RULES) == [
         "artifact: the ion is present all through the run (median 80% of its height here)"
     ]
+
+
+def test_the_bigger_uv_peak_wins_between_distant_peaks():
+    # G2: 3-Glc + 1-His tops a 1006 mAU peak at 11.3 min and a 56 mAU one at 5.2 min.
+    labs = [label(id="big", peak_id="p11", ms_rt_min=11.4, uv_apex=1006.0), label(id="small", peak_id="p5", ms_rt_min=5.3, uv_apex=56.0)]
+    assert set(ambiguity(labs, RULES)) == {"small"}
+
+
+def test_eic_apex_anywhere_in_the_isomer_cluster_is_fine():
+    # G2 4-Glc + 1-His on five peaks 11.6-12.2 min; the MS does not separate them: one EIC maximum at 12.01.
+    rts = [11.62, 11.78, 11.91, 12.00, 12.19]
+    labs = [label(id=f"i{n}", peak_id=f"p{n}", ms_rt_min=rt, eic_apex_rt_min=12.01) for n, rt in enumerate(rts)]
+    lone = label(id="lone", peak_id="q", species="4-Ser", dp=4, ms_rt_min=8.0, eic_apex_rt_min=8.4)
+    verdicts = apply_rules([peak(id=f"p{n}") for n in range(5)] + [peak(id="q")], labs + [lone], RULES,
+                           run_monomers=["Ser"], enabled_adducts=set())
+    assert not any("EIC apex" in r for n in range(5) for r in verdicts[f"i{n}"].reasons)
+    assert any("EIC apex" in r for r in verdicts["lone"].reasons)
 
 
 def test_failed_peaks_do_not_make_a_label_ambiguous():

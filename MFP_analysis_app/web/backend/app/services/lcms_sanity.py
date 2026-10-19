@@ -6,7 +6,7 @@ objects so each one can be tested on its own; lcms_pipeline turns its results in
 """
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional, Sequence, Set
 
@@ -89,6 +89,7 @@ class LabelFacts:
     abs_err_da: float
     ms_rt_min: float  # UV apex + offset
     eic_apex_rt_min: Optional[float] = None
+    uv_apex: float = 0.0  # height of the label's UV peak
     counts: Dict[str, int] = field(default_factory=dict)  # monomer → units, e.g. {"Glc": 6, "Arg": 2}
     hydroxy_names: List[str] = field(default_factory=list)  # this run's hydroxy-acid monomers
     amino_acids: int = 0  # amino-acid units in the chain
@@ -145,14 +146,18 @@ def check_ion(label: LabelFacts, rules: SanityRules) -> List[str]:
     return reasons
 
 
-def check_eic(label: LabelFacts, rules: SanityRules) -> List[str]:
-    """The ion's EIC peaks where the UV peak is (after the UV→MS offset)."""
+def check_eic(label: LabelFacts, rules: SanityRules, span: Optional[tuple[float, float]] = None) -> List[str]:
+    """The ion's EIC peaks where the UV peak is (after the UV→MS offset), or anywhere in `span`: the time
+    range of the isomer cluster the label belongs to, which the MS often does not separate."""
     if not rules.eic_check:
         return []
     if label.eic_apex_rt_min is None:
         return ["no EIC apex near the UV peak"]
     delta = label.eic_apex_rt_min - label.ms_rt_min
-    if abs(delta) > rules.eic_apex_tol_min:
+    tol = rules.eic_apex_tol_min
+    if span is not None and span[0] - tol <= label.eic_apex_rt_min <= span[1] + tol:
+        return []
+    if abs(delta) > tol:
         return [f"EIC apex at {label.eic_apex_rt_min:.2f} min, {delta:+.2f} min from the UV apex"]
     return []
 
@@ -294,32 +299,47 @@ def elution_order(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str,
     return out
 
 
+def isomer_clusters(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str, List[List[LabelFacts]]]:
+    """Per species, its top labels grouped into isomer clusters: neighbouring peaks, each gap ≤ isomer_window_min."""
+    by_species: Dict[str, List[LabelFacts]] = defaultdict(list)
+    for lab in labels:
+        if lab.rank == 1:
+            by_species[lab.species].append(lab)
+    out: Dict[str, List[List[LabelFacts]]] = {}
+    for species, members in by_species.items():
+        members.sort(key=lambda m: m.ms_rt_min)
+        groups: List[List[LabelFacts]] = []
+        for prev, cur in zip([None, *members], members):
+            if prev is None or cur.ms_rt_min - prev.ms_rt_min > rules.isomer_window_min:
+                groups.append([])
+            groups[-1].append(cur)
+        out[species] = groups
+    return out
+
+
 def ambiguity(labels: Sequence[LabelFacts], rules: SanityRules, bad_peaks: Set[str] = frozenset()) -> Dict[str, List[str]]:
     """The same species named on more than one UV peak.
 
     Top-ranked on neighbouring peaks (each gap ≤ isomer_window_min) is a cluster of isomers and fine.
-    Top-ranked in separate clusters: when one cluster has more peaks than any other it is taken as the
-    real one and the labels outside it are 'ambiguous'; on a tie all of them are. A runner-up
-    (rank 2 … top_k) that is the top label of another peak is most likely that peak's tail. Peaks that
-    fail the UV peak checks (bad_peaks) never make another peak's label ambiguous.
+    Top-ranked in separate clusters: the cluster with the biggest UV peak is taken as the real one (more
+    peaks breaks a tie) and the labels outside it are 'ambiguous'; on a full tie all of them are. A
+    runner-up (rank 2 … top_k) that is the top label of another peak is most likely that peak's tail.
+    Peaks that fail the UV peak checks (bad_peaks) never make another peak's label ambiguous.
     """
     top_peaks: Dict[str, List[str]] = defaultdict(list)
     cluster: Dict[str, int] = {}  # peak id → isomer cluster within its species
-    main: Dict[str, Optional[int]] = {}  # species → its largest cluster, None on a tie
-    by_species: Dict[str, List[LabelFacts]] = defaultdict(list)
-    for lab in labels:
-        if lab.rank == 1:
-            top_peaks[lab.species].append(lab.peak_id)
-            by_species[lab.species].append(lab)
-    for members in by_species.values():
-        members.sort(key=lambda m: m.ms_rt_min)
-        n = 0
-        for prev, cur in zip([None, *members], members):
-            if prev is not None and cur.ms_rt_min - prev.ms_rt_min > rules.isomer_window_min:
-                n += 1
-            cluster[cur.peak_id] = n
-        sizes = Counter(cluster[m.peak_id] for m in members if m.peak_id not in bad_peaks).most_common(2)
-        main[members[0].species] = sizes[0][0] if len(sizes) == 1 or (sizes and sizes[0][1] > sizes[1][1]) else None
+    main: Dict[str, Optional[int]] = {}  # species → its real cluster, None on a tie
+    for species, groups in isomer_clusters(labels, rules).items():
+        keys = []
+        for n, group in enumerate(groups):
+            for m in group:
+                top_peaks[species].append(m.peak_id)
+                cluster[m.peak_id] = n
+            good = [m for m in group if m.peak_id not in bad_peaks]
+            if good:
+                keys.append(((max(m.uv_apex for m in good), len(good)), n))
+        keys.sort(reverse=True)
+        main[species] = keys[0][1] if len(keys) == 1 or (keys and keys[0][0] > keys[1][0]) else None
     out: Dict[str, List[str]] = {}
     for lab in labels:
         if lab.rank > rules.top_k:
@@ -353,13 +373,19 @@ def apply_rules(
     support = series_support(labels, rules)
     order = elution_order(labels, rules)
     ambiguous = ambiguity(labels, rules, {pid for pid, r in peak_reasons.items() if r})
+    span: Dict[str, tuple[float, float]] = {}  # top label → its isomer cluster's time range
+    for groups in isomer_clusters(labels, rules).values():
+        for group in groups:
+            if len(group) > 1:
+                for m in group:
+                    span[m.id] = (group[0].ms_rt_min, group[-1].ms_rt_min)
     neighbours = series_neighbours(labels, rules)
     verdicts: Dict[str, Verdict] = {}
     for lab in labels:
         verdict = support[lab.id]
         reasons = list(peak_reasons.get(lab.peak_id, [])) if lab.peak_id in peak_by_id else []
         reasons += check_ion(lab, rules)
-        reasons += check_eic(lab, rules)
+        reasons += check_eic(lab, rules, span.get(lab.id))
         reasons += check_monomers(lab, run_monomers)
         reasons += check_adduct(lab, enabled_adducts, rules)
         reasons += check_chemistry(lab, rules)
