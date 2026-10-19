@@ -27,7 +27,7 @@ class SanityRules(BaseModel):
     min_rise_frac: float = Field(0.3, ge=0, le=1, description="Share of its height a peak rises above its surroundings.")
     min_sharpness_rel: float = Field(0.5, ge=0, description="Prominence/width relative to the run's median peak.")
     # The matched ion
-    min_rel_intensity: float = Field(0.01, description="Ion intensity relative to the base peak of the summed window.")
+    min_rel_intensity: float = Field(0.05, description="Ion intensity relative to the base peak of the summed window.")
     max_abs_err_da: float = Field(0.5, description="Largest |Δm| between observed and calculated m/z.")
     # MS and UV agree in time
     eic_check: bool = True

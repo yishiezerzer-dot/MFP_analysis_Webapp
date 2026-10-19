@@ -59,9 +59,9 @@ def test_uv_peak_must_be_distinct():
     assert reasons == ["not a distinct peak: a broad bump rising 10% above its surroundings, 0.2× as sharp as a typical peak"]
 
 
-def test_ion_at_least_one_percent_of_base_peak():
-    assert check_ion(label(rel_intensity=0.02), RULES) == []
-    assert "of the base peak" in check_ion(label(rel_intensity=0.004), RULES)[0]
+def test_ion_at_least_five_percent_of_base_peak():
+    assert check_ion(label(rel_intensity=0.06), RULES) == []
+    assert check_ion(label(rel_intensity=0.02), RULES) == ["ion only 2.0% of the base peak (min 5%)"]
 
 
 def test_mass_error_within_half_a_dalton():

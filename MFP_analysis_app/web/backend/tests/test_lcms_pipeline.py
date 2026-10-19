@@ -6,7 +6,15 @@ import numpy as np
 import pytest
 
 from app.db import get_upload_dir
-from app.services.lcms_pipeline import PipelineSettings, align_uv_to_ms, parse_label, pick_uv_peaks, plot_frame, run_pipeline
+from app.services.lcms_pipeline import (
+    PipelineSettings,
+    align_uv_to_ms,
+    parse_label,
+    pick_uv_peaks,
+    plot_frame,
+    rank_candidates,
+    run_pipeline,
+)
 from app.services.lcms_service import attach_uv_from_csv, registry
 
 DATA = Path(__file__).resolve().parents[1] / "app" / "examples" / "data"
@@ -58,6 +66,15 @@ def test_a_hump_on_a_big_peaks_tail_is_not_a_distinct_peak():
     sharp = next(p for p in peaks if abs(p.rt_min - 14.5) < 0.05)
     assert hump.rise_frac < 0.3 < sharp.rise_frac
     assert hump.sharpness_rel < 0.5 < sharp.sharpness_rel
+
+
+def test_other_adducts_only_when_the_peak_has_no_protonated_match():
+    na_big = {"text": "3-GA [M+Na]⁺", "mz": 233.0, "intensity": 900.0, "abs_err": 0.05}
+    h_small = {"text": "1-GA + 1-Arg [M+H]⁺", "mz": 233.1, "intensity": 300.0, "abs_err": 0.05}
+    ranked = rank_candidates([na_big, h_small], 1000.0, 0.5, adduct_fallback=True)
+    assert [c["species"] for c in ranked] == ["1-GA + 1-Arg"]
+    assert [c["species"] for c in rank_candidates([na_big], 1000.0, 0.5, adduct_fallback=True)] == ["3-GA"]
+    assert len(rank_candidates([na_big, h_small], 1000.0, 0.5, adduct_fallback=False)) == 2
 
 
 def test_label_text_is_split_into_parts():

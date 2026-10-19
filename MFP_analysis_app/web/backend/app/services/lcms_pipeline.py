@@ -104,6 +104,9 @@ class PipelineSettings(BaseModel):
     align: AlignSettings = Field(default_factory=AlignSettings)
     rules: SanityRules = Field(default_factory=SanityRules)
     max_candidates_per_peak: int = Field(8, ge=1, le=30)
+    adduct_fallback: bool = Field(
+        True, description="Other adducts (Na, K, Cl, …) only for a peak with no [M+H]⁺/[M−H]⁻ match at all."
+    )
     layout: LayoutOptions = Field(default_factory=LayoutOptions)
 
     @field_validator("charges")
@@ -427,8 +430,14 @@ def polymer_settings(settings: PipelineSettings, min_rel_int: float, extra_delta
     }
 
 
-def rank_candidates(matches: List[Dict[str, object]], base_peak: float, tolerance_da: float) -> List[Dict[str, object]]:
-    """Group matched ions by species and rank: summed relative intensity, less a mass-error penalty."""
+def rank_candidates(
+    matches: List[Dict[str, object]], base_peak: float, tolerance_da: float, adduct_fallback: bool = False
+) -> List[Dict[str, object]]:
+    """Group matched ions by species and rank: summed relative intensity, less a mass-error penalty.
+
+    With adduct_fallback, species seen only as other adducts are dropped when any species has a
+    protonated (deprotonated) ion in this window.
+    """
     groups: Dict[str, Dict[str, object]] = {}
     for match in matches:
         parsed = parse_label(str(match["text"]))
@@ -455,6 +464,8 @@ def rank_candidates(matches: List[Dict[str, object]], base_peak: float, toleranc
         score = rel_sum * (1.0 - 0.5 * min(1.0, err / tolerance_da))
         protonated = [i for i in ions if i.adduct == "H"]
         ranked.append({**group, "ions": ions, "score": score, "rep": (protonated or ions)[0]})
+    if adduct_fallback and any(g["rep"].adduct == "H" for g in ranked):  # type: ignore[union-attr]
+        ranked = [g for g in ranked if g["rep"].adduct == "H"]  # type: ignore[union-attr]
     ranked.sort(key=lambda g: (-float(g["score"]), str(g["species"])))
     return ranked
 
@@ -535,7 +546,8 @@ def match_window(spec: WindowSpectrum, settings: PipelineSettings) -> Tuple[List
         poly = polymer_settings(settings, detect_rel, extra)
         for m in polymer_match_labels(mz, inten, polarity=settings.polarity, settings=poly):
             matches.append({**m, "form": form})
-    return rank_candidates(matches, base, settings.tolerance_da)[: settings.max_candidates_per_peak], base
+    ranked = rank_candidates(matches, base, settings.tolerance_da, settings.adduct_fallback)
+    return ranked[: settings.max_candidates_per_peak], base
 
 
 def _eic_apex(state: LCMSSessionState, mz: float, tol: float, polarity: str, center: float, half_window: float) -> Optional[float]:
