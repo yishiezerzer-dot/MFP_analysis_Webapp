@@ -48,7 +48,7 @@ class Monomer(BaseModel):
 class UVPeakSettings(BaseModel):
     detect_sn: float = Field(3.0, description="Detection threshold: prominence of at least this many noise σ.")
     min_distance_min: float = Field(0.05, description="Closest two UV apexes may be.")
-    max_peaks: int = Field(40, ge=1, le=200)
+    max_peaks: int = Field(60, ge=1, le=200)
 
 
 class AlignSettings(BaseModel):
@@ -285,7 +285,7 @@ def pick_uv_peaks(
     *,
     detect_sn: float = 3.0,
     min_distance_min: float = 0.05,
-    max_peaks: int = 40,
+    max_peaks: int = 60,
     offset_min: float = 0.0,
 ) -> Tuple[List[UVPeak], float]:
     """UV peaks with apex, half-height start/end, area and S/N (scipy find_peaks + peak_widths).
@@ -764,10 +764,23 @@ class PlotFrame(BaseModel):
         return self.y_max - px / self.height_px * (self.y_max - self.y_min)
 
 
+def _x_range(result: PipelineResult, rt: np.ndarray) -> tuple[float, float]:
+    """The part of the run with labelled peaks (or, with none approved, any peaks), plus a margin."""
+    peak_by_id = {p.id: p for p in result.peaks}
+    focus = [peak_by_id[lab.peak_id] for lab in displayed_labels(result)] or result.peaks
+    if not focus:
+        return float(rt.min()), float(rt.max())
+    start, end = min(p.start_min for p in focus), max(p.end_min for p in focus)
+    pad = max(0.5, 0.05 * (end - start))
+    return max(float(rt.min()), start - pad), min(float(rt.max()), end + pad)
+
+
 def plot_frame(result: PipelineResult) -> PlotFrame:
-    """Data → pixel frame; the y range leaves room above the trace for the label band."""
+    """Data → pixel frame, cropped to the labelled part of the run; room above the trace for the labels."""
     rt = np.asarray(result.uv_rt, float)
-    y = np.asarray(result.uv_signal, float)
+    x_min, x_max = _x_range(result, rt)
+    inside = (rt >= x_min) & (rt <= x_max)
+    y = np.asarray(result.uv_signal, float)[inside if inside.any() else slice(None)]
     lo, hi = float(np.nanmin(y)), float(np.nanmax(y))
     span = hi - lo or 1.0
     opts = result.settings.layout
@@ -779,7 +792,7 @@ def plot_frame(result: PipelineResult) -> PlotFrame:
     else:
         headroom = 0.45  # room for the label stairs
     return PlotFrame(
-        x_min=float(rt.min()), x_max=float(rt.max()),
+        x_min=x_min, x_max=x_max,
         y_min=lo - 0.03 * span, y_max=hi + headroom * span,
         width_px=opts.plot_width_px, height_px=opts.plot_height_px,
     )

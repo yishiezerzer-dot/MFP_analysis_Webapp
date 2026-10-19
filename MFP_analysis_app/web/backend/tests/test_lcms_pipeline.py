@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from app.db import get_upload_dir
-from app.services.lcms_pipeline import PipelineSettings, align_uv_to_ms, parse_label, pick_uv_peaks, run_pipeline
+from app.services.lcms_pipeline import PipelineSettings, align_uv_to_ms, parse_label, pick_uv_peaks, plot_frame, run_pipeline
 from app.services.lcms_service import attach_uv_from_csv, registry
 
 DATA = Path(__file__).resolve().parents[1] / "app" / "examples" / "data"
@@ -89,6 +89,13 @@ def test_example_run_finds_the_oligomers():
         assert lab.layout.y_data > peak_by_id[lab.peak_id].apex
         assert abs(lab.layout.x_data - peak_by_id[lab.peak_id].rt_min) < 1.0
     assert all(l.status == "alternative" for l in result.labels if l.rank > 2)
+    # The figure frame is cropped to the labelled peaks (with a margin), not the whole run.
+    frame = plot_frame(result)
+    starts, ends = [peak_by_id[l.peak_id].start_min for l in approved], [peak_by_id[l.peak_id].end_min for l in approved]
+    assert frame.x_min <= min(starts) and frame.x_max >= max(ends)
+    assert frame.x_min > result.uv_rt[0] or frame.x_max < result.uv_rt[-1]
+    result.labels = [l.model_copy(update={"review": "pending"}) for l in result.labels]
+    assert plot_frame(result).x_min <= min(p.start_min for p in result.peaks)  # nothing approved: all peaks
 
 
 def test_background_subtraction_removes_ions_present_all_through_the_run():

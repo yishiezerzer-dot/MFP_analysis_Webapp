@@ -39,6 +39,7 @@ Re-check analyses made before these fixes if they relied on the items below.
   - **Chain forms and charges:** the dialog can also look for cyclic oligomers, up to four named end groups and 2+ charge states. Labels name the form, e.g. `3-GA (cyclic) [M+H]⁺`.
   - **Spectrum used:** clicking a peak in the review table shows the exact summed, background-subtracted spectrum the labels came from.
   - **Label layout:** labels are vertical and ordered left to right by retention time, in a band above the trace, as in the lab's hand-labelled figures. Horizontal labels are still available.
+  - **Tuned on the lab's batch-2 runs:** the same species on neighbouring peaks (within 1 min) now counts as isomers, not "ambiguous"; elution order now expects longer chains to elute later; the UV prominence floor is 0.2% of the largest peak (was 2%); up to 60 UV peaks (was 40); the figure is cropped to the labelled part of the run. On the Glycolic acid + Arginine figure, approved labels now cover 41% of the hand-labelled ones (was 6%) at 81% precision.
   - **Accuracy benchmark:** `python -m benchmarks.lcms_pipeline.run_benchmark` (in `web/backend`) scores recall, precision, F1 and RT order against hand-labelled cases.
 - **FTIR opens files as plain data.** Preprocessing (smoothing, baseline, normalisation, ATR) now starts off, so a spectrum is shown exactly as measured until you choose a preset or a setting. Saved preprocessing settings were reset once for this.
 - **FTIR chart design** (Design button), now in groups:
