@@ -175,8 +175,8 @@ def test_chain_forms_and_charges_are_validated_and_named():
 
 
 def test_monomer_kind_is_known_from_its_name():
-    assert [monomer_kind(n) for n in ("Arg", "His", "lysine", "Glc", "GA", "Lac", "lactic acid", "X1")] == [
-        "amino_acid", "amino_acid", "amino_acid", "hydroxy_acid", "hydroxy_acid", "hydroxy_acid", "hydroxy_acid", "other"
+    assert [monomer_kind(n) for n in ("Arg", "His", "lysine", "pGlu", "Glc", "GA", "Lac", "lactic acid", "X1")] == [
+        "amino_acid", "amino_acid", "amino_acid", "amino_acid", "hydroxy_acid", "hydroxy_acid", "hydroxy_acid", "hydroxy_acid", "other"
     ]
     assert PipelineSettings(monomers=[{"name": "Foo", "mass": 100, "kind": "amino_acid"}]).monomers[0].kind == "amino_acid"
 
@@ -218,3 +218,17 @@ def test_each_isomer_peak_finds_its_own_eic_maximum():
     assert eic_apex_near(rt, eic, 13.55, 0.5) == pytest.approx(13.55, abs=0.02)  # not the tallest (13.66)
     assert eic_apex_near(rt, eic, 14.0, 0.5) == pytest.approx(14.0, abs=0.02)
     assert eic_apex_near(rt, np.zeros_like(rt), 13.5, 0.5) is None
+
+
+def test_dimer_ions_count_for_their_species():
+    # G9: 1-Glc + 1-pGlu is seen mostly as [2M+H]⁺ (m/z 375.1) with a smaller [M+H]⁺ (m/z 188.1).
+    ions = [
+        {"text": "1-Glc + 1-pGlu [2M+H]⁺", "mz": 375.1, "intensity": 1000.0, "abs_err": 0.05},
+        {"text": "1-Glc + 1-pGlu [M+H]⁺", "mz": 188.1, "intensity": 230.0, "abs_err": 0.03},
+    ]
+    [cand] = rank_candidates(ions, 1000.0, 0.5, adduct_fallback=True)
+    assert cand["species"] == "1-Glc + 1-pGlu" and len(cand["ions"]) == 2
+    assert PipelineSettings(monomers=[{"name": "Glc", "mass": 76.0}]).dimers is False
+    from app.services.lcms_pipeline import polymer_settings
+    on = PipelineSettings(monomers=[{"name": "Glc", "mass": 76.0}], dimers=True)
+    assert polymer_settings(on, 0.05)["cluster"] is True

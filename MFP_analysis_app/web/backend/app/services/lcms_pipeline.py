@@ -35,7 +35,7 @@ _NEGATIVE_ONLY = {"Cl", "HCOO", "Ac"}
 MonomerKind = Literal["hydroxy_acid", "amino_acid", "other"]
 _AMINO_ACIDS = {
     "ala", "arg", "asn", "asp", "cys", "gln", "glu", "gly", "his", "ile", "leu", "lys", "met", "phe", "pro", "ser",
-    "thr", "trp", "tyr", "val", "orn", "dab", "dap", "cit", "alanine", "arginine", "asparagine", "aspartic acid",
+    "thr", "trp", "tyr", "val", "orn", "dab", "dap", "cit", "pglu", "pyroglutamic acid", "alanine", "arginine", "asparagine", "aspartic acid",
     "cysteine", "glutamine", "glutamic acid", "glycine", "histidine", "isoleucine", "leucine", "lysine", "methionine",
     "phenylalanine", "proline", "serine", "threonine", "tryptophan", "tyrosine", "valine", "ornithine",
 }
@@ -135,6 +135,7 @@ class PipelineSettings(BaseModel):
     align: AlignSettings = Field(default_factory=AlignSettings)
     rules: SanityRules = Field(default_factory=SanityRules)
     max_candidates_per_peak: int = Field(8, ge=1, le=30)
+    dimers: bool = Field(False, description="Also match noncovalent dimers ([2M+H]⁺ / [2M−H]⁻).")
     adduct_fallback: bool = Field(
         True, description="Other adducts (Na, K, Cl, …) only for a peak with no [M+H]⁺/[M−H]⁻ match at all."
     )
@@ -418,8 +419,8 @@ def parse_label(text: str) -> Optional[Dict[str, object]]:
     adduct = re.sub(r"^[+\-]\d*", "", adduct_txt) or "H"
     if re.fullmatch(r"\d*\.\d+", adduct):
         adduct = "custom"
-    core = m["core"]
-    species = m["comp"].strip() + (f" {m['variant']}" if m["variant"] else "") + (" (2M)" if core == "2M" else "")
+    # A noncovalent dimer ([2M+H]⁺) is the same compound: its ions count toward the species.
+    species = m["comp"].strip() + (f" {m['variant']}" if m["variant"] else "")
     return {
         "counts": counts,
         "dp": sum(counts.values()),
@@ -451,7 +452,7 @@ def polymer_settings(settings: PipelineSettings, min_rel_int: float, extra_delta
         "bond_delta": settings.bond_delta,
         "extra_delta": extra_delta,
         "adduct_mass": PROTON,
-        "cluster": False,
+        "cluster": settings.dimers,
         "tol_value": settings.tolerance_da,
         "tol_unit": "Da",
         "min_rel_int": min_rel_int,
