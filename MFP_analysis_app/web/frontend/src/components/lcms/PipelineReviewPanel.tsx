@@ -14,6 +14,13 @@ const STATUS_STYLE: Record<PipelineLabel["status"], string> = {
   alternative: "bg-ink-100 text-ink-600",
 };
 
+const FILE_LABEL: Record<PipelineFile, string> = {
+  "figure.svg": "SVG",
+  "figure.png": "PNG",
+  "figure-print.png": "PNG 600 dpi",
+  "peaks.xlsx": "xlsx",
+};
+
 export function visibleLabels(result: PipelineResult, filter: Filter): PipelineLabel[] {
   const topK = result.settings.rules.top_k;
   return result.labels.filter((lab) =>
@@ -79,10 +86,10 @@ export function PipelineReviewPanel(props: {
           </Hint>
           <Hint id="lcms.pipeline.download">
             <div className="flex gap-1">
-              {(["figure.svg", "figure.png", "peaks.xlsx"] as const).map((f) => (
+              {(["figure.svg", "figure.png", "figure-print.png", "peaks.xlsx"] as const).map((f) => (
                 <button key={f} type="button" className="btn-ghost border border-ink-200 px-2 py-1 text-xs" onClick={() => void download(f)}>
                   <Download {...ICON_PROPS} />
-                  {f === "peaks.xlsx" ? "xlsx" : f.split(".")[1].toUpperCase()}
+                  {FILE_LABEL[f]}
                 </button>
               ))}
             </div>

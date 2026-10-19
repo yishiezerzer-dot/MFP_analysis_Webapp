@@ -519,7 +519,7 @@ export interface PipelineResult {
   created_at: string;
 }
 
-export type PipelineFile = "figure.svg" | "figure.png" | "peaks.xlsx";
+export type PipelineFile = "figure.svg" | "figure.png" | "figure-print.png" | "peaks.xlsx";
 
 // --- Example datasets ---
 

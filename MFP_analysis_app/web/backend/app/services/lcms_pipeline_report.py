@@ -9,12 +9,16 @@ from matplotlib.figure import Figure
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
-from .lcms_pipeline import PipelineResult, displayed_labels, plot_frame
+from .lcms_pipeline import PipelineResult, apply_layout, displayed_labels, plot_frame
 
 MARGIN = {"left": 70.0, "right": 20.0, "top": 40.0, "bottom": 50.0}
 DPI = 100.0
+PRINT_SIZE_MM = (180.0, 100.0)  # the lab's publication export
+PRINT_DPI = 600
 _BOLD = Font(bold=True)
-_STATUS_COLOUR = {"ok": "#111827", "flagged": "#b45309", "alternative": "#6b7280"}
+# The lab's figure style: slate labels, faint leaders (full-strength lines hide small peaks).
+_STATUS_COLOUR = {"ok": "#46536a", "flagged": "#b45309", "alternative": "#6b7280"}
+_LEADER = {"color": "#334155", "alpha": 0.3, "lw": 0.8}
 
 
 def build_figure(result: PipelineResult) -> Figure:
@@ -35,6 +39,7 @@ def build_figure(result: PipelineResult) -> Figure:
     ax.set_xlabel("Retention time, UV (min)")
     ax.set_ylabel("UV signal")
     ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(False)
     ax.set_title(
         f"{result.display_name} · {result.polarity} · UV→MS offset {result.alignment.offset_min:+.3f} min",
         fontsize=10, loc="left",
@@ -56,7 +61,7 @@ def build_figure(result: PipelineResult) -> Figure:
             rotation=90 if result.settings.layout.orientation == "vertical" else 0,
             fontsize=font_pt,
             color=_STATUS_COLOUR.get(lab.status, "#111827"),
-            arrowprops={"arrowstyle": "-", "lw": 0.6, "color": "#6b7280", "shrinkA": 0, "shrinkB": 0},
+            arrowprops={"arrowstyle": "-", **_LEADER, "shrinkA": 0, "shrinkB": 0},
             annotation_clip=False,
         )
     if footnote:
@@ -64,10 +69,22 @@ def build_figure(result: PipelineResult) -> Figure:
     return fig
 
 
+def sized_for_print(result: PipelineResult, size_mm: tuple[float, float] = PRINT_SIZE_MM) -> PipelineResult:
+    """A copy whose plot area makes the whole figure size_mm, with the labels laid out again for it."""
+    copy = result.model_copy(deep=True)
+    copy.settings.layout = copy.settings.layout.model_copy(update={
+        "plot_width_px": size_mm[0] / 25.4 * DPI - MARGIN["left"] - MARGIN["right"],
+        "plot_height_px": size_mm[1] / 25.4 * DPI - MARGIN["top"] - MARGIN["bottom"],
+    })
+    apply_layout(copy)
+    return copy
+
+
 def write_figures(result: PipelineResult, out_dir: Path) -> None:
     fig = build_figure(result)
     fig.savefig(out_dir / "figure.svg", format="svg")
     fig.savefig(out_dir / "figure.png", format="png", dpi=200)
+    build_figure(sized_for_print(result)).savefig(out_dir / "figure-print.png", format="png", dpi=PRINT_DPI)
 
 
 def _sheet(wb: Workbook, title: str, header: List[str], rows: List[List[Any]]) -> None:

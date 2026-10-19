@@ -80,6 +80,12 @@ def test_figures_and_workbook_download(finished_job):
     assert svg.status_code == 200 and svg.headers["content-type"].startswith("image/svg+xml") and b"<svg" in svg.content
     png = client.get(f"/api/lcms/pipeline/{finished_job}/figure.png")
     assert png.status_code == 200 and png.content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert b"<g id=\"grid" not in svg.content  # no gridlines
+    # The print version: 180 × 100 mm at 600 dpi (IHDR width and height in pixels).
+    print_png = client.get(f"/api/lcms/pipeline/{finished_job}/figure-print.png")
+    assert print_png.status_code == 200
+    width, height = int.from_bytes(print_png.content[16:20], "big"), int.from_bytes(print_png.content[20:24], "big")
+    assert abs(width - round(180 / 25.4 * 600)) <= 2 and abs(height - round(100 / 25.4 * 600)) <= 2
     xlsx = client.get(f"/api/lcms/pipeline/{finished_job}/peaks.xlsx")
     assert xlsx.status_code == 200
     wb = load_workbook(io.BytesIO(xlsx.content))

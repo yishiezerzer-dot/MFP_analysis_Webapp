@@ -865,18 +865,18 @@ class PlotFrame(BaseModel):
 
 
 def _x_range(result: PipelineResult, rt: np.ndarray) -> tuple[float, float]:
-    """The part of the run with labelled peaks (or, with none approved, any peaks), plus a margin."""
+    """From the start of the run to just after the last labelled peak (or, with none approved, any peak)."""
     peak_by_id = {p.id: p for p in result.peaks}
     focus = [peak_by_id[lab.peak_id] for lab in displayed_labels(result)] or result.peaks
     if not focus:
         return float(rt.min()), float(rt.max())
-    start, end = min(p.start_min for p in focus), max(p.end_min for p in focus)
-    pad = max(0.5, 0.05 * (end - start))
-    return max(float(rt.min()), start - pad), min(float(rt.max()), end + pad)
+    end = max(p.end_min for p in focus)
+    pad = max(0.5, 0.05 * (end - float(rt.min())))
+    return float(rt.min()), min(float(rt.max()), end + pad)
 
 
 def plot_frame(result: PipelineResult) -> PlotFrame:
-    """Data → pixel frame, cropped to the labelled part of the run; room above the trace for the labels."""
+    """Data → pixel frame, ending after the last labelled peak; room above the trace for the labels."""
     rt = np.asarray(result.uv_rt, float)
     x_min, x_max = _x_range(result, rt)
     inside = (rt >= x_min) & (rt <= x_max)

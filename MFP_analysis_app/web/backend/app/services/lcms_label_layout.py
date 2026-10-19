@@ -23,7 +23,7 @@ class LayoutOptions(BaseModel):
     orientation: Literal["vertical", "horizontal"] = "vertical"
     plot_width_px: float = 900.0
     plot_height_px: float = 300.0
-    font_px: float = 11.0
+    font_px: float = 12.0
     base_gap_px: float = 18.0  # space between the peak (or trace) and the lowest stair
     gap_px: float = 4.0
     max_levels: int = 12
@@ -152,10 +152,10 @@ def layout_labels(
     next_callout = 1
     last_cx = float("-inf")  # centre of the previous label: keep order, no crossing leaders
 
-    def find(item: LayoutInput, w: float, h: float) -> Optional[Box]:
+    def find(item: LayoutInput, w: float, h: float, x_px: Optional[float] = None) -> Optional[Box]:
         for level in range(opts.max_levels):
-            for nudge in nudges:
-                cx = min(max(item.x_px + nudge * w, w / 2), opts.plot_width_px - w / 2)
+            for nudge in nudges if x_px is None else (0.0,):
+                cx = min(max((item.x_px if x_px is None else x_px) + nudge * w, w / 2), opts.plot_width_px - w / 2)
                 if cx < last_cx:
                     continue
                 floor = item.y_px - opts.base_gap_px
@@ -180,6 +180,10 @@ def layout_labels(
             shown = str(callout)
             w, h = text_size(shown, opts.font_px)
             box = find(item, w, h)
+            x = max(item.x_px, last_cx)
+            while box is None and x < opts.plot_width_px:  # step right, keeping the order, to a free spot
+                x += w + opts.gap_px
+                box = find(item, w, h, x)
             if box is None:
                 # Truly no room: sit just above the peak, inside the plot.
                 cx = min(max(item.x_px, last_cx, w / 2), opts.plot_width_px - w / 2)

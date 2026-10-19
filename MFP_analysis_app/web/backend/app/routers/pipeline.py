@@ -4,7 +4,7 @@ then review labels and download the figure and workbook.
 POST   /api/lcms/pipeline                 multipart: mzml, uv, settings (JSON) [, session_id] -> {job_id}
 GET    /api/lcms/pipeline/{id}            status, progress, step, messages
 GET    /api/lcms/pipeline/{id}/result     the PipelineResult
-GET    /api/lcms/pipeline/{id}/figure.svg | figure.png | peaks.xlsx
+GET    /api/lcms/pipeline/{id}/figure.svg | figure.png | figure-print.png | peaks.xlsx
 PATCH  /api/lcms/pipeline/{id}/labels     approve/reject labels, outputs regenerated
 DELETE /api/lcms/pipeline/{id}            cancel
 """
@@ -211,6 +211,12 @@ def pipeline_figure_svg(job_id: str) -> FileResponse:
 @router.get("/{job_id}/figure.png")
 def pipeline_figure_png(job_id: str) -> FileResponse:
     return _file(job_id, "figure.png", "image/png")
+
+
+@router.get("/{job_id}/figure-print.png")
+def pipeline_figure_print_png(job_id: str) -> FileResponse:
+    """180 × 100 mm at 600 dpi, labels laid out for that size."""
+    return _file(job_id, "figure-print.png", "image/png")
 
 
 @router.get("/{job_id}/peaks.xlsx")
