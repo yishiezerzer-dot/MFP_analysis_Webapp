@@ -13,6 +13,9 @@ from typing import Dict, List, Literal, Optional, Sequence, Set
 from pydantic import BaseModel, Field
 
 LabelStatus = Literal["ok", "flagged", "alternative"]
+# Reasons that make a candidate implausible rather than merely doubtful: the pipeline then takes the
+# peak's next candidate, as a chemist does when the biggest match cannot be right.
+IMPLAUSIBLE = ("artifact:", "unlikely chemistry:", "no series neighbours:")
 
 
 class SanityRules(BaseModel):
@@ -46,6 +49,13 @@ class SanityRules(BaseModel):
     isomer_window_min: float = Field(
         1.0, ge=0, description="The same species on UV peaks this close (gap by gap) is a set of isomers, not ambiguous."
     )
+    # Chemistry of a dry-down (hydroxy acid + amino acid, days at 85 °C): incorporation is by
+    # ester–amide exchange, so few amino acids per chain, and they need a hydroxy-acid backbone.
+    max_amino_acids: int = Field(3, ge=1, description="More amino acids than this in one chain is unlikely.")
+    neighbour_min_dp: int = Field(3, ge=2, description="From this DP up a label needs a series neighbour in the run.")
+    max_constant_ratio: float = Field(
+        0.5, gt=0, description="An ion whose run-wide median EIC is at least this share of its height here is an artifact."
+    )
     # Ranking
     top_k: int = Field(2, ge=1, description="Candidates kept per UV peak; the rest become alternatives.")
 
@@ -76,6 +86,11 @@ class LabelFacts:
     abs_err_da: float
     ms_rt_min: float  # UV apex + offset
     eic_apex_rt_min: Optional[float] = None
+    counts: Dict[str, int] = field(default_factory=dict)  # monomer → units, e.g. {"Glc": 6, "Arg": 2}
+    hydroxy_names: List[str] = field(default_factory=list)  # this run's hydroxy-acid monomers
+    amino_acids: int = 0  # amino-acid units in the chain
+    hydroxy_acids: int = 0
+    constant_ratio: Optional[float] = None  # run-wide median EIC / EIC height at this peak
 
 
 @dataclass
@@ -153,6 +168,60 @@ def check_adduct(label: LabelFacts, enabled_adducts: Set[str], rules: SanityRule
     return reasons
 
 
+def check_chemistry(label: LabelFacts, rules: SanityRules) -> List[str]:
+    """A dry-down rarely puts more than a few amino acids into one chain, least of all without a hydroxy acid."""
+    if label.amino_acids <= rules.max_amino_acids:
+        return []
+    reason = (
+        f"unlikely chemistry: {label.amino_acids} amino acids in one chain "
+        f"(a dry-down rarely adds more than {rules.max_amino_acids})"
+    )
+    if label.hydroxy_acids == 0:
+        reason += " and no hydroxy acid to carry them"
+    return [reason]
+
+
+def check_artifact(label: LabelFacts, rules: SanityRules) -> List[str]:
+    """An ion present all through the run (solvent, plasticiser) is not this peak's compound."""
+    if label.constant_ratio is None or label.constant_ratio < rules.max_constant_ratio:
+        return []
+    return [f"artifact: the ion is present all through the run (median {label.constant_ratio:.0%} of its height here)"]
+
+
+def _composition(counts: Dict[str, int]) -> frozenset:
+    return frozenset((k, v) for k, v in counts.items() if v > 0)
+
+
+def _species_text(counts: Dict[str, int]) -> str:
+    return " + ".join(f"{n}-{name}" for name, n in counts.items() if n > 0)
+
+
+def series_neighbours(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str, List[str]]:
+    """A top label of DP ≥ neighbour_min_dp needs a neighbour among the run's top labels: the same chain
+    with one hydroxy acid more or less (any monomer when none is known as a hydroxy acid), or the same
+    species on another peak. A lone 6-Glc + 2-Arg among n-Glc + 1-Arg chains is most likely wrong."""
+    top = [lab for lab in labels if lab.rank == 1 and lab.counts]
+    seen: Dict[frozenset, Set[str]] = defaultdict(set)
+    for lab in top:
+        seen[_composition(lab.counts)].add(lab.peak_id)
+    out: Dict[str, List[str]] = {}
+    for lab in top:
+        if lab.dp < rules.neighbour_min_dp or seen[_composition(lab.counts)] - {lab.peak_id}:
+            continue
+        vary = [m for m in lab.counts if m in lab.hydroxy_names] or list(lab.counts)
+        options = []
+        for name in vary:
+            for step in (-1, 1):
+                counts = {**lab.counts, name: lab.counts[name] + step}
+                if counts[name] >= 0 and any(counts.values()):
+                    options.append(counts)
+        if any(seen.get(_composition(c)) for c in options):
+            continue
+        listed = " or ".join(_species_text(c) for c in options)
+        out[lab.id] = [f"no series neighbours: no {listed} labelled anywhere in the run"]
+    return out
+
+
 def series_support(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str, Verdict]:
     """Score each label by the lower-DP members of its series detected anywhere in the run.
 
@@ -210,13 +279,14 @@ def elution_order(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str,
     return out
 
 
-def ambiguity(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str, List[str]]:
+def ambiguity(labels: Sequence[LabelFacts], rules: SanityRules, bad_peaks: Set[str] = frozenset()) -> Dict[str, List[str]]:
     """The same species named on more than one UV peak.
 
     Top-ranked on neighbouring peaks (each gap ≤ isomer_window_min) is a cluster of isomers and fine.
     Top-ranked in separate clusters: when one cluster has more peaks than any other it is taken as the
     real one and the labels outside it are 'ambiguous'; on a tie all of them are. A runner-up
-    (rank 2 … top_k) that is the top label of another peak is most likely that peak's tail.
+    (rank 2 … top_k) that is the top label of another peak is most likely that peak's tail. Peaks that
+    fail the UV peak checks (bad_peaks) never make another peak's label ambiguous.
     """
     top_peaks: Dict[str, List[str]] = defaultdict(list)
     cluster: Dict[str, int] = {}  # peak id → isomer cluster within its species
@@ -233,18 +303,18 @@ def ambiguity(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str, Lis
             if prev is not None and cur.ms_rt_min - prev.ms_rt_min > rules.isomer_window_min:
                 n += 1
             cluster[cur.peak_id] = n
-        sizes = Counter(cluster[m.peak_id] for m in members).most_common(2)
-        main[members[0].species] = sizes[0][0] if len(sizes) == 1 or sizes[0][1] > sizes[1][1] else None
+        sizes = Counter(cluster[m.peak_id] for m in members if m.peak_id not in bad_peaks).most_common(2)
+        main[members[0].species] = sizes[0][0] if len(sizes) == 1 or (sizes and sizes[0][1] > sizes[1][1]) else None
     out: Dict[str, List[str]] = {}
     for lab in labels:
         if lab.rank > rules.top_k:
             continue
-        elsewhere = sorted(p for p in top_peaks.get(lab.species, []) if p != lab.peak_id)
+        elsewhere = sorted(p for p in top_peaks.get(lab.species, []) if p != lab.peak_id and p not in bad_peaks)
         if not elsewhere:
             continue
         if lab.rank == 1:
             far = [p for p in elsewhere if cluster[p] != cluster[lab.peak_id]]
-            if far and cluster[lab.peak_id] != main[lab.species]:
+            if far and (cluster[lab.peak_id] != main[lab.species] or lab.peak_id in bad_peaks):
                 out[lab.id] = [
                     f"ambiguous: {lab.species} is also the top label of {', '.join(far)}, "
                     f"more than {rules.isomer_window_min:g} min away"
@@ -267,7 +337,8 @@ def apply_rules(
     peak_reasons = {p.id: check_peak(p, rules) for p in peaks}
     support = series_support(labels, rules)
     order = elution_order(labels, rules)
-    ambiguous = ambiguity(labels, rules)
+    ambiguous = ambiguity(labels, rules, {pid for pid, r in peak_reasons.items() if r})
+    neighbours = series_neighbours(labels, rules)
     verdicts: Dict[str, Verdict] = {}
     for lab in labels:
         verdict = support[lab.id]
@@ -276,6 +347,9 @@ def apply_rules(
         reasons += check_eic(lab, rules)
         reasons += check_monomers(lab, run_monomers)
         reasons += check_adduct(lab, enabled_adducts, rules)
+        reasons += check_chemistry(lab, rules)
+        reasons += check_artifact(lab, rules)
+        reasons += neighbours.get(lab.id, [])
         reasons += verdict.reasons
         reasons += order.get(lab.id, [])
         reasons += ambiguous.get(lab.id, [])

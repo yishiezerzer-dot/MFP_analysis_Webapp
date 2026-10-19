@@ -17,7 +17,7 @@ from scipy.ndimage import minimum_filter1d, uniform_filter1d
 from scipy.signal import find_peaks, peak_prominences, peak_widths
 
 from .lcms_label_layout import LayoutInput, LayoutItem, LayoutOptions, layout_labels, text_size, trace_top
-from .lcms_sanity import LabelFacts, LabelStatus, PeakFacts, SanityRules, apply_rules, check_peak
+from .lcms_sanity import IMPLAUSIBLE, LabelFacts, LabelStatus, PeakFacts, SanityRules, apply_rules, check_peak
 from .lcms_service import LCMSSessionState, extracted_ion_chromatogram, polymer_match_labels, summed_spectrum_in_rt_range
 
 ProgressCallback = Callable[[float, str], None]
@@ -32,9 +32,36 @@ _NEGATIVE_ONLY = {"Cl", "HCOO", "Ac"}
 # ------------------------------------------------------------------ settings and result models
 
 
+MonomerKind = Literal["hydroxy_acid", "amino_acid", "other"]
+_AMINO_ACIDS = {
+    "ala", "arg", "asn", "asp", "cys", "gln", "glu", "gly", "his", "ile", "leu", "lys", "met", "phe", "pro", "ser",
+    "thr", "trp", "tyr", "val", "orn", "dab", "dap", "cit", "alanine", "arginine", "asparagine", "aspartic acid",
+    "cysteine", "glutamine", "glutamic acid", "glycine", "histidine", "isoleucine", "leucine", "lysine", "methionine",
+    "phenylalanine", "proline", "serine", "threonine", "tryptophan", "tyrosine", "valine", "ornithine",
+}
+_HYDROXY_ACIDS = {
+    "ga", "glc", "gly acid", "glycolic", "glycolic acid", "la", "lac", "lactic", "lactic acid", "pla", "phenyllactic acid",
+    "ma", "mandelic acid", "hba", "hydroxybutyric acid",
+}
+
+
+def monomer_kind(name: str) -> MonomerKind:
+    """Hydroxy acid or amino acid from a monomer's name (three-letter code, abbreviation or full name)."""
+    key = name.strip().lower()
+    if key in _AMINO_ACIDS:
+        return "amino_acid"
+    if key in _HYDROXY_ACIDS:
+        return "hydroxy_acid"
+    return "other"
+
+
 class Monomer(BaseModel):
     name: str = Field(min_length=1)
     mass: float = Field(gt=0)
+    kind: Optional[MonomerKind] = Field(None, description="Hydroxy acid or amino acid; from the name when not given.")
+
+    def resolved_kind(self) -> MonomerKind:
+        return self.kind or monomer_kind(self.name)
 
     @field_validator("name")
     @classmethod
@@ -63,6 +90,10 @@ class BackgroundSettings(BaseModel):
     # On by default: on the benchmark it never lost a label, and without it constant ions (a plasticiser
     # at m/z 391) won 2 of 3 peaks once cyclic forms were searched.
     enabled: bool = True
+    # "eic": label from the raw spectrum, as a chemist reads it, and reject ions whose EIC stays high all
+    # through the run. "flanks": subtract the spectra just before and after the peak; inside an isomer
+    # cluster the flanks are the neighbouring isomers, which removes the real ion (G1, 12.64 min).
+    method: Literal["eic", "flanks"] = "eic"
     gap_min: float = Field(0.05, ge=0, description="Space between the peak window and each background window.")
     width_min: float = Field(0.3, gt=0, description="Width of each background window, before and after the peak.")
     bin_da: float = Field(0.25, gt=0, le=2, description="Grid the subtraction works on (about half the tolerance).")
@@ -198,6 +229,7 @@ class PipelineLabel(BaseModel):
     score: float
     ions: List[Ion]
     eic_apex_rt_min: Optional[float] = None
+    constant_ratio: Optional[float] = None  # run-wide median EIC / EIC height at the peak (artifact check)
     series_support: float = 0.0
     support_members: List[int] = Field(default_factory=list)
     status: LabelStatus = "ok"
@@ -502,7 +534,7 @@ def peak_window_spectrum(state: LCMSSessionState, peak: UVPeak, settings: Pipeli
     mz, inten, n = _per_scan(summed_spectrum_in_rt_range(state, rt_min=lo, rt_max=hi, polarity=pol, bin_width=0.01))
     out = WindowSpectrum(rt_start=lo, rt_end=hi, n_scans=n, mz=mz.tolist(), intensity=inten.tolist())
     bg = settings.background
-    if not bg.enabled or mz.size == 0 or n == 0:
+    if not bg.enabled or bg.method != "flanks" or mz.size == 0 or n == 0:
         return out
     sides = [
         (lo - bg.gap_min - bg.width_min, lo - bg.gap_min),
@@ -550,14 +582,18 @@ def match_window(spec: WindowSpectrum, settings: PipelineSettings) -> Tuple[List
     return ranked[: settings.max_candidates_per_peak], base
 
 
-def _eic_apex(state: LCMSSessionState, mz: float, tol: float, polarity: str, center: float, half_window: float) -> Optional[float]:
+def _eic_facts(
+    state: LCMSSessionState, mz: float, tol: float, polarity: str, center: float, half_window: float
+) -> Tuple[Optional[float], Optional[float]]:
+    """(EIC apex near the peak, run-wide median EIC / EIC height near the peak)."""
     eic = extracted_ion_chromatogram(state, mz, tolerance=tol, tolerance_unit="da", polarity=polarity)
     rt = np.asarray(eic["rt_min"], float)
     inten = np.asarray(eic["intensity"], float)
     sel = np.abs(rt - center) <= half_window
     if not sel.any() or float(inten[sel].max()) <= 0:
-        return None
-    return float(rt[sel][int(np.argmax(inten[sel]))])
+        return None, None
+    height = float(inten[sel].max())
+    return float(rt[sel][int(np.argmax(inten[sel]))]), float(np.median(inten)) / height
 
 
 # ------------------------------------------------------------------ pipeline
@@ -619,6 +655,9 @@ def run_pipeline(
         ranked, peak.base_peak_intensity = match_window(spec, settings)
         for rank, cand in enumerate(ranked, start=1):
             rep: Ion = cand["rep"]  # type: ignore[assignment]
+            apex_rt, constant = _eic_facts(
+                state, rep.mz, tol, settings.polarity, peak.ms_rt_min, max(0.5, 3 * peak.width_min)
+            )
             label = PipelineLabel(
                 id=f"{peak.id}-{rank}",
                 peak_id=peak.id,
@@ -638,9 +677,8 @@ def run_pipeline(
                 rel_intensity=rep.rel_intensity,
                 score=float(cand["score"]),  # type: ignore[arg-type]
                 ions=list(cand["ions"]),  # type: ignore[arg-type]
-                eic_apex_rt_min=_eic_apex(
-                    state, rep.mz, tol, settings.polarity, peak.ms_rt_min, max(0.5, 3 * peak.width_min)
-                ),
+                eic_apex_rt_min=apex_rt,
+                constant_ratio=constant if settings.background.enabled and settings.background.method == "eic" else None,
             )
             labels.append(label)
             peak.label_ids.append(label.id)
@@ -649,6 +687,11 @@ def run_pipeline(
         messages.append(f"Background subtraction removed {100 * float(np.median(removed)):.0f}% of the signal in a typical peak window.")
     say(0.85, "Checking labels")
     check_labels(peaks, labels, settings)
+    tried: Dict[str, set] = {}
+    for _ in range(4):  # a promoted candidate can itself turn out implausible once it is the top label
+        if not promote_plausible(peaks, labels, tried):
+            break
+        check_labels(peaks, labels, settings)
     for label in labels:
         label.review = "approved" if label.rank == 1 and label.status == "ok" else "pending"
 
@@ -718,12 +761,40 @@ def peak_spectrum(state: LCMSSessionState, result: PipelineResult, peak_id: str)
     }
 
 
+def promote_plausible(peaks: List[UVPeak], labels: List[PipelineLabel], tried: Dict[str, set]) -> bool:
+    """Where a peak's top candidate is implausible (artifact, unlikely chemistry, no series neighbours),
+    make its best plausible candidate the top one, as a chemist does by hand. Returns whether any changed.
+    `tried` remembers the labels already found implausible as top, so nothing is promoted twice."""
+    by_peak: Dict[str, List[PipelineLabel]] = {}
+    for lab in labels:
+        by_peak.setdefault(lab.peak_id, []).append(lab)
+    implausible = lambda lab: any(r.startswith(IMPLAUSIBLE) for r in lab.reasons)  # noqa: E731
+    changed = False
+    for peak in peaks:
+        cands = sorted(by_peak.get(peak.id, []), key=lambda lab: lab.rank)
+        if not cands or not implausible(cands[0]):
+            continue
+        done = tried.setdefault(peak.id, set())
+        done.add(cands[0].id)
+        best = next((lab for lab in cands[1:] if lab.id not in done and not implausible(lab)), None)
+        if best is None:
+            continue
+        order = [best] + [lab for lab in cands if lab is not best]
+        for rank, lab in enumerate(order, start=1):
+            lab.rank = rank
+        peak.label_ids = [lab.id for lab in order]
+        changed = True
+    return changed
+
+
 def check_labels(peaks: List[UVPeak], labels: List[PipelineLabel], settings: PipelineSettings) -> None:
     """Run the sanity rules and store each label's status, reasons and series support."""
     peak_by_id = {p.id: p for p in peaks}
     protonated_species = {
         (lab.peak_id, lab.species) for lab in labels for ion in lab.ions if ion.adduct == "H"
     }
+    kinds = {m.name: m.resolved_kind() for m in settings.monomers}
+    hydroxy_names = [name for name, kind in kinds.items() if kind == "hydroxy_acid"]
     facts = [
         LabelFacts(
             id=lab.id,
@@ -739,6 +810,11 @@ def check_labels(peaks: List[UVPeak], labels: List[PipelineLabel], settings: Pip
             abs_err_da=lab.abs_err_da,
             ms_rt_min=peak_by_id[lab.peak_id].ms_rt_min,
             eic_apex_rt_min=lab.eic_apex_rt_min,
+            counts=dict(lab.counts),
+            hydroxy_names=hydroxy_names,
+            amino_acids=sum(n for m, n in lab.counts.items() if kinds.get(m) == "amino_acid"),
+            hydroxy_acids=sum(n for m, n in lab.counts.items() if kinds.get(m) == "hydroxy_acid"),
+            constant_ratio=lab.constant_ratio,
         )
         for lab in labels
     ]

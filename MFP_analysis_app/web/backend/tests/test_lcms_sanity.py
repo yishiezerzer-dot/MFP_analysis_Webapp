@@ -5,14 +5,18 @@ from app.services.lcms_sanity import (
     LabelFacts,
     PeakFacts,
     SanityRules,
+    IMPLAUSIBLE,
     ambiguity,
     apply_rules,
     check_adduct,
+    check_artifact,
+    check_chemistry,
     check_eic,
     check_ion,
     check_monomers,
     check_peak,
     elution_order,
+    series_neighbours,
     series_support,
 )
 
@@ -165,3 +169,38 @@ def test_clean_label_is_ok_and_peak_flags_reach_its_labels():
     assert weak["l1"].status == "flagged"
     assert "weak UV peak" in weak["l1"].reasons[0]
     assert replace(lab).id == "l1"
+
+
+def test_dry_down_chemistry_limits_amino_acids_per_chain():
+    assert check_chemistry(label(amino_acids=3, hydroxy_acids=0), RULES) == []
+    assert check_chemistry(label(amino_acids=4, hydroxy_acids=2), RULES) == [
+        "unlikely chemistry: 4 amino acids in one chain (a dry-down rarely adds more than 3)"
+    ]
+    assert "and no hydroxy acid" in check_chemistry(label(amino_acids=5, hydroxy_acids=0), RULES)[0]
+    assert all(r.startswith(IMPLAUSIBLE) for r in check_chemistry(label(amino_acids=5), RULES))
+
+
+def test_label_needs_a_neighbour_in_its_series():
+    # 6-Glc + 2-Arg alone among n-Glc + 1-Arg: no 5- or 7-Glc + 2-Arg anywhere → no neighbours.
+    def lab(i, glc, arg, **kw):
+        return label(id=i, peak_id=f"p{i}", species=f"{glc}-Glc + {arg}-Arg", dp=glc + arg,
+                     counts={"Glc": glc, "Arg": arg}, hydroxy_names=["Glc"], **kw)
+    labs = [lab("a", 4, 1), lab("b", 5, 1), lab("c", 6, 1), lab("d", 6, 2), lab("e", 3, 2), lab("f", 4, 2), lab("g", 1, 1)]
+    flagged = series_neighbours(labs, RULES)
+    assert set(flagged) == {"d"}
+    assert flagged["d"] == ["no series neighbours: no 5-Glc + 2-Arg or 7-Glc + 2-Arg labelled anywhere in the run"]
+    assert flagged["d"][0].startswith(IMPLAUSIBLE)
+
+
+def test_ion_present_all_through_the_run_is_an_artifact():
+    assert check_artifact(label(constant_ratio=0.2), RULES) == []
+    assert check_artifact(label(constant_ratio=None), RULES) == []
+    assert check_artifact(label(constant_ratio=0.8), RULES) == [
+        "artifact: the ion is present all through the run (median 80% of its height here)"
+    ]
+
+
+def test_failed_peaks_do_not_make_a_label_ambiguous():
+    labs = [label(id="real", peak_id="p1", ms_rt_min=5.0), label(id="junk", peak_id="p2", ms_rt_min=20.0)]
+    assert set(ambiguity(labs, RULES)) == {"real", "junk"}
+    assert set(ambiguity(labs, RULES, bad_peaks={"p2"})) == {"junk"}

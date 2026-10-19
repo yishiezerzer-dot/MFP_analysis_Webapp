@@ -114,7 +114,7 @@ def test_peak_spectrum_is_the_window_the_label_came_from(finished_job):
     sp = client.get(f"/api/lcms/pipeline/{finished_job}/peaks/{peak['id']}/spectrum").json()
     assert sp["meta"]["spectrum_id"] == f"pipeline:{peak['id']}"
     assert sp["meta"]["rt_start"] < peak["ms_rt_min"] < sp["meta"]["rt_end"]
-    assert "background removed" in sp["meta"]["merge_mode"] and sp["meta"]["n_scans"] >= 1
+    assert sp["meta"]["merge_mode"].startswith("pipeline") and sp["meta"]["n_scans"] >= 1
     assert len(sp["mz"]) == len(sp["intensity"]) > 0
     assert any(lab["text"] == label["text"] and abs(lab["mz"] - label["mz"]) < 1e-6 for lab in sp["labels"])
     assert client.get(f"/api/lcms/pipeline/{finished_job}/peaks/P999/spectrum").status_code == 404

@@ -11,7 +11,11 @@ from app.services.lcms_pipeline import (
     align_uv_to_ms,
     parse_label,
     pick_uv_peaks,
+    PipelineLabel,
+    UVPeak,
+    monomer_kind,
     plot_frame,
+    promote_plausible,
     rank_candidates,
     run_pipeline,
 )
@@ -127,11 +131,20 @@ def test_example_run_finds_the_oligomers():
     assert plot_frame(result).x_min <= min(p.start_min for p in result.peaks)  # nothing approved: all peaks
 
 
-def test_background_subtraction_removes_ions_present_all_through_the_run():
+def test_ions_present_all_through_the_run_are_artifacts():
+    from app.services.lcms_pipeline import _eic_facts
+
+    state = open_example()
+    _, plasticiser = _eic_facts(state, 391.28, 0.5, "positive", 4.0, 0.5)
+    _, oligomer = _eic_facts(state, 149.04, 0.5, "positive", 4.0, 0.5)  # 2-GA [M+H]⁺, elutes at 3.9 min
+    assert plasticiser > 0.5 > oligomer
+
+
+def test_flank_background_subtraction_removes_ions_present_all_through_the_run():
     from app.services.lcms_pipeline import peak_window_spectrum, pick_uv_peaks
 
     state = open_example()
-    on = PipelineSettings(monomers=[{"name": "GA", "mass": GA}])
+    on = PipelineSettings(monomers=[{"name": "GA", "mass": GA}], background={"method": "flanks"})
     off = on.model_copy(update={"background": on.background.model_copy(update={"enabled": False})})
     peaks, _ = pick_uv_peaks(state.uv.rt_min, state.uv.signal, offset_min=0.12)
     peak = max(peaks, key=lambda p: p.prominence)
@@ -158,3 +171,32 @@ def test_chain_forms_and_charges_are_validated_and_named():
         PipelineSettings(monomers=[{"name": "GA", "mass": GA}], forms={"linear": False})
     with pytest.raises(ValueError):
         PipelineSettings(monomers=[{"name": "GA", "mass": GA}], charges=[0, 9])
+
+
+def test_monomer_kind_is_known_from_its_name():
+    assert [monomer_kind(n) for n in ("Arg", "His", "lysine", "Glc", "GA", "Lac", "lactic acid", "X1")] == [
+        "amino_acid", "amino_acid", "amino_acid", "hydroxy_acid", "hydroxy_acid", "hydroxy_acid", "hydroxy_acid", "other"
+    ]
+    assert PipelineSettings(monomers=[{"name": "Foo", "mass": 100, "kind": "amino_acid"}]).monomers[0].kind == "amino_acid"
+
+
+def _lab(rank, species, reasons):
+    return PipelineLabel(
+        id=f"P1-{rank}", peak_id="P1", rank=rank, text=f"{species} [M+H]⁺", species=species, series="", dp=1, counts={},
+        variant="", adduct="H", charge=1, mz=100.0, abs_err_da=0.0, intensity=1.0, rel_intensity=1.0, score=1.0, ions=[],
+        reasons=reasons, status="flagged" if reasons else "ok",
+    )
+
+
+def test_an_implausible_top_candidate_gives_way_to_the_next_plausible_one():
+    peak = UVPeak(id="P1", rt_min=12.6, ms_rt_min=12.7, apex=74, start_min=12.6, end_min=12.7, width_min=0.04, area=1,
+                  sn=100, prominence=12, prominence_rel=0.01, label_ids=["P1-1", "P1-2", "P1-3"])
+    labels = [
+        _lab(1, "6-Glc + 2-Arg", ["no series neighbours: no 5-Glc + 2-Arg or 7-Glc + 2-Arg labelled anywhere in the run"]),
+        _lab(2, "4-Glc + 1-Arg", ["EIC apex at 12.65 min, +0.26 min from the UV apex"]),  # doubtful, not implausible
+        _lab(3, "1-Arg", []),
+    ]
+    assert promote_plausible([peak], labels, tried={}) is True
+    assert {lab.species: lab.rank for lab in labels} == {"4-Glc + 1-Arg": 1, "6-Glc + 2-Arg": 2, "1-Arg": 3}
+    assert peak.label_ids == ["P1-2", "P1-1", "P1-3"]
+    assert promote_plausible([peak], labels, tried={}) is False  # the new top label is not implausible
