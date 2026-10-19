@@ -1,47 +1,116 @@
 {
   "name": "glycolic_arginine_positive",
-  "description": "Glycolic acid + arginine, ESI+ (lab hand-labelled figure). Species in left-to-right retention order as labelled.",
-  "source": "hand-labelled figure 'Glycolic acid & Arginine LCMS positive' (2026-10-18)",
+  "description": "Glycolic acid + arginine (batch 2, G1), ESI+. Labelled by hand in the app, one label per UV peak, with UV retention times.",
+  "source": "hand-labelled in the app on 2026-10-19 (UV offset +0.116 min, [M+H]+ only, 0.5 Da, min rel. intensity 5%)",
   "mzml": "data/glycolic_arginine_positive.mzML",
   "uv": "data/glycolic_arginine_positive_uv.csv",
   "settings": {
-    "monomers": [{ "name": "Glc", "mass": 76.016044 }, { "name": "Arg", "mass": 174.111676 }],
+    "monomers": [
+      {
+        "name": "Glc",
+        "mass": 76.016044
+      },
+      {
+        "name": "Arg",
+        "mass": 174.111676
+      }
+    ],
     "polarity": "positive",
     "tolerance_da": 0.5,
-    "adducts": ["H", "Na"]
+    "adducts": [
+      "H",
+      "Na"
+    ]
   },
   "expected": [
-    { "species": "1-Arg" },
-    { "species": "1-Arg + 1-Glc" },
-    { "species": "1-Glc" },
-    { "species": "1-Arg + 1-Glc", "rt_min": 3.2 },
-    { "species": "1-Arg + 3-Glc" },
-    { "species": "1-Arg + 3-Glc" },
-    { "species": "1-Arg + 3-Glc" },
-    { "species": "1-Arg + 3-Glc" },
-    { "species": "2-Arg + 3-Glc" },
-    { "species": "2-Arg + 4-Glc" },
-    { "species": "1-Arg + 4-Glc" },
-    { "species": "1-Arg + 4-Glc" },
-    { "species": "1-Arg + 4-Glc" },
-    { "species": "1-Arg + 4-Glc" },
-    { "species": "1-Arg + 5-Glc" },
-    { "species": "1-Arg + 5-Glc" },
-    { "species": "1-Arg + 5-Glc" },
-    { "species": "1-Arg + 6-Glc" },
-    { "species": "1-Arg + 6-Glc" },
-    { "species": "1-Arg + 6-Glc" },
-    { "species": "1-Arg + 6-Glc" },
-    { "species": "1-Arg + 7-Glc" },
-    { "species": "1-Arg + 7-Glc" },
-    { "species": "1-Arg + 7-Glc" },
-    { "species": "1-Arg + 8-Glc" },
-    { "species": "1-Arg + 8-Glc" },
-    { "species": "6-Glc" },
-    { "species": "1-Arg + 8-Glc" },
-    { "species": "1-Arg + 9-Glc" },
-    { "species": "7-Glc" },
-    { "species": "8-Glc" },
-    { "species": "9-Glc", "rt_min": 23.9 }
-  ]
+    {
+      "species": "1-Arg",
+      "rt_min": 2.218
+    },
+    {
+      "species": "1-Glc + 1-Arg",
+      "rt_min": 2.505
+    },
+    {
+      "species": "1-Glc",
+      "rt_min": 2.712
+    },
+    {
+      "species": "1-Glc + 1-Arg",
+      "rt_min": 3.145
+    },
+    {
+      "species": "3-Glc + 1-Arg",
+      "rt_min": 11.272
+    },
+    {
+      "species": "3-Glc + 2-Arg",
+      "rt_min": 11.452
+    },
+    {
+      "species": "3-Glc + 1-Arg",
+      "rt_min": 11.592
+    },
+    {
+      "species": "3-Glc + 1-Arg",
+      "rt_min": 11.812
+    },
+    {
+      "species": "4-Glc + 2-Arg",
+      "rt_min": 11.972
+    },
+    {
+      "species": "4-Glc + 1-Arg",
+      "rt_min": 12.278
+    },
+    {
+      "species": "4-Glc + 1-Arg",
+      "rt_min": 12.532
+    },
+    {
+      "species": "4-Glc + 1-Arg",
+      "rt_min": 12.645
+    },
+    {
+      "species": "5-Glc + 1-Arg",
+      "rt_min": 12.812
+    },
+    {
+      "species": "5-Glc + 1-Arg",
+      "rt_min": 12.992
+    },
+    {
+      "species": "5-Glc + 1-Arg",
+      "rt_min": 13.198
+    },
+    {
+      "species": "6-Glc + 1-Arg",
+      "rt_min": 13.432
+    },
+    {
+      "species": "6-Glc + 1-Arg",
+      "rt_min": 13.545
+    },
+    {
+      "species": "6-Glc + 1-Arg",
+      "rt_min": 13.678
+    },
+    {
+      "species": "6-Glc + 1-Arg",
+      "rt_min": 13.885
+    },
+    {
+      "species": "7-Glc + 1-Arg",
+      "rt_min": 13.998
+    },
+    {
+      "species": "8-Glc + 1-Arg",
+      "rt_min": 14.545
+    },
+    {
+      "species": "6-Glc",
+      "rt_min": 15.005
+    }
+  ],
+  "rt_tol": 0.05
 }

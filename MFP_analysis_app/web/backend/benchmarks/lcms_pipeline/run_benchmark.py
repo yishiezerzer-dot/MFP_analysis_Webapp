@@ -1,7 +1,8 @@
 """Accuracy benchmark for the one-click LCMS pipeline.
 
 Each case (cases/*.json) names an mzML + UV CSV, the pipeline settings, and the expected species
-in retention order (from a hand-labelled figure). The pipeline's top label per UV peak is scored:
+in retention order (from a hand-labelled figure). The pipeline's top label per UV peak is scored,
+and separately the approved labels, which are what the figure shows (fig R / fig P):
 
   recall     expected species found (each expected entry used once; within ±rt_tol when it has an RT)
   precision  top labels that match an expected species
@@ -40,6 +41,8 @@ class CaseScore:
     matched: int
     lcs: int
     seconds: float
+    shown: int = 0  # approved labels (the figure)
+    shown_matched: int = 0
 
     @property
     def recall(self) -> float:
@@ -53,6 +56,14 @@ class CaseScore:
     def f1(self) -> float:
         p, r = self.precision, self.recall
         return 2 * p * r / (p + r) if p + r else 0.0
+
+    @property
+    def fig_recall(self) -> float:
+        return self.shown_matched / self.expected if self.expected else 0.0
+
+    @property
+    def fig_precision(self) -> float:
+        return self.shown_matched / self.shown if self.shown else 0.0
 
     @property
     def order(self) -> float:
@@ -174,9 +185,16 @@ def run_case(case: Dict[str, Any], overrides: Sequence[str] = ()) -> Optional[Ca
         for lab in result.labels
         if lab.rank == 1
     ]
-    matched, order = score(case["expected"], predicted, float(case.get("rt_tol", 0.15)))
+    rt_tol = float(case.get("rt_tol", 0.15))
+    matched, order = score(case["expected"], predicted, rt_tol)
+    shown = [
+        {"key": species_key(lab.species), "rt_min": peaks[lab.peak_id].rt_min}
+        for lab in result.labels
+        if lab.review == "approved"
+    ]
+    shown_matched, _ = score(case["expected"], shown, rt_tol)
     registry.remove(state.session_id)
-    return CaseScore(case["name"], len(case["expected"]), len(predicted), matched, order, seconds)
+    return CaseScore(case["name"], len(case["expected"]), len(predicted), matched, order, seconds, len(shown), shown_matched)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -189,13 +207,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for path in (BACKEND, BACKEND.parents[1]):  # app.* and the shared lab_gui package
         if str(path) not in sys.path:
             sys.path.insert(0, str(path))
-    print(f"{'case':<28}{'expected':>9}{'labels':>8}{'recall':>8}{'precis.':>8}{'F1':>7}{'order':>7}{'time s':>8}")
+    print(f"{'case':<28}{'expected':>9}{'labels':>8}{'recall':>8}{'precis.':>8}{'F1':>7}{'order':>7}{'shown':>7}{'fig R':>7}{'fig P':>7}{'time s':>8}")
     for case in load_cases(args.cases):
         s = run_case(case, args.set)
         if s is None:
             print(f"{case['name']:<28}  skipped: add {Path(case['mzml']).name} and {Path(case['uv']).name} to data/")
             continue
-        print(f"{s.name:<28}{s.expected:>9}{s.predicted:>8}{s.recall:>8.2f}{s.precision:>8.2f}{s.f1:>7.2f}{s.order:>7.2f}{s.seconds:>8.2f}")
+        print(f"{s.name:<28}{s.expected:>9}{s.predicted:>8}{s.recall:>8.2f}{s.precision:>8.2f}{s.f1:>7.2f}{s.order:>7.2f}{s.shown:>7}{s.fig_recall:>7.2f}{s.fig_precision:>7.2f}{s.seconds:>8.2f}")
     return 0
 
 
