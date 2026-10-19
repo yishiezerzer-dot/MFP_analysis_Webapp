@@ -51,6 +51,14 @@ def test_uv_minimum_prominence():
     assert "prominence 0.1% of the largest (min 0.2%)" in check_peak(peak(prominence_rel=0.001), RULES)[0]
 
 
+def test_uv_peak_must_be_distinct():
+    # Distinct = rises clearly above its surroundings OR is as sharp as the run's typical peak (a shoulder).
+    assert check_peak(peak(rise_frac=0.4, sharpness_rel=0.1), RULES) == []
+    assert check_peak(peak(rise_frac=0.1, sharpness_rel=2.0), RULES) == []
+    reasons = check_peak(peak(rise_frac=0.1, sharpness_rel=0.2), RULES)
+    assert reasons == ["not a distinct peak: a broad bump rising 10% above its surroundings, 0.2× as sharp as a typical peak"]
+
+
 def test_ion_at_least_one_percent_of_base_peak():
     assert check_ion(label(rel_intensity=0.02), RULES) == []
     assert "of the base peak" in check_ion(label(rel_intensity=0.004), RULES)[0]

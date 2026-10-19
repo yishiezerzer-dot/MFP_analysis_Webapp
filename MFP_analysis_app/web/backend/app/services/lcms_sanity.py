@@ -22,6 +22,10 @@ class SanityRules(BaseModel):
     min_width_min: float = Field(0.02, description="Narrowest believable UV peak (FWHM, min).")
     max_width_min: float = Field(1.0, description="Broadest believable UV peak (FWHM, min).")
     min_prominence_rel: float = Field(0.002, description="UV prominence relative to the tallest peak.")
+    # A peak is distinct if it rises clearly above its surroundings OR is about as sharp as the run's
+    # typical peak (shoulders in an isomer cluster); broad bumps on a tail fail both (G1, 3.7–4.6 min).
+    min_rise_frac: float = Field(0.3, ge=0, le=1, description="Share of its height a peak rises above its surroundings.")
+    min_sharpness_rel: float = Field(0.5, ge=0, description="Prominence/width relative to the run's median peak.")
     # The matched ion
     min_rel_intensity: float = Field(0.01, description="Ion intensity relative to the base peak of the summed window.")
     max_abs_err_da: float = Field(0.5, description="Largest |Δm| between observed and calculated m/z.")
@@ -53,6 +57,8 @@ class PeakFacts:
     sn: float
     width_min: float
     prominence_rel: float
+    rise_frac: float = 1.0  # prominence / height above the run's baseline
+    sharpness_rel: float = 1.0  # (prominence / width) / the run's median
 
 
 @dataclass
@@ -100,6 +106,11 @@ def check_peak(peak: PeakFacts, rules: SanityRules) -> List[str]:
         reasons.append(f"UV peak too broad ({peak.width_min:.2f} min, max {rules.max_width_min:g})")
     if peak.prominence_rel < rules.min_prominence_rel:
         reasons.append(f"UV peak prominence {peak.prominence_rel:.1%} of the largest (min {rules.min_prominence_rel:.1%})")
+    if peak.rise_frac < rules.min_rise_frac and peak.sharpness_rel < rules.min_sharpness_rel:
+        reasons.append(
+            f"not a distinct peak: a broad bump rising {peak.rise_frac:.0%} above its surroundings, "
+            f"{peak.sharpness_rel:.1f}× as sharp as a typical peak"
+        )
     return reasons
 
 

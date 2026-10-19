@@ -154,6 +154,8 @@ class UVPeak(BaseModel):
     sn: float
     prominence: float
     prominence_rel: float
+    rise_frac: float = 1.0  # prominence / height above the run's baseline: how distinct the peak is
+    sharpness_rel: float = 1.0  # (prominence / FWHM) / the run's median: broad bumps are ≪ 1
     n_scans: int = 0
     base_peak_intensity: float = 0.0
     reasons: List[str] = Field(default_factory=list)
@@ -303,6 +305,7 @@ def pick_uv_peaks(
     rt, y = rt[order], y[order]
     step = float(np.median(np.diff(rt))) or 1e-3
     noise = robust_noise(y) or 1e-12
+    floor = float(np.percentile(y, 5))  # the run's baseline level
     idx, props = find_peaks(
         y,
         prominence=max(detect_sn * noise, 1e-12),
@@ -345,8 +348,13 @@ def pick_uv_peaks(
                 sn=float(prom / noise),
                 prominence=float(prom),
                 prominence_rel=float(prom / max_prom) if max_prom > 0 else 0.0,
+                rise_frac=float(min(1.0, prom / max(float(y[i]) - floor, 1e-12))),
             )
         )
+    sharp = np.array([p.prominence / max(p.width_min, step) for p in peaks])
+    typical = float(np.median(sharp)) if sharp.size else 1.0
+    for p, s in zip(peaks, sharp):
+        p.sharpness_rel = float(s / typical) if typical > 0 else 1.0
     return peaks, noise
 
 
@@ -722,7 +730,11 @@ def check_labels(peaks: List[UVPeak], labels: List[PipelineLabel], settings: Pip
         )
         for lab in labels
     ]
-    peak_facts = [PeakFacts(id=p.id, rt_min=p.rt_min, sn=p.sn, width_min=p.width_min, prominence_rel=p.prominence_rel) for p in peaks]
+    peak_facts = [
+        PeakFacts(id=p.id, rt_min=p.rt_min, sn=p.sn, width_min=p.width_min, prominence_rel=p.prominence_rel, rise_frac=p.rise_frac,
+                  sharpness_rel=p.sharpness_rel)
+        for p in peaks
+    ]
     for p, pf in zip(peaks, peak_facts):
         p.reasons = check_peak(pf, settings.rules)
     verdicts = apply_rules(

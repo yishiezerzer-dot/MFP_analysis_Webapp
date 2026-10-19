@@ -48,6 +48,18 @@ def test_uv_peaks_have_widths_areas_and_sn():
     assert any(abs(p.rt_min - 7.5) < 0.05 for p in peaks)  # the small one is kept (rules flag it later)
 
 
+def test_a_hump_on_a_big_peaks_tail_is_not_a_distinct_peak():
+    # G1-like: a small bump on the slow tail of a large peak vs an equally tall sharp peak on the baseline.
+    t = np.arange(0, 20, 0.0067)
+    tail = 1500 * np.exp(-0.5 * ((t - 3.0) / 0.03) ** 2) + 30 * np.exp(-np.clip(t - 3.0, 0, None) / 2.0) * (t > 3.0)
+    y = tail + gaussians(t, [4.6, 14.5], width=0.05, heights=[4.0, 25.0])
+    peaks, _ = pick_uv_peaks(t, y)
+    hump = next(p for p in peaks if abs(p.rt_min - 4.6) < 0.05)
+    sharp = next(p for p in peaks if abs(p.rt_min - 14.5) < 0.05)
+    assert hump.rise_frac < 0.3 < sharp.rise_frac
+    assert hump.sharpness_rel < 0.5 < sharp.sharpness_rel
+
+
 def test_label_text_is_split_into_parts():
     p = parse_label("2-GA + 1-LA -H2O [M+Na]⁺")
     assert p["counts"] == {"GA": 2, "LA": 1} and p["dp"] == 3 and p["series"] == "GA+LA"
