@@ -30,7 +30,7 @@ describe("Find my product: answers → ions and polymer settings", () => {
       { ...PRODUCT_DEFAULTS, monomers: ["hydroxy:glycolic-acid", "hydroxy:lactic-acid"], adducts: ["k"], maxDp: 4, charges: "1,2" },
       defaultPolymerUiSettings(),
     );
-    expect(settings.monomers.filter((m) => m.selected).map((m) => m.abbr)).toEqual(["GA", "LA"]);
+    expect(settings.monomers.filter((m) => m.selected).map((m) => m.abbr)).toEqual(["Glc", "Lac"]);
     expect(settings.shared).toMatchObject({ enabled: true, max_dp: 4, charges: "1,2" });
     expect(settings.positive).toMatchObject({ adduct_na: false, adduct_k: true });
   });

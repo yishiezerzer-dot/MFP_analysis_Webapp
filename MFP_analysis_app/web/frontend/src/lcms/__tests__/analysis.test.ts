@@ -13,6 +13,7 @@ import {
   integrateEICPeak,
   integrateTraceRegion,
   ionLabel,
+  mergePolymerMonomerPresets,
   parseExpectedProductMonomers,
   parsePositiveCharges,
   PROTON_MASS,
@@ -26,6 +27,20 @@ import {
   sessionFixtures,
   spectrumFixture,
 } from "./fixtures/analysisFixtures";
+
+describe("mergePolymerMonomerPresets", () => {
+  it("names glycolic and lactic acid Glc and Lac, also over the old saved GA/LA, but keeps a chosen abbreviation", () => {
+    const merged = mergePolymerMonomerPresets([
+      { id: "hydroxy:glycolic-acid", category: "hydroxy", name: "Glycolic acid", abbr: "GA", mass: 76.016044, selected: true },
+      { id: "hydroxy:lactic-acid", category: "hydroxy", name: "Lactic acid", abbr: "LA", mass: 90.031694, selected: false },
+      { id: "amino:arginine", category: "amino", name: "Arginine", abbr: "R", mass: 174.111676, selected: true },
+    ]);
+    const byId = Object.fromEntries(merged.map((m) => [m.id, m]));
+    expect(byId["hydroxy:glycolic-acid"]).toMatchObject({ abbr: "Glc", selected: true });
+    expect(byId["hydroxy:lactic-acid"].abbr).toBe("Lac");
+    expect(byId["amino:arginine"].abbr).toBe("R");
+  });
+});
 
 describe("integrateEICPeak", () => {
   it("picks the apex nearest the reference RT (not the global max)", () => {

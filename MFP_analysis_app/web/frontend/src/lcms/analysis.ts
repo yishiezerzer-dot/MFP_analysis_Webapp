@@ -58,8 +58,8 @@ export const POLYMER_SETTINGS_DEFAULT_STORAGE_KEY = "mfp.lcms.polymerSettings.de
 export const POLYMER_MONOMER_PRESETS_STORAGE_KEY = "mfp.lcms.polymerMonomerPresets";
 
 export const BUILT_IN_POLYMER_MONOMERS: PolymerMonomerPreset[] = [
-  { id: "hydroxy:glycolic-acid", category: "hydroxy", name: "Glycolic acid", abbr: "GA", mass: 76.016044, selected: false },
-  { id: "hydroxy:lactic-acid", category: "hydroxy", name: "Lactic acid", abbr: "LA", mass: 90.031694, selected: false },
+  { id: "hydroxy:glycolic-acid", category: "hydroxy", name: "Glycolic acid", abbr: "Glc", mass: 76.016044, selected: false },
+  { id: "hydroxy:lactic-acid", category: "hydroxy", name: "Lactic acid", abbr: "Lac", mass: 90.031694, selected: false },
   { id: "hydroxy:phenyllactic-acid", category: "hydroxy", name: "Phenyllactic acid", abbr: "PLA", mass: 166.062994, selected: false },
   { id: "hydroxy:mandelic-acid", category: "hydroxy", name: "Mandelic acid", abbr: "MA", mass: 152.047344, selected: false },
   { id: "hydroxy:hydroxybutyric-acid", category: "hydroxy", name: "Hydroxybutyric acid", abbr: "HBA", mass: 104.047344, selected: false },
@@ -133,6 +133,9 @@ export function clonePolymerMonomers(monomers: PolymerMonomerPreset[]): PolymerM
   return monomers.map((monomer) => ({ ...monomer }));
 }
 
+// Earlier built-in abbreviations: saved settings still carry them, but they were never a user's choice.
+const FORMER_ABBR: Record<string, string> = { "hydroxy:glycolic-acid": "GA", "hydroxy:lactic-acid": "LA" };
+
 export function mergePolymerMonomerPresets(saved: PolymerMonomerPreset[]): PolymerMonomerPreset[] {
   const builtIns = clonePolymerMonomers(BUILT_IN_POLYMER_MONOMERS);
   const savedById = new Map(saved.map((monomer) => [monomer.id, monomer]));
@@ -141,7 +144,7 @@ export function mergePolymerMonomerPresets(saved: PolymerMonomerPreset[]): Polym
     return savedMonomer
       ? {
           ...monomer,
-          abbr: savedMonomer.abbr || monomer.abbr,
+          abbr: savedMonomer.abbr && savedMonomer.abbr !== FORMER_ABBR[monomer.id] ? savedMonomer.abbr : monomer.abbr,
           selected: Boolean(savedMonomer.selected),
         }
       : monomer;
