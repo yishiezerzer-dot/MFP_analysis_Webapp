@@ -43,7 +43,7 @@ export const STORED_DEFAULTS: StoredSettings = {
   polarity: "positive",
   tolerance_da: 0.5,
   adducts: ["H", "Na", "Cl"],
-  elution: "decreasing",
+  elution: "increasing",
   linear: true,
   cyclic: false,
   endGroups: [],

@@ -6,7 +6,7 @@ objects so each one can be tested on its own; lcms_pipeline turns its results in
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional, Sequence, Set
 
@@ -21,7 +21,7 @@ class SanityRules(BaseModel):
     sn_weak: float = Field(3.0, description="UV S/N from here up to sn_ok is 'weak'; below it, 'below noise'.")
     min_width_min: float = Field(0.02, description="Narrowest believable UV peak (FWHM, min).")
     max_width_min: float = Field(1.0, description="Broadest believable UV peak (FWHM, min).")
-    min_prominence_rel: float = Field(0.02, description="UV prominence relative to the tallest peak.")
+    min_prominence_rel: float = Field(0.002, description="UV prominence relative to the tallest peak.")
     # The matched ion
     min_rel_intensity: float = Field(0.01, description="Ion intensity relative to the base peak of the summed window.")
     max_abs_err_da: float = Field(0.5, description="Largest |Δm| between observed and calculated m/z.")
@@ -36,9 +36,12 @@ class SanityRules(BaseModel):
     series_lookback: int = Field(3, ge=1, description="How many lower DPs (n−1 … n−k) count as series support.")
     isolated_min_dp: int = Field(3, ge=2, description="A label of at least this DP with no lower member is 'isolated'.")
     elution_direction: Literal["decreasing", "increasing", "off"] = Field(
-        "decreasing", description="Expected RT trend as DP rises within a series."
+        "increasing", description="Expected RT trend as DP rises within a series."
     )
     elution_rt_tol_min: float = Field(0.02, description="RT differences below this are not counted as order violations.")
+    isomer_window_min: float = Field(
+        1.0, ge=0, description="The same species on UV peaks this close (gap by gap) is a set of isomers, not ambiguous."
+    )
     # Ranking
     top_k: int = Field(2, ge=1, description="Candidates kept per UV peak; the rest become alternatives.")
 
@@ -96,7 +99,7 @@ def check_peak(peak: PeakFacts, rules: SanityRules) -> List[str]:
     elif peak.width_min > rules.max_width_min:
         reasons.append(f"UV peak too broad ({peak.width_min:.2f} min, max {rules.max_width_min:g})")
     if peak.prominence_rel < rules.min_prominence_rel:
-        reasons.append(f"UV peak prominence {peak.prominence_rel:.1%} of the largest (min {rules.min_prominence_rel:.0%})")
+        reasons.append(f"UV peak prominence {peak.prominence_rel:.1%} of the largest (min {rules.min_prominence_rel:.1%})")
     return reasons
 
 
@@ -199,13 +202,28 @@ def elution_order(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str,
 def ambiguity(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str, List[str]]:
     """The same species named on more than one UV peak.
 
-    Top-ranked on two or more peaks: every one of those labels is 'ambiguous'. A runner-up (rank
-    2 … top_k) that is the top label of another peak is most likely that peak's tail.
+    Top-ranked on neighbouring peaks (each gap ≤ isomer_window_min) is a cluster of isomers and fine.
+    Top-ranked in separate clusters: when one cluster has more peaks than any other it is taken as the
+    real one and the labels outside it are 'ambiguous'; on a tie all of them are. A runner-up
+    (rank 2 … top_k) that is the top label of another peak is most likely that peak's tail.
     """
     top_peaks: Dict[str, List[str]] = defaultdict(list)
+    cluster: Dict[str, int] = {}  # peak id → isomer cluster within its species
+    main: Dict[str, Optional[int]] = {}  # species → its largest cluster, None on a tie
+    by_species: Dict[str, List[LabelFacts]] = defaultdict(list)
     for lab in labels:
         if lab.rank == 1:
             top_peaks[lab.species].append(lab.peak_id)
+            by_species[lab.species].append(lab)
+    for members in by_species.values():
+        members.sort(key=lambda m: m.ms_rt_min)
+        n = 0
+        for prev, cur in zip([None, *members], members):
+            if prev is not None and cur.ms_rt_min - prev.ms_rt_min > rules.isomer_window_min:
+                n += 1
+            cluster[cur.peak_id] = n
+        sizes = Counter(cluster[m.peak_id] for m in members).most_common(2)
+        main[members[0].species] = sizes[0][0] if len(sizes) == 1 or sizes[0][1] > sizes[1][1] else None
     out: Dict[str, List[str]] = {}
     for lab in labels:
         if lab.rank > rules.top_k:
@@ -214,7 +232,12 @@ def ambiguity(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str, Lis
         if not elsewhere:
             continue
         if lab.rank == 1:
-            out[lab.id] = [f"ambiguous: {lab.species} is also the top label of {', '.join(elsewhere)}"]
+            far = [p for p in elsewhere if cluster[p] != cluster[lab.peak_id]]
+            if far and cluster[lab.peak_id] != main[lab.species]:
+                out[lab.id] = [
+                    f"ambiguous: {lab.species} is also the top label of {', '.join(far)}, "
+                    f"more than {rules.isomer_window_min:g} min away"
+                ]
         else:
             out[lab.id] = [f"probably the tail of {', '.join(elsewhere)}, where {lab.species} is the top label"]
     return out

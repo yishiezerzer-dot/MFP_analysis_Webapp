@@ -46,7 +46,9 @@ def test_uv_peak_width_range():
 
 
 def test_uv_minimum_prominence():
-    assert "prominence" in check_peak(peak(prominence_rel=0.005), RULES)[0]
+    # Real oligomer peaks sit at 0.2–2% of a large early peak, so the floor is 0.2%.
+    assert check_peak(peak(prominence_rel=0.005), RULES) == []
+    assert "prominence 0.1% of the largest (min 0.2%)" in check_peak(peak(prominence_rel=0.001), RULES)[0]
 
 
 def test_ion_at_least_one_percent_of_base_peak():
@@ -98,26 +100,38 @@ def test_isolated_high_dp_is_flagged():
 
 
 def test_elution_order_flags_the_outlier():
-    # Default: higher DP elutes earlier. DP 4 comes out late, against the trend.
-    rts = {2: 8.0, 3: 7.0, 4: 9.5, 5: 5.0, 6: 4.0}
+    # Default: higher DP elutes later (reversed phase). DP 4 comes out early, against the trend.
+    rts = {2: 4.0, 3: 5.0, 4: 3.5, 5: 7.0, 6: 8.0}
     labs = [label(id=f"d{n}", dp=n, ms_rt_min=rt, species=f"{n}-Ser") for n, rt in rts.items()]
     flagged = elution_order(labs, RULES)
     assert list(flagged) == ["d4"]
-    assert "elution order" in flagged["d4"][0]
+    assert "should elute later" in flagged["d4"][0]
     assert elution_order(labs, RULES.model_copy(update={"elution_direction": "off"})) == {}
 
 
 def test_elution_direction_is_configurable():
     labs = [label(id=f"d{n}", dp=n, ms_rt_min=2.0 + n, species=f"{n}-Ser") for n in (2, 3, 4, 5)]
-    assert len(elution_order(labs, RULES)) == 4  # all against a decreasing trend
-    assert elution_order(labs, RULES.model_copy(update={"elution_direction": "increasing"})) == {}
+    assert elution_order(labs, RULES) == {}
+    assert len(elution_order(labs, RULES.model_copy(update={"elution_direction": "decreasing"}))) == 4
 
 
-def test_same_species_on_two_peaks_is_ambiguous():
-    labs = [label(id="a", peak_id="p1"), label(id="b", peak_id="p2"), label(id="c", peak_id="p3", species="4-Ser", dp=4)]
+def test_same_species_on_two_distant_peaks_is_ambiguous():
+    labs = [label(id="a", peak_id="p1", ms_rt_min=5.0), label(id="b", peak_id="p2", ms_rt_min=9.0),
+            label(id="c", peak_id="p3", species="4-Ser", dp=4)]
     flagged = ambiguity(labs, RULES)
     assert set(flagged) == {"a", "b"}
     assert "ambiguous" in flagged["a"][0] and "p2" in flagged["a"][0]
+
+
+def test_same_species_on_neighbouring_peaks_are_isomers():
+    # Chained: 5.0 → 5.8 → 6.6 are one isomer cluster (each gap ≤ 1 min); 12.0 is far away.
+    rts = {"a": 5.0, "b": 5.8, "c": 6.6}
+    labs = [label(id=k, peak_id=f"p_{k}", ms_rt_min=rt) for k, rt in rts.items()]
+    assert ambiguity(labs, RULES) == {}
+    far = labs + [label(id="d", peak_id="p_d", ms_rt_min=12.0)]
+    flagged = ambiguity(far, RULES)  # the 3-peak cluster is the real one; the lone far peak is doubtful
+    assert flagged == {"d": ["ambiguous: 3-Ser is also the top label of p_a, p_b, p_c, more than 1 min away"]}
+    assert set(ambiguity(labs, RULES.model_copy(update={"isomer_window_min": 0.0}))) == {"a", "b", "c"}
 
 
 def test_runner_up_that_tops_another_peak_is_a_tail():
