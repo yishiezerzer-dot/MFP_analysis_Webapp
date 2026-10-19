@@ -13,6 +13,7 @@ from app.services.lcms_pipeline import (
     pick_uv_peaks,
     PipelineLabel,
     UVPeak,
+    eic_apex_near,
     isotope_ratios,
     monomer_kind,
     plot_frame,
@@ -207,3 +208,13 @@ def test_isotope_ratios_at_half_and_one_dalton():
     inten = [100.0, 55.0, 20.0, 80.0, 24.0]
     assert isotope_ratios(mz, inten, 500.0, 1) == (0.55, 0.2)
     assert isotope_ratios(mz, inten, 600.0, 1) == (0.0, 0.3)
+
+
+def test_each_isomer_peak_finds_its_own_eic_maximum():
+    # Isomers share an m/z: one EIC with a peak per isomer (G1 6-Glc + 1-Arg at 13.43, 13.54, 13.68, 13.88 min).
+    rng = np.random.default_rng(1)
+    rt = np.arange(13.0, 14.4, 0.0145)
+    eic = gaussians(rt, [13.55, 13.66, 13.78, 14.0], width=0.03, heights=[40, 100, 30, 25]) + rng.normal(0, 1.0, rt.size)
+    assert eic_apex_near(rt, eic, 13.55, 0.5) == pytest.approx(13.55, abs=0.02)  # not the tallest (13.66)
+    assert eic_apex_near(rt, eic, 14.0, 0.5) == pytest.approx(14.0, abs=0.02)
+    assert eic_apex_near(rt, np.zeros_like(rt), 13.5, 0.5) is None

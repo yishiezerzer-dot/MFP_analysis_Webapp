@@ -602,6 +602,23 @@ def isotope_ratios(mz: List[float], intensity: List[float], ion_mz: float, charg
     return round(near(ion_mz + step / 2) / ion, 4), round(near(ion_mz + step) / ion, 4)
 
 
+def eic_apex_near(rt: np.ndarray, inten: np.ndarray, center: float, half_window: float) -> Optional[float]:
+    """The EIC maximum nearest `center` within ±half_window: the nearest local maximum (3-point smoothed,
+    prominence ≥ 5% of the window's height), not the tallest point, so each isomer peak sharing the m/z
+    finds its own."""
+    sel = np.abs(rt - center) <= half_window
+    if not sel.any():
+        return None
+    t, y = rt[sel], uniform_filter1d(np.asarray(inten, float)[sel], size=3, mode="nearest")
+    top = float(y.max())
+    if top <= 0:
+        return None
+    idx, _ = find_peaks(y, prominence=0.05 * top)
+    if idx.size == 0:
+        return float(t[int(np.argmax(y))])
+    return float(t[idx[int(np.argmin(np.abs(t[idx] - center)))]])
+
+
 def _eic_facts(
     state: LCMSSessionState, mz: float, tol: float, polarity: str, center: float, half_window: float
 ) -> Tuple[Optional[float], Optional[float]]:
@@ -613,7 +630,7 @@ def _eic_facts(
     if not sel.any() or float(inten[sel].max()) <= 0:
         return None, None
     height = float(inten[sel].max())
-    return float(rt[sel][int(np.argmax(inten[sel]))]), float(np.median(inten)) / height
+    return eic_apex_near(rt, inten, center, half_window), float(np.median(inten)) / height
 
 
 # ------------------------------------------------------------------ pipeline
