@@ -13,6 +13,7 @@ from app.services.lcms_pipeline import (
     pick_uv_peaks,
     PipelineLabel,
     UVPeak,
+    isotope_ratios,
     monomer_kind,
     plot_frame,
     promote_plausible,
@@ -199,3 +200,10 @@ def test_an_implausible_top_candidate_gives_way_to_the_next_plausible_one():
     assert {lab.species: lab.rank for lab in labels} == {"4-Glc + 1-Arg": 1, "6-Glc + 2-Arg": 2, "1-Arg": 3}
     assert peak.label_ids == ["P1-2", "P1-1", "P1-3"]
     assert promote_plausible([peak], labels, tried={}) is False  # the new top label is not implausible
+
+
+def test_isotope_ratios_at_half_and_one_dalton():
+    mz = [500.0, 500.502, 501.003, 600.0, 601.003]
+    inten = [100.0, 55.0, 20.0, 80.0, 24.0]
+    assert isotope_ratios(mz, inten, 500.0, 1) == (0.55, 0.2)
+    assert isotope_ratios(mz, inten, 600.0, 1) == (0.0, 0.3)

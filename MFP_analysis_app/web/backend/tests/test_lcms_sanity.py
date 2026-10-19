@@ -10,6 +10,7 @@ from app.services.lcms_sanity import (
     apply_rules,
     check_adduct,
     check_artifact,
+    check_charge,
     check_chemistry,
     check_eic,
     check_ion,
@@ -204,3 +205,12 @@ def test_failed_peaks_do_not_make_a_label_ambiguous():
     labs = [label(id="real", peak_id="p1", ms_rt_min=5.0), label(id="junk", peak_id="p2", ms_rt_min=20.0)]
     assert set(ambiguity(labs, RULES)) == {"real", "junk"}
     assert set(ambiguity(labs, RULES, bad_peaks={"p2"})) == {"junk"}
+
+
+def test_isotopes_half_a_dalton_apart_mean_a_2plus_ion():
+    assert check_charge(label(charge=1, half_step_ratio=0.0, full_step_ratio=0.2), RULES) == []
+    assert check_charge(label(charge=1, half_step_ratio=None), RULES) == []
+    reasons = check_charge(label(charge=1, half_step_ratio=0.4, full_step_ratio=0.1), RULES)
+    assert reasons == ["wrong charge: isotope peaks 0.5 apart (40% of the ion), so this is probably a 2+ ion"]
+    assert reasons[0].startswith(IMPLAUSIBLE)
+    assert check_charge(label(charge=2, half_step_ratio=0.4, full_step_ratio=0.1), RULES) == []

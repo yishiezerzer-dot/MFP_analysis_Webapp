@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 LabelStatus = Literal["ok", "flagged", "alternative"]
 # Reasons that make a candidate implausible rather than merely doubtful: the pipeline then takes the
 # peak's next candidate, as a chemist does when the biggest match cannot be right.
-IMPLAUSIBLE = ("artifact:", "unlikely chemistry:", "no series neighbours:")
+IMPLAUSIBLE = ("artifact:", "unlikely chemistry:", "no series neighbours:", "wrong charge:")
 
 
 class SanityRules(BaseModel):
@@ -56,6 +56,9 @@ class SanityRules(BaseModel):
     max_constant_ratio: float = Field(
         0.5, gt=0, description="An ion whose run-wide median EIC is at least this share of its height here is an artifact."
     )
+    # On these single-quad exports nothing sits half a Dalton from an ion unless the ion is 2+. A missing
+    # +1 isotope is not used: noise fills +1 as often as real isotopes do, and weak real ions lack one.
+    half_isotope_ratio: float = Field(0.25, gt=0, description="A +0.5 peak this tall (vs the ion) marks a 2+ ion.")
     # Ranking
     top_k: int = Field(2, ge=1, description="Candidates kept per UV peak; the rest become alternatives.")
 
@@ -91,6 +94,9 @@ class LabelFacts:
     amino_acids: int = 0  # amino-acid units in the chain
     hydroxy_acids: int = 0
     constant_ratio: Optional[float] = None  # run-wide median EIC / EIC height at this peak
+    charge: int = 1
+    half_step_ratio: Optional[float] = None  # tallest peak 0.5/z above the ion, relative to the ion
+    full_step_ratio: Optional[float] = None  # tallest peak 1/z above the ion (the first isotope)
 
 
 @dataclass
@@ -186,6 +192,15 @@ def check_artifact(label: LabelFacts, rules: SanityRules) -> List[str]:
     if label.constant_ratio is None or label.constant_ratio < rules.max_constant_ratio:
         return []
     return [f"artifact: the ion is present all through the run (median {label.constant_ratio:.0%} of its height here)"]
+
+
+def check_charge(label: LabelFacts, rules: SanityRules) -> List[str]:
+    """Isotopes 0.5 apart around a 1+ label: the ion is really 2+, so the composition is wrong."""
+    if label.charge != 1 or label.half_step_ratio is None:
+        return []
+    if label.half_step_ratio < rules.half_isotope_ratio or label.half_step_ratio <= (label.full_step_ratio or 0.0):
+        return []
+    return [f"wrong charge: isotope peaks 0.5 apart ({label.half_step_ratio:.0%} of the ion), so this is probably a 2+ ion"]
 
 
 def _composition(counts: Dict[str, int]) -> frozenset:
@@ -349,6 +364,7 @@ def apply_rules(
         reasons += check_adduct(lab, enabled_adducts, rules)
         reasons += check_chemistry(lab, rules)
         reasons += check_artifact(lab, rules)
+        reasons += check_charge(lab, rules)
         reasons += neighbours.get(lab.id, [])
         reasons += verdict.reasons
         reasons += order.get(lab.id, [])

@@ -230,6 +230,8 @@ class PipelineLabel(BaseModel):
     ions: List[Ion]
     eic_apex_rt_min: Optional[float] = None
     constant_ratio: Optional[float] = None  # run-wide median EIC / EIC height at the peak (artifact check)
+    half_step_ratio: Optional[float] = None  # peak 0.5/z above the ion / the ion (2+ check)
+    full_step_ratio: Optional[float] = None  # peak 1/z above the ion / the ion (first isotope)
     series_support: float = 0.0
     support_members: List[int] = Field(default_factory=list)
     status: LabelStatus = "ok"
@@ -582,6 +584,24 @@ def match_window(spec: WindowSpectrum, settings: PipelineSettings) -> Tuple[List
     return ranked[: settings.max_candidates_per_peak], base
 
 
+ISOTOPE_STEP = 1.003355  # 13C − 12C
+
+
+def isotope_ratios(mz: List[float], intensity: List[float], ion_mz: float, charge: int, tol: float = 0.15) -> Tuple[float, float]:
+    """(tallest peak half an isotope step above the ion, tallest a whole step above), each relative to the ion."""
+    m, i = np.asarray(mz, float), np.asarray(intensity, float)
+
+    def near(x: float) -> float:
+        sel = np.abs(m - x) <= tol
+        return float(i[sel].max()) if sel.any() else 0.0
+
+    ion = near(ion_mz)
+    if ion <= 0:
+        return 0.0, 0.0
+    step = ISOTOPE_STEP / max(1, charge)
+    return round(near(ion_mz + step / 2) / ion, 4), round(near(ion_mz + step) / ion, 4)
+
+
 def _eic_facts(
     state: LCMSSessionState, mz: float, tol: float, polarity: str, center: float, half_window: float
 ) -> Tuple[Optional[float], Optional[float]]:
@@ -658,6 +678,7 @@ def run_pipeline(
             apex_rt, constant = _eic_facts(
                 state, rep.mz, tol, settings.polarity, peak.ms_rt_min, max(0.5, 3 * peak.width_min)
             )
+            half, full = isotope_ratios(spec.mz, spec.intensity, rep.mz, rep.charge)
             label = PipelineLabel(
                 id=f"{peak.id}-{rank}",
                 peak_id=peak.id,
@@ -678,6 +699,8 @@ def run_pipeline(
                 score=float(cand["score"]),  # type: ignore[arg-type]
                 ions=list(cand["ions"]),  # type: ignore[arg-type]
                 eic_apex_rt_min=apex_rt,
+                half_step_ratio=half,
+                full_step_ratio=full,
                 constant_ratio=constant if settings.background.enabled and settings.background.method == "eic" else None,
             )
             labels.append(label)
@@ -815,6 +838,9 @@ def check_labels(peaks: List[UVPeak], labels: List[PipelineLabel], settings: Pip
             amino_acids=sum(n for m, n in lab.counts.items() if kinds.get(m) == "amino_acid"),
             hydroxy_acids=sum(n for m, n in lab.counts.items() if kinds.get(m) == "hydroxy_acid"),
             constant_ratio=lab.constant_ratio,
+            charge=lab.charge,
+            half_step_ratio=lab.half_step_ratio,
+            full_step_ratio=lab.full_step_ratio,
         )
         for lab in labels
     ]
