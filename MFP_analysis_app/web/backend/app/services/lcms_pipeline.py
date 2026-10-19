@@ -75,7 +75,7 @@ class Monomer(BaseModel):
 class UVPeakSettings(BaseModel):
     detect_sn: float = Field(3.0, description="Detection threshold: prominence of at least this many noise σ.")
     min_distance_min: float = Field(0.05, description="Closest two UV apexes may be.")
-    max_peaks: int = Field(60, ge=1, le=200)
+    max_peaks: int = Field(35, ge=1, le=200)
 
 
 class AlignSettings(BaseModel):
@@ -324,7 +324,7 @@ def pick_uv_peaks(
     *,
     detect_sn: float = 3.0,
     min_distance_min: float = 0.05,
-    max_peaks: int = 60,
+    max_peaks: int = 35,
     offset_min: float = 0.0,
 ) -> Tuple[List[UVPeak], float]:
     """UV peaks with apex, half-height start/end, area and S/N (scipy find_peaks + peak_widths).
