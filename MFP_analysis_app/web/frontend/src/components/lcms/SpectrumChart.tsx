@@ -10,7 +10,7 @@ import { extractTopPeaks } from "../../lcms/analysis";
 import { DEFAULT_POLYMER_LABEL_SETTINGS, DEFAULT_OVERLAY_LABEL_SETTINGS, OVERLAY_PALETTE, type ChartSettings, type SpectrumOverlayMode } from "../../lcms/settings";
 import { Atom, Hand, Hexagon, Palette, RotateCcw, RotateCw, ZoomIn } from "lucide-react";
 import { SegmentedControl } from "../common/SegmentedControl";
-import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, LCMSSpectrumOverlayTrace, cleanLabelText, formatRt, axisRange, axisTitle, axisFrame, spectrumDefaultRange, visibleLabelMask } from "../../lcms/viewShared";
+import { useContainerSize, usePlotResizePulses, queuePlotlyElementResize, RtUnit, LCMSSpectrumOverlayTrace, cleanLabelText, formatRt, axisRange, axisTitle, axisFrame, maxIntensityInRange, spectrumDefaultRange, visibleLabelMask } from "../../lcms/viewShared";
 import { ChartCardTitle, ICON_PROPS, ToolbarButton } from "../common/ChartCardParts";
 import { Hint } from "../Hint";
 
@@ -269,6 +269,18 @@ export function SpectrumChart(props: {
 
   const isButterfly = overlayMode === "butterfly" || overlayMode === "butterfly_normalized";
   const isNorm = overlayMode === "normalized" || overlayMode === "butterfly_normalized";
+  // % of the tallest peak in view (Design → Y axis); the overlay % modes keep their own scaling.
+  const relative = props.settings.yScale === "relative" && !isNorm && !isButterfly;
+  const viewRange = useMemo(
+    () => viewXRange ?? axisRange(props.settings.axis.xMin, props.settings.axis.xMax) ?? defaultXRange,
+    [viewXRange, props.settings.axis.xMin, props.settings.axis.xMax, defaultXRange],
+  );
+  const activeViewMax = useMemo(
+    () => (s && relative ? maxIntensityInRange(s.mz, s.intensity, viewRange) : 1),
+    [s, relative, viewRange],
+  );
+  // What 100% means for the active trace, or null for absolute intensity.
+  const activeScale = isNorm ? activeBasePeak : relative ? activeViewMax : null;
 
   const criticalMzs = useMemo(() => visibleLabels.map((l) => l.mz), [visibleLabels]);
 
@@ -279,11 +291,11 @@ export function SpectrumChart(props: {
 
   const activeY = useMemo(() => {
     if (displayActive.mz.length === 0) return [];
-    if (isNorm) {
-      return displayActive.intensity.map((v) => (v / activeBasePeak) * 100);
+    if (activeScale) {
+      return displayActive.intensity.map((v) => (v / activeScale) * 100);
     }
     return displayActive.intensity;
-  }, [activeBasePeak, displayActive, isNorm]);
+  }, [activeScale, displayActive]);
 
   const overlayData = useMemo(
     () =>
@@ -295,6 +307,8 @@ export function SpectrumChart(props: {
             if (trace.spectrum.intensity[i] > max) max = trace.spectrum.intensity[i];
           }
           traceBasePeak = max > 0 ? max : 1;
+        } else if (relative) {
+          traceBasePeak = maxIntensityInRange(trace.spectrum.mz, trace.spectrum.intensity, viewRange);
         }
 
         const traceCriticalMzs = trace.spectrum.labels.map((l) => l.mz);
@@ -315,6 +329,9 @@ export function SpectrumChart(props: {
           yValues = displayTrace.intensity.map((v) => -v);
           hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>int: %{customdata[0]:.3e}<extra></extra>`;
         } else if (overlayMode === "normalized") {
+          yValues = displayTrace.intensity.map((v) => (v / traceBasePeak) * 100);
+          hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata[0]:.3e}<extra></extra>`;
+        } else if (relative) {
           yValues = displayTrace.intensity.map((v) => (v / traceBasePeak) * 100);
           hovertemplate = `${trace.display_name}<br>m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata[0]:.3e}<extra></extra>`;
         } else {
@@ -347,6 +364,8 @@ export function SpectrumChart(props: {
       overlayMode,
       props.overlayTraces,
       props.settings.barWidth,
+      relative,
+      viewRange,
       props.settings.overlayColors,
       props.settings.overlayColorsBySessionId,
       traceOpacity,
@@ -370,6 +389,8 @@ export function SpectrumChart(props: {
           if (trace.spectrum.intensity[i] > max) max = trace.spectrum.intensity[i];
         }
         traceBasePeak = max > 0 ? max : 1;
+      } else if (relative) {
+        traceBasePeak = maxIntensityInRange(trace.spectrum.mz, trace.spectrum.intensity, viewRange);
       }
 
       const traceColor =
@@ -392,7 +413,7 @@ export function SpectrumChart(props: {
             labelY = isNorm ? -((label.intensity / traceBasePeak) * 100) : -label.intensity;
             yshift = -(18 + traceIndex * 10 + labelIndex * 2);
             ay = isVertical ? 46 + traceIndex * 14 : 34 + traceIndex * 14;
-          } else if (isNorm) {
+          } else if (isNorm || relative) {
             labelY = (label.intensity / traceBasePeak) * 100;
           }
 
@@ -425,6 +446,8 @@ export function SpectrumChart(props: {
     overlayLabelCfg,
     props.annotate,
     props.overlayTraces,
+    relative,
+    viewRange,
     props.settings.labels.enabled,
     props.settings.labels.fontSize,
     props.settings.overlayColors,
@@ -540,7 +563,7 @@ export function SpectrumChart(props: {
     if (!props.annotate || !xRangeNow || visibleLabels.length < 2 || !specPlotSize.width || !specPlotSize.height) return null;
     const plotW = Math.max(1, specPlotSize.width - 85);
     const plotH = Math.max(1, specPlotSize.height - ((props.settings.title ? 28 : 20) + 45));
-    const yTop = (isNorm ? 100 : activeBasePeak) * 1.05;
+    const yTop = (activeScale ? 100 : activeBasePeak) * 1.05;
     const [r0, r1] = xRangeNow;
     return visibleLabelMask(
       visibleLabels.map((lbl, i) => {
@@ -553,7 +576,7 @@ export function SpectrumChart(props: {
         const w = text.length * fontSize * 0.6 + 4;
         const h = fontSize + 4;
         const x = (((offset?.x ?? lbl.mz) - r0) / (r1 - r0)) * plotW + (offset?.ax ?? 0);
-        const yVal = offset?.y ?? (isNorm ? (lbl.intensity / activeBasePeak) * 100 : lbl.intensity);
+        const yVal = offset?.y ?? (activeScale ? (lbl.intensity / activeScale) * 100 : lbl.intensity);
         const onScreen = x >= 0 && x <= plotW;
         return {
           x,
@@ -803,12 +826,12 @@ export function SpectrumChart(props: {
                 type: "bar",
                 x: displayActive.mz,
                 y: activeY,
-                customdata: displayActive.intensity.map((v) => [v, (v / activeBasePeak) * 100]),
+                customdata: displayActive.intensity.map((v) => [v, (v / (activeScale ?? activeBasePeak)) * 100]),
                 width: props.settings.barWidth,
                 marker: { color: props.colorOverride ?? themeTraceColor(props.settings.color, pt.theme) },
                 ...exportColorMeta(props.colorOverride ?? props.settings.color),
                 hovertemplate:
-                  isNorm
+                  activeScale
                     ? "m/z: %{x:.4f}<br>rel: %{y:.1f}%<br>int: %{customdata[0]:.3e}<extra></extra>"
                     : "m/z: %{x:.4f}<br>int: %{y:.3e}<extra></extra>",
                 name: props.overlayTraces.length > 0 ? "MS1 (Active)" : "MS1",
@@ -838,7 +861,7 @@ export function SpectrumChart(props: {
               uirevision: `${spectrumKey}|${userXRange?.join(",") ?? ""}`,
               yaxis: {
                 title: axisTitle(
-                  props.settings.yTitle ||
+                  (relative ? "Relative intensity (%)" : props.settings.yTitle) ||
                     (overlayMode === "butterfly_normalized"
                       ? "MS1 (% Base Peak) [Top: Active (+100%) / Bottom: Overlay (-100%)]"
                       : overlayMode === "butterfly"
@@ -873,7 +896,7 @@ export function SpectrumChart(props: {
                       const color = isPoly ? (polyCfg.color || "#7c3aed") : props.settings.labels.color;
                       const fontSize = isPoly ? (polyCfg.fontSize || 10) : props.settings.labels.fontSize;
 
-                      const labelY = isNorm ? (lbl.intensity / activeBasePeak) * 100 : lbl.intensity;
+                      const labelY = activeScale ? (lbl.intensity / activeScale) * 100 : lbl.intensity;
                       const defaultAx = 0;
                       const defaultAy = defaultLabelAy(isPoly, isVertical);
                       const offset = labelOffsets[lblIdx];

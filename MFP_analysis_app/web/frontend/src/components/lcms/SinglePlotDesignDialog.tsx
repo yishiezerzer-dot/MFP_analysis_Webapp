@@ -250,6 +250,17 @@ export function SinglePlotDesignDialog({
               ]}
               onChange={(value) => updateChart({ frameMode: value as FrameMode })}
             />
+            {graphId === "spectrum" && (
+              <SelectSetting
+                label="Y axis"
+                value={s.yScale ?? "absolute"}
+                options={[
+                  { value: "absolute", label: "Absolute intensity" },
+                  { value: "relative", label: "% relative (tallest peak in view)" },
+                ]}
+                onChange={(value) => updateChart({ yScale: value as "absolute" | "relative" })}
+              />
+            )}
           </div>
         </GroupBox>
         </div>

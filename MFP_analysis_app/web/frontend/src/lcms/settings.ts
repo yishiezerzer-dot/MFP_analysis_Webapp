@@ -75,6 +75,8 @@ export interface ChartSettings {
   showGrid: boolean;
   frameMode: FrameMode;
   showScaleBars: boolean;
+  /** MS1 only: "relative" plots % of the tallest peak in the current view. */
+  yScale?: "absolute" | "relative";
   annotationConnectorColor?: string;
   annotationConnectorOpacity?: number;
   polymerLabels?: PolymerLabelSettings;

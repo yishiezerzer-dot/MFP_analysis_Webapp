@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { spectrumDefaultRange, visibleLabelMask } from "../viewShared";
+import { maxIntensityInRange, spectrumDefaultRange, visibleLabelMask } from "../viewShared";
+
+describe("maxIntensityInRange", () => {
+  it("is the tallest peak inside the view, for a y axis in % of what is on screen", () => {
+    const mz = [100, 200, 300, 400];
+    const intensity = [50, 1000, 20, 400];
+    expect(maxIntensityInRange(mz, intensity, [250, 450])).toBe(400);
+    expect(maxIntensityInRange(mz, intensity, null)).toBe(1000);
+    expect(maxIntensityInRange(mz, intensity, [500, 600])).toBe(1000); // nothing in view: the whole spectrum
+    expect(maxIntensityInRange([], [], null)).toBe(1);
+  });
+});
 
 describe("spectrumDefaultRange", () => {
   it("fits significant peaks with 5% margin left and 10% right, ignoring low noise far out", () => {

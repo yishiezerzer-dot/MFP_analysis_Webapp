@@ -908,6 +908,17 @@ export function filterIgnoredRegionSpectrum(
 // carry noise out to the scan limit (e.g. data ends near 300 but the axis ran to 1500).
 const RANGE_PEAK_FRACTION = 0.005;
 
+export function maxIntensityInRange(mz: number[], intensity: number[], range: [number, number] | null | undefined): number {
+  let inView = 0;
+  let all = 0;
+  for (let i = 0; i < intensity.length; i++) {
+    const v = intensity[i];
+    if (v > all) all = v;
+    if (range && mz[i] >= range[0] && mz[i] <= range[1] && v > inView) inView = v;
+  }
+  return inView > 0 ? inView : all > 0 ? all : 1;
+}
+
 export function spectrumDefaultRange(
   mz: ArrayLike<number>,
   intensity: ArrayLike<number>,
