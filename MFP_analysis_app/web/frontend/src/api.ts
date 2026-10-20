@@ -419,6 +419,7 @@ export interface PipelineSettingsInput {
   forms?: PipelineForms;
   background?: PipelineBackground;
   dimers?: boolean;
+  align?: { fallback_offset_min?: number | null };
   rules?: PipelineRules;
   layout?: { orientation?: "vertical" | "horizontal" };
 }
@@ -518,7 +519,7 @@ export interface PipelineResult {
   display_name: string;
   uv_filename: string | null;
   polarity: string;
-  alignment: { offset_min: number; method: "xcorr" | "manual" | "none"; score: number | null; step_min: number | null };
+  alignment: { offset_min: number; method: "xcorr" | "manual" | "none" | "fallback"; score: number | null; step_min: number | null };
   uv_noise: number;
   uv_rt: number[];
   uv_signal: number[];

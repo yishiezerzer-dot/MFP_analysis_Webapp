@@ -281,3 +281,19 @@ def test_eic_shape_score_follows_the_uv_peak():
     assert eic_uv_correlation(t, same, uv_t, uv, 12.0, 0.5) > 0.9
     assert eic_uv_correlation(t, other, uv_t, uv, 12.0, 0.5) < 0.3
     assert eic_uv_correlation(t, flat, uv_t, uv, 12.0, 0.5) < 0.3
+
+
+def test_a_weak_alignment_falls_back_to_the_usual_delay():
+    from app.services.lcms_pipeline import Alignment, AlignSettings, check_alignment
+
+    usual = AlignSettings(fallback_offset_min=0.115)
+    # L7: a weak correlation picked +0.870 min; the instrument's delay is about +0.115 min.
+    weak = Alignment(offset_min=0.870, method="xcorr", score=0.24)
+    chosen, note = check_alignment(weak, usual)
+    assert chosen.offset_min == 0.115 and chosen.method == "fallback"
+    assert "weak" in note and "+0.870" in note and "+0.115" in note
+    good = Alignment(offset_min=0.118, method="xcorr", score=0.56)
+    assert check_alignment(good, usual) == (good, "")
+    # Without a usual delay, a weak alignment is kept but reported.
+    kept, note = check_alignment(weak, AlignSettings())
+    assert kept is weak and "weak" in note

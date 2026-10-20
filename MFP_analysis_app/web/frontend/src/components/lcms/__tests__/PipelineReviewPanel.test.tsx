@@ -116,6 +116,7 @@ describe("pipeline dialog settings", () => {
     expect(s.background).toEqual({ enabled: true });
     expect(s.tolerance_da).toBe(0.5);
     expect(s.dimers).toBe(false);
+    expect(s.align).toEqual({ fallback_offset_min: 0.115 }); // the usual UV→MS delay, used when alignment is weak
   });
 
   it("passes cyclic forms, named end groups and 2+ charges, dropping half-filled end groups", () => {
@@ -128,5 +129,6 @@ describe("pipeline dialog settings", () => {
     expect(s.charges).toEqual([1, 2]);
     expect(s.background).toEqual({ enabled: false });
     expect(s.dimers).toBe(true);
+    expect(buildPipelineSettings({ ...STORED_DEFAULTS, usualDelay: Number.NaN }, []).align).toEqual({ fallback_offset_min: null });
   });
 });

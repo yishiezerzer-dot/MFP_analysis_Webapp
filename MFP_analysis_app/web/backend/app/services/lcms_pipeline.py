@@ -83,6 +83,10 @@ class AlignSettings(BaseModel):
     enabled: bool = True
     max_lag_min: float = Field(1.0, gt=0)
     manual_offset_min: Optional[float] = Field(None, description="Use this UV→MS offset instead of aligning.")
+    # The UV→MS delay is a property of the instrument (batch 2: +0.103 to +0.124 min). A weak TIC/UV
+    # correlation can pick a wrong lag (L7: +0.870 at score 0.24), so below min_score the usual delay is used.
+    min_score: float = Field(0.35, ge=0, le=1, description="Below this correlation score the alignment is called weak.")
+    fallback_offset_min: Optional[float] = Field(None, description="The instrument's usual UV→MS delay, used when the alignment is weak.")
 
 
 class BackgroundSettings(BaseModel):
@@ -175,7 +179,7 @@ class PipelineSettings(BaseModel):
 
 class Alignment(BaseModel):
     offset_min: float  # UV time + offset = MS time
-    method: Literal["xcorr", "manual", "none"]
+    method: Literal["xcorr", "manual", "none", "fallback"]
     score: Optional[float] = None
     step_min: Optional[float] = None
 
@@ -264,6 +268,17 @@ class PipelineResult(BaseModel):
 
 
 # ------------------------------------------------------------------ alignment and UV peaks
+
+
+def check_alignment(found: Alignment, settings: AlignSettings) -> Tuple[Alignment, str]:
+    """Keep a confident alignment; replace a weak one by the usual delay when given. Returns (alignment, note)."""
+    if found.method != "xcorr" or found.score is None or found.score >= settings.min_score:
+        return found, ""
+    weak = f"The UV/MS correlation is weak (score {found.score:.2f}), so the offset {found.offset_min:+.3f} min may be wrong"
+    if settings.fallback_offset_min is None:
+        return found, weak + "; check it, or set the instrument's usual delay."
+    used = Alignment(offset_min=settings.fallback_offset_min, method="fallback", score=found.score, step_min=found.step_min)
+    return used, weak + f"; used the usual delay {settings.fallback_offset_min:+.3f} min instead."
 
 
 def _baseline_corrected(y: np.ndarray, window_pts: int) -> np.ndarray:
@@ -766,7 +781,11 @@ def run_pipeline(
     if settings.align.manual_offset_min is not None:
         alignment = Alignment(offset_min=settings.align.manual_offset_min, method="manual")
     elif settings.align.enabled:
-        alignment = align_uv_to_ms(ms_rt, ms_tic, uv_rt, uv_y, max_lag_min=settings.align.max_lag_min)
+        alignment, note = check_alignment(
+            align_uv_to_ms(ms_rt, ms_tic, uv_rt, uv_y, max_lag_min=settings.align.max_lag_min), settings.align
+        )
+        if note:
+            messages.append(note)
     else:
         alignment = Alignment(offset_min=0.0, method="none")
     offset = alignment.offset_min

@@ -38,6 +38,7 @@ export interface StoredSettings {
   charges: "1" | "1,2";
   background: boolean;
   dimers: boolean;
+  usualDelay: number; // the instrument's UV→MS delay (min), used when alignment is weak; NaN = none
 }
 
 export const STORED_DEFAULTS: StoredSettings = {
@@ -51,6 +52,7 @@ export const STORED_DEFAULTS: StoredSettings = {
   charges: "1",
   background: true,
   dimers: false,
+  usualDelay: 0.115, // median of the 40 batch-2 runs
 };
 
 const validEndGroups = (groups: PipelineEndGroup[]) =>
@@ -66,6 +68,7 @@ export function buildPipelineSettings(stored: StoredSettings, monomers: Pipeline
     forms: { linear: stored.linear, cyclic: stored.cyclic, end_groups: validEndGroups(stored.endGroups) },
     background: { enabled: stored.background },
     dimers: stored.dimers,
+    align: { fallback_offset_min: Number.isFinite(stored.usualDelay) ? stored.usualDelay : null },
     rules: { elution_direction: stored.elution },
   };
 }
@@ -409,6 +412,22 @@ export function PipelineDialog(props: {
               <option value="increasing">later (higher RT)</option>
               <option value="off">don't check</option>
             </select>
+          </label>
+        </Hint>
+
+        <Hint id="lcms.pipeline.usualDelay" className="w-full">
+          <label className="flex flex-1 items-center gap-2">
+            <span className="label">Usual UV→MS delay (min)</span>
+            <input
+              className="input w-28"
+              type="number"
+              step="0.001"
+              aria-label="Usual UV to MS delay"
+              placeholder="none"
+              value={Number.isFinite(stored.usualDelay) ? stored.usualDelay : ""}
+              onChange={(e) => setStored({ ...stored, usualDelay: e.target.valueAsNumber })}
+            />
+            <span className="text-[12px] text-ink-500">used when the automatic alignment is unsure</span>
           </label>
         </Hint>
 
