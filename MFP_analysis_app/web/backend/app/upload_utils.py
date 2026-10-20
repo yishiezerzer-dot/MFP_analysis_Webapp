@@ -70,6 +70,10 @@ async def stream_upload_to_file(
     final_dest = dest_dir / f"{stem}.{digest}{suffix}"
 
     if temp_dest.exists():
-        temp_dest.replace(final_dest)
+        if final_dest.exists():
+            # Same content hash: keep the file already there (it may be open; Windows can't replace it).
+            temp_dest.unlink(missing_ok=True)
+        else:
+            temp_dest.replace(final_dest)
 
     return final_dest, name

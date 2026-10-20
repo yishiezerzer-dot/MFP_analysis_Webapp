@@ -45,6 +45,13 @@ def start(settings=SETTINGS) -> str:
     return resp.json()["job_id"]
 
 
+def start_on_session(session_id: str, settings=SETTINGS) -> str:
+    resp = client.post("/api/lcms/pipeline", data={"settings": json.dumps(settings), "session_id": session_id},
+                       headers={"X-Workspace-Id": "pipe_ws"})
+    assert resp.status_code == 200, resp.text
+    return resp.json()["job_id"]
+
+
 @pytest.fixture(scope="module")
 def finished_job() -> str:
     job_id = start()
@@ -158,3 +165,61 @@ def test_cancelling_stops_a_running_job():
 
 def test_automation_action_is_registered():
     assert "lcms.run_pipeline" in {spec.id for spec in list_actions()}
+
+
+def test_past_runs_are_listed_and_deleted_with_the_file_they_opened():
+    job_id = start()
+    assert wait_for(job_id)["status"] == "done"
+    runs = client.get("/api/lcms/pipeline", headers={"X-Workspace-Id": "pipe_ws"}).json()
+    run = next(r for r in runs if r["job_id"] == job_id)
+    assert run["status"] == "done" and run["uploaded"] is True and run["file_open"] is True
+    assert run["display_name"] == "example_plga.mzML" and run["n_peaks"] >= 20 and run["approved"] >= 1
+    out_dir = Path(get_job(job_id)["output_dir"])
+    sid = run["session_id"]
+    deleted = client.delete(f"/api/lcms/pipeline/{job_id}/run").json()
+    assert deleted == {"deleted": True, "file_closed": True}
+    assert not out_dir.exists() and get_job(job_id) is None
+    assert client.get(f"/api/lcms/sessions/{sid}").status_code == 404  # the run's own upload is closed
+    assert all(r["job_id"] != job_id for r in client.get("/api/lcms/pipeline", headers={"X-Workspace-Id": "pipe_ws"}).json())
+    assert client.delete(f"/api/lcms/pipeline/{job_id}/run").status_code == 404
+
+
+def test_a_run_on_an_already_open_file_leaves_the_file_open(finished_job):
+    sid = client.get(f"/api/lcms/pipeline/{finished_job}").json()["session_id"]
+    job_id = start_on_session(sid)
+    assert wait_for(job_id)["status"] == "done"
+    assert client.delete(f"/api/lcms/pipeline/{job_id}/run").json() == {"deleted": True, "file_closed": False}
+    assert client.get(f"/api/lcms/sessions/{sid}").status_code == 200
+
+
+def test_runs_older_than_five_days_are_cleaned_up():
+    from datetime import datetime, timedelta, timezone
+
+    from app.db import get_db_connection
+    from app.routers.pipeline import cleanup_old_runs
+
+    old, recent = start(), start()
+    assert wait_for(old)["status"] == "done" and wait_for(recent)["status"] == "done"
+    stamp = (datetime.now(timezone.utc) - timedelta(days=6)).isoformat()
+    conn = get_db_connection()
+    with conn:
+        conn.execute("UPDATE jobs SET created_at = ? WHERE id = ?", (stamp, old))
+    conn.close()
+    assert cleanup_old_runs(days=5) >= 1
+    assert get_job(old) is None and get_job(recent) is not None
+
+
+def test_a_running_job_cannot_be_deleted():
+    manager = JobManager()
+    started = threading.Event()
+
+    def slow(ctx):
+        started.set()
+        for i in range(200):
+            ctx.progress(i / 200, f"step {i}")
+            time.sleep(0.02)
+
+    job_id = manager.submit("pipeline", slow, params={}, workspace_id="pipe_ws")
+    assert started.wait(5)
+    assert client.delete(f"/api/lcms/pipeline/{job_id}/run").status_code == 409
+    manager.cancel(job_id)

@@ -36,6 +36,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     stop = start_nightly_backups()
+    try:
+        pipeline.cleanup_old_runs()
+    except Exception:  # noqa: BLE001 - never block startup on cleanup
+        logging.getLogger("mfp.pipeline").exception("Pipeline cleanup at startup failed")
     yield
     stop.set()
 

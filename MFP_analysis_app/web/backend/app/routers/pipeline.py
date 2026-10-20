@@ -2,15 +2,25 @@
 then review labels and download the figure and workbook.
 
 POST   /api/lcms/pipeline                 multipart: mzml, uv, settings (JSON) [, session_id] -> {job_id}
+GET    /api/lcms/pipeline                 past runs of this workspace (old ones cleaned up first)
 GET    /api/lcms/pipeline/{id}            status, progress, step, messages
 GET    /api/lcms/pipeline/{id}/result     the PipelineResult
 GET    /api/lcms/pipeline/{id}/figure.svg | figure.png | figure-print.png | peaks.xlsx
 PATCH  /api/lcms/pipeline/{id}/labels     approve/reject labels, outputs regenerated
 DELETE /api/lcms/pipeline/{id}            cancel
+DELETE /api/lcms/pipeline/{id}/run        delete a finished run (and the LCMS file it uploaded itself)
+
+Runs older than MFP_PIPELINE_RETENTION_DAYS (default 5) are deleted the same way, at startup and at
+most once an hour when the list is opened, so a hosted volume doesn't keep growing.
 """
 from __future__ import annotations
 
 import json
+import logging
+import os
+import shutil
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
@@ -19,7 +29,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ValidationError
 
-from ..db import get_job, get_session_record
+from ..db import delete_job, get_data_dir, get_job, get_session_record, list_jobs
 from ..provenance import app_version, record, session_input_sha256
 from ..services.jobs import JobContext, job_manager
 from ..services.lcms_pipeline import PipelineResult, PipelineSettings, apply_layout, peak_spectrum, run_pipeline
@@ -30,6 +40,9 @@ from .lcms import _MZML_UPLOAD_DIR, _UV_UPLOAD_DIR, _ingest_mzml
 
 router = APIRouter()
 KIND = "pipeline"
+RETENTION_DAYS = float(os.environ.get("MFP_PIPELINE_RETENTION_DAYS", "5"))
+_log = logging.getLogger("mfp.pipeline")
+_last_cleanup = 0.0
 
 
 class LabelReview(BaseModel):
@@ -157,6 +170,93 @@ async def create_pipeline(
         parsed, x_workspace_id, session_id=None if mzml else session_id, mzml=mz_saved, uv=uv_saved, rt_unit=rt_unit
     )
     return {"job_id": job_id}
+
+
+def _run_summary(job: Dict[str, Any]) -> Dict[str, Any]:
+    params = job.get("params") or {}
+    out = {
+        "job_id": job["id"],
+        "status": job["status"],
+        "created_at": job["created_at"],
+        "session_id": job["session_id"],
+        "uploaded": bool(params.get("mzml")),  # the run opened its own uploaded file
+        "file_open": bool(job["session_id"]) and registry.get(str(job["session_id"])) is not None,
+        "display_name": params.get("mzml") or "",
+        "uv_filename": params.get("uv") or "",
+        "n_peaks": None,
+        "approved": None,
+    }
+    path = Path(job["output_dir"] or "") / "result.json"
+    if job["status"] == "done" and path.is_file():
+        try:
+            result = PipelineResult.model_validate_json(path.read_text(encoding="utf-8"))
+            out.update(
+                display_name=result.display_name,
+                uv_filename=result.uv_filename or out["uv_filename"],
+                n_peaks=len(result.peaks),
+                approved=sum(lab.review == "approved" for lab in result.labels),
+            )
+        except ValueError:
+            _log.warning("Unreadable pipeline result %s", path)
+    return out
+
+
+def delete_run(job: Dict[str, Any]) -> bool:
+    """Delete a finished run's outputs and record; close the LCMS file only if the run uploaded it itself
+    and no other run uses it (closing deletes its uploads unless another open file shares them).
+    Returns whether a file was closed."""
+    if job["status"] in ("queued", "running"):
+        raise HTTPException(status_code=409, detail="This run is still going; cancel it first.")
+    out_dir = Path(job["output_dir"] or "")
+    if job["output_dir"] and out_dir.resolve().is_relative_to(get_data_dir().resolve()) and out_dir.is_dir():
+        shutil.rmtree(out_dir, ignore_errors=True)
+    delete_job(job["id"])
+    sid = job["session_id"]
+    if not (job.get("params") or {}).get("mzml") or not sid:
+        return False
+    if any(other["session_id"] == sid for other in list_jobs(KIND)):
+        return False
+    return registry.remove(str(sid))
+
+
+def cleanup_old_runs(days: float = RETENTION_DAYS) -> int:
+    """Delete finished runs older than `days`; returns how many."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    n = 0
+    for job in list_jobs(KIND):
+        if job["status"] in ("queued", "running"):
+            continue
+        try:
+            created = datetime.fromisoformat(job["created_at"])
+        except ValueError:
+            continue
+        if created < cutoff:
+            delete_run(job)
+            n += 1
+    if n:
+        _log.info("Deleted %d pipeline run(s) older than %g days", n, days)
+    return n
+
+
+def _cleanup_now_and_then() -> None:
+    global _last_cleanup
+    if time.time() - _last_cleanup >= 3600:
+        _last_cleanup = time.time()
+        try:
+            cleanup_old_runs()
+        except Exception:  # noqa: BLE001 - listing must work even if cleanup fails
+            _log.exception("Pipeline cleanup failed")
+
+
+@router.get("")
+def list_runs(x_workspace_id: str = Header(default="general", alias="X-Workspace-Id")) -> List[Dict[str, Any]]:
+    _cleanup_now_and_then()
+    return [_run_summary(job) for job in list_jobs(KIND, x_workspace_id)]
+
+
+@router.delete("/{job_id}/run")
+def delete_pipeline_run(job_id: str) -> Dict[str, bool]:
+    return {"deleted": True, "file_closed": delete_run(_require_job(job_id))}
 
 
 @router.get("/{job_id}")

@@ -694,6 +694,31 @@ def get_job(job_id: str) -> Optional[Dict[str, Any]]:
     return _job_row(row) if row else None
 
 
+def list_jobs(kind: str, workspace_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Jobs of one kind, newest first (optionally one workspace's)."""
+    sql, args = "SELECT * FROM jobs WHERE kind = ?", [kind]
+    if workspace_id is not None:
+        sql += " AND workspace_id = ?"
+        args.append(workspace_id)
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            rows = conn.execute(sql + " ORDER BY created_at DESC", args).fetchall()
+        finally:
+            conn.close()
+    return [_job_row(row) for row in rows]
+
+
+def delete_job(job_id: str) -> None:
+    with _DB_LOCK:
+        conn = get_db_connection()
+        try:
+            with conn:
+                conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+        finally:
+            conn.close()
+
+
 def fail_unfinished_jobs(reason: str) -> int:
     """Jobs still queued or running when the server starts were cut off by a restart."""
     now = datetime.now(timezone.utc).isoformat()
