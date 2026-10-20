@@ -530,6 +530,19 @@ export interface PipelineResult {
   created_at: string;
 }
 
+export interface PipelineRunSummary {
+  job_id: string;
+  status: "queued" | "running" | "done" | "failed" | "cancelled";
+  created_at: string;
+  session_id: string | null;
+  uploaded: boolean; // the run opened its own uploaded file
+  file_open: boolean;
+  display_name: string;
+  uv_filename: string;
+  n_peaks: number | null;
+  approved: number | null;
+}
+
 export type PipelineFile = "figure.svg" | "figure.png" | "figure-print.png" | "peaks.xlsx";
 
 // --- Example datasets ---
@@ -1080,6 +1093,12 @@ export const api = {
     cancel: (jobId: string) =>
       apiFetch(`/api/lcms/pipeline/${encodeURIComponent(jobId)}`, { method: "DELETE" }).then((r) =>
         handle<{ cancelled: boolean; status: string }>(r),
+      ),
+    // Past runs of this workspace; runs older than 5 days are deleted by the server.
+    list: () => apiFetch("/api/lcms/pipeline").then((r) => handle<PipelineRunSummary[]>(r)),
+    deleteRun: (jobId: string) =>
+      apiFetch(`/api/lcms/pipeline/${encodeURIComponent(jobId)}/run`, { method: "DELETE" }).then((r) =>
+        handle<{ deleted: boolean; file_closed: boolean }>(r),
       ),
     // The summed (and background-subtracted) spectrum a UV peak was labelled from.
     peakSpectrum: (jobId: string, peakId: string) =>

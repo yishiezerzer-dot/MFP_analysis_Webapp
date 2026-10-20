@@ -39,9 +39,10 @@ import { SpectrumChart } from "../components/lcms/SpectrumChart";
 import { StatusBar, FindMzDialog, CustomUvLabelDialog, EICDialog } from "../components/lcms/LCMSViewDialogs";
 import { TabEmptyState } from "../components/common/TabEmptyState";
 import { ExampleTips } from "../components/ExampleData";
-import { ChartLine, Wand2, Workflow } from "lucide-react";
+import { ChartLine, History, Wand2, Workflow } from "lucide-react";
 import { PipelineDialog } from "../components/lcms/PipelineDialog";
 import { PipelineReviewPanel } from "../components/lcms/PipelineReviewPanel";
+import { PipelineRunsDialog } from "../components/lcms/PipelineRunsDialog";
 import { pipelineUvLabels } from "../lcms/pipelineLabels";
 import { ICON_PROPS } from "../components/common/ChartCardParts";
 import { useWorkflow } from "../workflows/WorkflowProvider";
@@ -1472,8 +1473,9 @@ export function LCMSView() {
 
   useRegisterFileIngest("/lcms", onUpload);
 
-  const onRemove = async (sid: string) => {
-    await api.lcms.remove(sid).catch((err) => setError(String(err)));
+  // closedOnServer: the server already closed it (deleting a pipeline run that uploaded this file).
+  const onRemove = async (sid: string, closedOnServer = false) => {
+    if (!closedOnServer) await api.lcms.remove(sid).catch((err) => setError(String(err)));
     setSessions((prev) => prev.filter((s) => s.session_id !== sid));
     setSessionProjectById((prev) => {
       if (!(sid in prev)) return prev;
@@ -1798,15 +1800,33 @@ export function LCMSView() {
   // One-click pipeline: the dialog runs it; its result's approved labels become this run's UV labels.
   const [pipelineOpen, setPipelineOpen] = useState(false);
   const [pipelineJob, setPipelineJob] = useState<{ jobId: string; result: PipelineResult } | null>(null);
+  const [pipelineRunsOpen, setPipelineRunsOpen] = useState(false);
+  // The review panel comes back after a reload: the result stays on the server.
+  const [lastPipelineJobId, setLastPipelineJobId] = useStoredState<string | null>(`${LCMS_STORAGE_PREFIX}.lastPipelineJobId`, null);
+  useEffect(() => {
+    if (pipelineJob || !lastPipelineJobId) return;
+    let stale = false;
+    api.lcmsPipeline.result(lastPipelineJobId).then(
+      (result) => {
+        if (!stale) setPipelineJob({ jobId: lastPipelineJobId, result });
+      },
+      () => setLastPipelineJobId(null), // deleted or cleaned up
+    );
+    return () => {
+      stale = true;
+    };
+    // Only on load and when the remembered run changes.
+  }, [lastPipelineJobId]);
   const applyPipelineResult = useCallback(
     (jobId: string, result: PipelineResult) => {
       setPipelineJob({ jobId, result });
+      setLastPipelineJobId(jobId);
       setUvTextLabelsForSession(result.session_id, (prev) => [
         ...prev.filter((label) => !label.id.startsWith("pipeline:")),
         ...pipelineUvLabels(result, rtUnit === "seconds" ? 60 : 1),
       ]);
     },
-    [rtUnit, setUvTextLabelsForSession],
+    [rtUnit, setLastPipelineJobId, setUvTextLabelsForSession],
   );
   // Review: show the very spectrum the pipeline labelled this peak from (window, offset, background).
   const showPipelinePeak = async (jobId: string, peak: PipelineUVPeak) => {
@@ -3203,6 +3223,12 @@ export function LCMSView() {
               Run full pipeline
             </button>
           </Hint>
+          <Hint id="lcms.pipelineRuns" placement="bottom">
+            <button type="button" className="btn-ghost border border-ink-200" onClick={() => setPipelineRunsOpen(true)}>
+              <History {...ICON_PROPS} />
+              Past runs
+            </button>
+          </Hint>
           <Hint id="lcms.guide" placement="bottom">
             <button type="button" className="btn-ghost border border-ink-200" onClick={guide}>
                 <Wand2 {...ICON_PROPS} />
@@ -3339,13 +3365,31 @@ export function LCMSView() {
             />
           )}
 
+          {pipelineRunsOpen && (
+            <PipelineRunsDialog
+              onOpen={(jobId) => {
+                setPipelineRunsOpen(false);
+                api.lcmsPipeline.result(jobId).then((result) => void onPipelineDone(jobId, result), (err) => setError(String(err)));
+              }}
+              onDeleted={(jobId, fileClosed, sessionId) => {
+                if (pipelineJob?.jobId === jobId) setPipelineJob(null);
+                if (lastPipelineJobId === jobId) setLastPipelineJobId(null);
+                if (fileClosed && sessionId) void onRemove(sessionId, true);
+              }}
+              onClose={() => setPipelineRunsOpen(false)}
+            />
+          )}
+
           {active && pipelineJob && pipelineJob.result.session_id === active.session_id && (
             <PipelineReviewPanel
               jobId={pipelineJob.jobId}
               result={pipelineJob.result}
               onResult={(next) => applyPipelineResult(pipelineJob.jobId, next)}
               onJump={(peak) => void showPipelinePeak(pipelineJob.jobId, peak)}
-              onClose={() => setPipelineJob(null)}
+              onClose={() => {
+                setPipelineJob(null);
+                setLastPipelineJobId(null);
+              }}
             />
           )}
 
