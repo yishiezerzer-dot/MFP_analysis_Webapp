@@ -132,3 +132,53 @@ describe("pipeline dialog settings", () => {
     expect(buildPipelineSettings({ ...STORED_DEFAULTS, usualDelay: Number.NaN }, []).align).toEqual({ fallback_offset_min: null });
   });
 });
+
+describe("faster review", () => {
+  const MANY = [
+    label({ id: "P1-1", review: "pending" }), // top, OK, not yet approved
+    label({ id: "P1-2", rank: 2, text: "8-GA [M+Na]⁺", species: "8-GA", status: "ok", review: "pending", layout: null }), // OK but rank 2
+    label({ id: "P2-1", peak_id: "P1", text: "3-GA [M+H]⁺", species: "3-GA", status: "flagged", review: "pending", layout: null, reasons: ["x"] }),
+    label({ id: "P3-1", text: "4-GA [M+H]⁺", species: "4-GA", status: "flagged", review: "rejected", layout: null, reasons: ["y"] }),
+  ];
+
+  it("approves every OK top label at once, never flagged or second-ranked ones", async () => {
+    review.mockResolvedValue(result(MANY));
+    render(<PipelineReviewPanel jobId="j1" result={result(MANY)} onResult={() => {}} onJump={() => {}} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /approve ok \(1\)/i }));
+    await waitFor(() => expect(review).toHaveBeenCalledWith("j1", [{ id: "P1-1", review: "approved" }]));
+  });
+
+  it("rejects the undecided flagged labels at once", async () => {
+    review.mockResolvedValue(result(MANY));
+    render(<PipelineReviewPanel jobId="j1" result={result(MANY)} onResult={() => {}} onJump={() => {}} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /reject flagged \(1\)/i }));
+    await waitFor(() => expect(review).toHaveBeenCalledWith("j1", [{ id: "P2-1", review: "rejected" }]));
+  });
+
+  it("moves with the arrow keys, approves with A, rejects with R and shows the spectrum with Enter", async () => {
+    review.mockResolvedValue(result(LABELS));
+    const onJump = vi.fn();
+    render(<PipelineReviewPanel jobId="j1" result={result(LABELS)} onResult={() => {}} onJump={onJump} onClose={() => {}} />);
+    const table = screen.getByRole("grid", { name: /pipeline labels/i });
+    table.focus();
+    fireEvent.keyDown(table, { key: "ArrowDown" }); // first row
+    fireEvent.keyDown(table, { key: "ArrowDown" }); // second row: 8-GA
+    fireEvent.keyDown(table, { key: "a" });
+    await waitFor(() => expect(review).toHaveBeenCalledWith("j1", [{ id: "P1-2", review: "approved" }]));
+    fireEvent.keyDown(table, { key: "r" });
+    await waitFor(() => expect(review).toHaveBeenLastCalledWith("j1", [{ id: "P1-2", review: "rejected" }]));
+    fireEvent.keyDown(table, { key: "Enter" });
+    expect(onJump).toHaveBeenCalledWith(expect.objectContaining({ id: "P1" }));
+  });
+
+  it("shows only undecided top labels under To review, and sorts flagged first", () => {
+    render(<PipelineReviewPanel jobId="j1" result={result(MANY)} onResult={() => {}} onJump={() => {}} onClose={() => {}} />);
+    fireEvent.change(screen.getByLabelText("Show"), { target: { value: "todo" } });
+    expect(screen.queryByText("4-GA [M+H]⁺")).toBeNull(); // rejected: decided
+    expect(screen.getByText("3-GA [M+H]⁺")).toBeDefined();
+    fireEvent.change(screen.getByLabelText("Show"), { target: { value: "all" } });
+    fireEvent.change(screen.getByLabelText("Sort"), { target: { value: "status" } });
+    const first = screen.getAllByRole("row")[1];
+    expect(within(first).getByText("flagged")).toBeDefined();
+  });
+});

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import clsx from "clsx";
 import { Check, Download, X } from "lucide-react";
 import { api, type PipelineFile, type PipelineLabel, type PipelineResult, type PipelineReview, type PipelineUVPeak } from "../../api";
@@ -6,7 +6,10 @@ import { downloadBlob } from "../../lcms/viewShared";
 import { ICON_PROPS } from "../common/ChartCardParts";
 import { Hint } from "../Hint";
 
-type Filter = "kept" | "flagged" | "approved" | "all";
+type Filter = "kept" | "todo" | "flagged" | "approved" | "all";
+type Sort = "rt" | "status" | "score";
+
+const STATUS_ORDER: Record<PipelineLabel["status"], number> = { flagged: 0, ok: 1, alternative: 2 };
 
 const STATUS_STYLE: Record<PipelineLabel["status"], string> = {
   ok: "bg-success-surface text-success-fg",
@@ -24,8 +27,27 @@ const FILE_LABEL: Record<PipelineFile, string> = {
 export function visibleLabels(result: PipelineResult, filter: Filter): PipelineLabel[] {
   const topK = result.settings.rules.top_k;
   return result.labels.filter((lab) =>
-    filter === "all" ? true : filter === "kept" ? lab.rank <= topK : filter === "flagged" ? lab.status === "flagged" : lab.review === "approved",
+    filter === "all"
+      ? true
+      : filter === "kept"
+        ? lab.rank <= topK
+        : filter === "todo"
+          ? lab.rank <= topK && lab.review === "pending"
+          : filter === "flagged"
+            ? lab.status === "flagged"
+            : lab.review === "approved",
   );
+}
+
+export function sortLabels(labels: PipelineLabel[], sort: Sort, rtOf: (peakId: string) => number): PipelineLabel[] {
+  const byRt = (a: PipelineLabel, b: PipelineLabel) => rtOf(a.peak_id) - rtOf(b.peak_id) || a.rank - b.rank;
+  const compare =
+    sort === "status"
+      ? (a: PipelineLabel, b: PipelineLabel) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || byRt(a, b)
+      : sort === "score"
+        ? (a: PipelineLabel, b: PipelineLabel) => b.score - a.score || byRt(a, b)
+        : byRt;
+  return [...labels].sort(compare);
 }
 
 export function PipelineReviewPanel(props: {
@@ -37,22 +59,52 @@ export function PipelineReviewPanel(props: {
 }) {
   const { result } = props;
   const [filter, setFilter] = useState<Filter>("kept");
+  const [sort, setSort] = useState<Sort>("rt");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cursor, setCursor] = useState(-1);
+  const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
   const peakById = useMemo(() => new Map(result.peaks.map((p) => [p.id, p])), [result.peaks]);
-  const rows = visibleLabels(result, filter);
+  const rows = sortLabels(visibleLabels(result, filter), sort, (id) => peakById.get(id)?.rt_min ?? 0);
   const approved = result.labels.filter((l) => l.review === "approved").length;
   const flagged = result.labels.filter((l) => l.status === "flagged").length;
+  // Bulk: only top-ranked OK labels (one label per peak); flagged ones always need a look.
+  const okToApprove = result.labels.filter((l) => l.rank === 1 && l.status === "ok" && l.review !== "approved");
+  const flaggedUndecided = result.labels.filter((l) => l.status === "flagged" && l.review === "pending");
+  const current = cursor >= 0 && cursor < rows.length ? rows[cursor] : null;
 
-  const review = async (label: PipelineLabel, next: PipelineReview) => {
-    setBusy(label.id);
+  useEffect(() => {
+    if (current) rowRefs.current.get(current.id)?.scrollIntoView?.({ block: "nearest" });
+  }, [current]);
+
+  const send = async (updates: Array<{ id: string; review: PipelineReview }>, busyKey: string) => {
+    if (updates.length === 0) return;
+    setBusy(busyKey);
     setError(null);
     try {
-      props.onResult(await api.lcmsPipeline.review(props.jobId, [{ id: label.id, review: label.review === next ? "pending" : next }]));
+      props.onResult(await api.lcmsPipeline.review(props.jobId, updates));
     } catch (err) {
       setError(String(err).replace(/^Error: (HTTP \d+: )?/, ""));
     } finally {
       setBusy(null);
+    }
+  };
+
+  const review = (label: PipelineLabel, next: PipelineReview) =>
+    send([{ id: label.id, review: label.review === next ? "pending" : next }], label.id);
+
+  const onKey = (e: KeyboardEvent<HTMLTableElement>) => {
+    const key = e.key.toLowerCase();
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      setCursor((c) => Math.max(0, Math.min(rows.length - 1, c + (e.key === "ArrowDown" ? 1 : -1))));
+    } else if (current && (key === "a" || key === "r")) {
+      e.preventDefault();
+      void review(current, key === "a" ? "approved" : "rejected");
+    } else if (current && e.key === "Enter") {
+      e.preventDefault();
+      const peak = peakById.get(current.peak_id);
+      if (peak) props.onJump(peak);
     }
   };
 
@@ -79,10 +131,40 @@ export function PipelineReviewPanel(props: {
           <Hint id="lcms.pipeline.filter">
             <select className="input py-1 text-xs" aria-label="Show" value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
               <option value="kept">Top {result.settings.rules.top_k} per peak</option>
+              <option value="todo">To review</option>
               <option value="flagged">Flagged</option>
               <option value="approved">Approved</option>
               <option value="all">All candidates</option>
             </select>
+          </Hint>
+          <Hint id="lcms.pipeline.sort">
+            <select className="input py-1 text-xs" aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+              <option value="rt">By retention time</option>
+              <option value="status">Flagged first</option>
+              <option value="score">By match score</option>
+            </select>
+          </Hint>
+          <Hint id="lcms.pipeline.bulk">
+            <div className="flex gap-1">
+              <button
+                type="button"
+                className="btn-ghost border border-ink-200 px-2 py-1 text-xs"
+                disabled={busy !== null || okToApprove.length === 0}
+                onClick={() => void send(okToApprove.map((l) => ({ id: l.id, review: "approved" as const })), "bulk")}
+              >
+                <Check {...ICON_PROPS} />
+                Approve OK ({okToApprove.length})
+              </button>
+              <button
+                type="button"
+                className="btn-ghost border border-ink-200 px-2 py-1 text-xs"
+                disabled={busy !== null || flaggedUndecided.length === 0}
+                onClick={() => void send(flaggedUndecided.map((l) => ({ id: l.id, review: "rejected" as const })), "bulk")}
+              >
+                <X {...ICON_PROPS} />
+                Reject flagged ({flaggedUndecided.length})
+              </button>
+            </div>
           </Hint>
           <Hint id="lcms.pipeline.download">
             <div className="flex gap-1">
@@ -101,8 +183,15 @@ export function PipelineReviewPanel(props: {
       </div>
       {result.messages.length > 0 && <p className="px-1 text-[12px] text-ink-500">{result.messages.join(" ")}</p>}
       {error && <p className="px-1 text-[12px] text-danger-fg">{error}</p>}
+      <p className="px-1 text-[12px] text-ink-500">Keys (click the table first): ↑/↓ move · A approve · R reject · Enter show the spectrum</p>
       <div className="max-h-[420px] overflow-auto rounded-md border border-ink-200">
-        <table className="w-full border-collapse text-[12px]">
+        <table
+          className="w-full border-collapse text-[12px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+          role="grid"
+          aria-label="Pipeline labels"
+          tabIndex={0}
+          onKeyDown={onKey}
+        >
           <thead className="sticky top-0 bg-ink-50 text-left text-ink-600">
             <tr>
               <th className="px-2 py-1.5 font-medium">Peak</th>
@@ -115,13 +204,25 @@ export function PipelineReviewPanel(props: {
             </tr>
           </thead>
           <tbody>
-            {rows.map((lab) => {
+            {rows.map((lab, index) => {
               const peak = peakById.get(lab.peak_id);
               return (
                 <tr
                   key={lab.id}
-                  className={clsx("cursor-pointer border-t border-ink-100 align-top hover:bg-ink-50", lab.review === "rejected" && "opacity-50")}
-                  onClick={() => peak && props.onJump(peak)}
+                  ref={(el) => {
+                    if (el) rowRefs.current.set(lab.id, el);
+                    else rowRefs.current.delete(lab.id);
+                  }}
+                  aria-selected={index === cursor}
+                  className={clsx(
+                    "cursor-pointer border-t border-ink-100 align-top hover:bg-ink-50",
+                    lab.review === "rejected" && "opacity-50",
+                    index === cursor && "bg-brand-50",
+                  )}
+                  onClick={() => {
+                    setCursor(index);
+                    if (peak) props.onJump(peak);
+                  }}
                   title="Show this peak's spectrum"
                 >
                   <td className="whitespace-nowrap px-2 py-1.5 font-mono">
