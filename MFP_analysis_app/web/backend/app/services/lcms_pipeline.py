@@ -235,6 +235,7 @@ class PipelineLabel(BaseModel):
     ions: List[Ion]
     eic_apex_rt_min: Optional[float] = None
     constant_ratio: Optional[float] = None  # run-wide median EIC / EIC height at the peak (artifact check)
+    eic_shape_r: Optional[float] = None  # how closely the EIC follows the UV trace around the peak (r)
     half_step_ratio: Optional[float] = None  # peak 0.5/z above the ion / the ion (2+ check)
     alternatives: List[str] = Field(default_factory=list)  # other species the same ion fits (chain vs dimer)
     full_step_ratio: Optional[float] = None  # peak 1/z above the ion / the ion (first isotope)
@@ -704,18 +705,35 @@ def eic_apex_near(rt: np.ndarray, inten: np.ndarray, center: float, half_window:
     return float(t[idx[int(np.argmin(np.abs(t[idx] - center)))]])
 
 
+def eic_uv_correlation(
+    eic_rt: np.ndarray, eic: np.ndarray, uv_ms_rt: np.ndarray, uv: np.ndarray, center: float, half_window: float
+) -> Optional[float]:
+    """How closely the ion's EIC follows the UV trace around the peak (Pearson r on the EIC's scans,
+    UV already on MS time). A real ion rises and falls with its UV peak; a chance match does not."""
+    sel = np.abs(eic_rt - center) <= half_window
+    if sel.sum() < 5:
+        return None
+    e = np.asarray(eic, float)[sel]
+    u = np.interp(eic_rt[sel], uv_ms_rt, uv)
+    if e.std() <= 0 or u.std() <= 0:
+        return None
+    return round(float(np.corrcoef(e, u)[0, 1]), 3)
+
+
 def _eic_facts(
-    state: LCMSSessionState, mz: float, tol: float, polarity: str, center: float, half_window: float
-) -> Tuple[Optional[float], Optional[float]]:
-    """(EIC apex near the peak, run-wide median EIC / EIC height near the peak)."""
+    state: LCMSSessionState, mz: float, tol: float, polarity: str, center: float, half_window: float,
+    uv_ms_rt: np.ndarray, uv: np.ndarray,
+) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    """(EIC apex near the peak, run-wide median EIC / EIC height near the peak, EIC–UV shape r)."""
     eic = extracted_ion_chromatogram(state, mz, tolerance=tol, tolerance_unit="da", polarity=polarity)
     rt = np.asarray(eic["rt_min"], float)
     inten = np.asarray(eic["intensity"], float)
     sel = np.abs(rt - center) <= half_window
     if not sel.any() or float(inten[sel].max()) <= 0:
-        return None, None
+        return None, None, None
     height = float(inten[sel].max())
-    return eic_apex_near(rt, inten, center, half_window), float(np.median(inten)) / height
+    shape = eic_uv_correlation(rt, inten, uv_ms_rt, uv, center, half_window)
+    return eic_apex_near(rt, inten, center, half_window), float(np.median(inten)) / height, shape
 
 
 # ------------------------------------------------------------------ pipeline
@@ -777,8 +795,8 @@ def run_pipeline(
         ranked, peak.base_peak_intensity = match_window(spec, settings)
         for rank, cand in enumerate(ranked, start=1):
             rep: Ion = cand["rep"]  # type: ignore[assignment]
-            apex_rt, constant = _eic_facts(
-                state, rep.mz, tol, settings.polarity, peak.ms_rt_min, max(0.5, 3 * peak.width_min)
+            apex_rt, constant, shape = _eic_facts(
+                state, rep.mz, tol, settings.polarity, peak.ms_rt_min, max(0.5, 3 * peak.width_min), uv_rt + offset, uv_y
             )
             half, full = isotope_ratios(spec.mz, spec.intensity, rep.mz, rep.charge)
             label = PipelineLabel(
@@ -801,6 +819,7 @@ def run_pipeline(
                 score=float(cand["score"]),  # type: ignore[arg-type]
                 ions=list(cand["ions"]),  # type: ignore[arg-type]
                 eic_apex_rt_min=apex_rt,
+                eic_shape_r=shape,
                 half_step_ratio=half,
                 full_step_ratio=full,
                 alternatives=list(cand.get("alternatives") or []),  # type: ignore[arg-type]

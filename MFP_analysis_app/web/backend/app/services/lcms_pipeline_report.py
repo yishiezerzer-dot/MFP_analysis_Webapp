@@ -133,14 +133,14 @@ def write_workbook(result: PipelineResult, path: Path, provenance: Dict[str, Any
         cand_rows.append([
             lab.id, lab.peak_id, lab.rank, lab.text, lab.species, lab.series, lab.dp, lab.adduct, round(lab.mz, 4),
             round(lab.abs_err_da, 4), round(100 * lab.rel_intensity, 2), round(lab.score, 4),
-            None if lab.eic_apex_rt_min is None else round(lab.eic_apex_rt_min, 4), round(lab.series_support, 2),
+            None if lab.eic_apex_rt_min is None else round(lab.eic_apex_rt_min, 4), lab.eic_shape_r, round(lab.series_support, 2),
             ", ".join(map(str, lab.support_members)), lab.status, lab.review, "; ".join(lab.reasons),
             lab.layout.callout if lab.layout and lab.layout.callout else None,
             "; ".join(f"{i.text} ({100 * i.rel_intensity:.1f}%)" for i in lab.ions),
         ])
     _sheet(wb, "Candidates", [
         "Label", "Peak", "Rank", "Label text", "Species", "Series", "DP", "Adduct", "m/z", "|Δm| (Da)",
-        "Intensity (% of base peak)", "Score", "EIC apex (min)", "Series support", "Lower DPs found", "Status",
+        "Intensity (% of base peak)", "Score", "EIC apex (min)", "EIC–UV shape r", "Series support", "Lower DPs found", "Status",
         "Review", "Reasons", "Callout no.", "All ions",
     ], cand_rows)
     settings_rows: List[List[Any]] = []

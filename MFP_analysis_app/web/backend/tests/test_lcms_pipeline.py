@@ -137,9 +137,11 @@ def test_ions_present_all_through_the_run_are_artifacts():
     from app.services.lcms_pipeline import _eic_facts
 
     state = open_example()
-    _, plasticiser = _eic_facts(state, 391.28, 0.5, "positive", 4.0, 0.5)
-    _, oligomer = _eic_facts(state, 149.04, 0.5, "positive", 4.0, 0.5)  # 2-GA [M+H]⁺, elutes at 3.9 min
+    uv_t, uv = np.asarray(state.uv.rt_min, float) + 0.12, np.asarray(state.uv.signal, float)
+    _, plasticiser, _ = _eic_facts(state, 391.28, 0.5, "positive", 4.0, 0.5, uv_t, uv)
+    _, oligomer, shape = _eic_facts(state, 149.04, 0.5, "positive", 4.0, 0.5, uv_t, uv)  # 2-GA [M+H]⁺, elutes at 3.9 min
     assert plasticiser > 0.5 > oligomer
+    assert shape is not None and shape > 0.5  # the oligomer's EIC follows its UV peak
 
 
 def test_flank_background_subtraction_removes_ions_present_all_through_the_run():
@@ -265,3 +267,17 @@ def test_overlapping_peaks_and_peaks_on_a_flank_still_have_a_clear_edge():
     y = gaussians(t, [19.97, 20.08, 20.22], width=0.04, heights=[85.0, 92.0, 332.0])
     pair = [p for p in pick_uv_peaks(t, y)[0] if 19.9 < p.rt_min < 20.15]
     assert len(pair) == 2 and all(p.clear_edge for p in pair)
+
+
+def test_eic_shape_score_follows_the_uv_peak():
+    from app.services.lcms_pipeline import eic_uv_correlation
+
+    t = np.arange(10.0, 14.0, 0.0145)
+    uv_t = np.arange(10.0, 14.0, 0.0067)
+    uv = gaussians(uv_t, [12.0], width=0.05, heights=[100.0])
+    same = gaussians(t, [12.0], width=0.06, heights=[5e4])  # a real ion: follows the UV peak
+    other = gaussians(t, [12.35], width=0.06, heights=[5e4])  # elutes elsewhere in the window
+    flat = np.full(t.size, 3e4) + np.random.default_rng(0).normal(0, 500, t.size)  # always there
+    assert eic_uv_correlation(t, same, uv_t, uv, 12.0, 0.5) > 0.9
+    assert eic_uv_correlation(t, other, uv_t, uv, 12.0, 0.5) < 0.3
+    assert eic_uv_correlation(t, flat, uv_t, uv, 12.0, 0.5) < 0.3
