@@ -248,3 +248,14 @@ def test_dimers_are_not_held_to_series_rules():
     rts = {2: 4.0, 3: 5.0, 4: 3.5}
     labs = [label(id=f"x{n}", dp=n, ms_rt_min=rt, series="S", form="dimer") for n, rt in rts.items()]
     assert elution_order(labs, RULES) == {}
+
+
+def test_an_implausible_reading_is_not_a_real_alternative():
+    # L9 21.43 min: 6-Lac + 1-pGlu [2M+H]⁺ vs 3-Gln + 3-Glu + 3-pGlu [M+H]⁺ (9 amino acids): only the dimer counts.
+    dimer = label(id="d", peak_id="p", rank=1, species="6-Lac + 1-pGlu (dimer)", series="6-Lac + 1-pGlu (dimer)",
+                  form="dimer", monomers=[], alternatives=["3-Gln + 3-Glu + 3-pGlu"])
+    chain = label(id="c", peak_id="p", rank=2, species="3-Gln + 3-Glu + 3-pGlu", series="Gln+Glu+pGlu", dp=9,
+                  amino_acids=9, alternatives=["6-Lac + 1-pGlu (dimer)"])
+    verdicts = apply_rules([peak(id="p")], [dimer, chain], RULES, run_monomers=["Lac", "pGlu", "Gln", "Glu"], enabled_adducts=set())
+    assert not any(r.startswith("two readings") for r in verdicts["d"].reasons)
+    assert verdicts["d"].status == "ok"

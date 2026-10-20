@@ -7,7 +7,7 @@ objects so each one can be tested on its own; lcms_pipeline turns its results in
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Literal, Optional, Sequence, Set
 
 from pydantic import BaseModel, Field
@@ -405,15 +405,22 @@ def apply_rules(
         reasons += check_chemistry(lab, rules)
         reasons += check_artifact(lab, rules)
         reasons += check_charge(lab, rules)
-        reasons += check_isobaric(lab, rules)
         reasons += neighbours.get(lab.id, [])
         reasons += verdict.reasons
         reasons += order.get(lab.id, [])
         reasons += ambiguous.get(lab.id, [])
         verdict.reasons = reasons
+        verdicts[lab.id] = verdict
+    # A second reading only counts when it is itself plausible (not 9 amino acids in a chain, say).
+    implausible = {
+        (lab.peak_id, lab.species) for lab in labels if any(r.startswith(IMPLAUSIBLE) for r in verdicts[lab.id].reasons)
+    }
+    for lab in labels:
+        verdict = verdicts[lab.id]
+        real = [a for a in lab.alternatives if (lab.peak_id, a) not in implausible]
+        verdict.reasons += check_isobaric(replace(lab, alternatives=real), rules)
         if lab.rank > rules.top_k:
             verdict.status = "alternative"
         else:
-            verdict.status = "flagged" if reasons else "ok"
-        verdicts[lab.id] = verdict
+            verdict.status = "flagged" if verdict.reasons else "ok"
     return verdicts
