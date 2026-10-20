@@ -231,7 +231,7 @@ describe("PolymerStudioDrawer", () => {
         />,
       );
       const studioControls = new Set<string | null>();
-      for (const tab of [/^Monomers$/i, /^Adducts$/i, /Masses & Variants/i]) {
+      for (const tab of [/^Monomers$/i, /^Adducts$/i, /Masses & Variants/i, /^Checks$/i]) {
         fireEvent.click(screen.getByRole("button", { name: tab }));
         controlNames().forEach((name) => studioControls.add(name));
       }
@@ -240,5 +240,59 @@ describe("PolymerStudioDrawer", () => {
       expect([...studioControls].sort()).toEqual([...new Set(dialogControls)].sort());
       expect(screen.queryByText(/Polymer Studio/i)).toBeNull();
     }
+  });
+});
+
+
+describe("Polymer Studio: the pipeline's checks", () => {
+  it("offers them on a Checks tab, all off by default", () => {
+    const handleChange = vi.fn();
+    const settings = loadPolymerUiSettings();
+    render(
+      <PolymerStudioDrawer
+        open={true}
+        onClose={vi.fn()}
+        polarity="positive"
+        settings={settings}
+        onChange={handleChange}
+        onExpectedProducts={vi.fn()}
+        onKendrick={vi.fn()}
+        canOpenExpectedProducts={true}
+        canOpenKendrick={true}
+        onSaveDefaults={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Checks$/i }));
+    const fallback = screen.getByRole("checkbox", { name: /other adducts only when/i });
+    expect((fallback as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(fallback);
+    expect(handleChange.mock.calls[0][0].shared.adduct_fallback).toBe(true);
+    expect(screen.getByRole("spinbutton", { name: /most amino acids per chain/i })).toBeDefined();
+    expect(screen.getByRole("checkbox", { name: /present all through the run/i })).toBeDefined();
+    expect(screen.getByRole("checkbox", { name: /0\.5 apart/i })).toBeDefined();
+  });
+
+  it("adds named end groups and mixed dimers under Masses & Variants", () => {
+    const handleChange = vi.fn();
+    const settings = loadPolymerUiSettings();
+    render(
+      <PolymerStudioDrawer
+        open={true}
+        onClose={vi.fn()}
+        polarity="positive"
+        settings={settings}
+        onChange={handleChange}
+        onExpectedProducts={vi.fn()}
+        onKendrick={vi.fn()}
+        canOpenExpectedProducts={true}
+        canOpenKendrick={true}
+        onSaveDefaults={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Masses & Variants/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /mixed dimers/i }));
+    expect(handleChange.mock.calls[0][0].shared.mixed_dimers).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /add end group/i }));
+    expect(handleChange.mock.calls[1][0].shared.end_groups).toHaveLength(1);
   });
 });

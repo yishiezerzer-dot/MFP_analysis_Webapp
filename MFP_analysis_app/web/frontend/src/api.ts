@@ -201,6 +201,14 @@ export interface PolymerSettings {
   tol_unit: "Da" | "ppm";
   min_rel_int: number;
   custom_adducts?: CustomAdduct[];
+  // The one-click pipeline's checks, for Polymer Studio (all off by default).
+  end_groups?: Array<{ name: string; mass: number }>;
+  mixed_dimers?: boolean;
+  adduct_fallback?: boolean;
+  max_amino_acids?: number;
+  amino_names?: string[];
+  isotope_check?: boolean;
+  reject_constant?: boolean;
 }
 
 export interface SpectrumData {

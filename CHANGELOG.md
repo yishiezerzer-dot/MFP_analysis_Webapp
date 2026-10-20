@@ -29,6 +29,7 @@ Re-check analyses made before these fixes if they relied on the items below.
 
 ### Changed
 
+- **Polymer Studio has the pipeline's matching options**, all off by default: named end groups (Masses & Variants), mixed dimers [A+B+H]⁺ (Variants), and a new Checks tab with other adducts only when no [M+H]⁺ matches, hiding 1+ labels whose isotopes are 0.5 apart, hiding ions present all through the run, and a limit on amino acids per chain. Pyroglutamic acid (pGlu) is a built-in monomer. Settings saved per run now pick up new options (and the Glc/Lac names) too.
 - **MS1 y axis in %** (MS1 spectrum → Design → Y axis): absolute intensity or % relative to the tallest peak in the current view, which rescales as you zoom. Works with or without overlays (the overlay "% Norm" modes still scale to each spectrum's base peak).
 - **Glycolic and lactic acid are Glc and Lac** in LCMS labels (were GA and LA). Saved settings with the old names switch over; an abbreviation you set yourself is kept.
 - **One-click LCMS pipeline** (LCMS → Run full pipeline). From an mzML and its UV CSV, or from the open run:

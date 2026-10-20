@@ -14,6 +14,7 @@ import {
   integrateTraceRegion,
   ionLabel,
   mergePolymerMonomerPresets,
+  mergePolymerUiSettings,
   parseExpectedProductMonomers,
   parsePositiveCharges,
   PROTON_MASS,
@@ -27,6 +28,18 @@ import {
   sessionFixtures,
   spectrumFixture,
 } from "./fixtures/analysisFixtures";
+
+describe("toApiPolymerSettings: the pipeline's checks", () => {
+  it("sends the selected amino acids and only complete end groups; checks are off by default", () => {
+    const ui = mergePolymerUiSettings({});
+    expect(ui.shared).toMatchObject({ mixed_dimers: false, adduct_fallback: false, max_amino_acids: 0, isotope_check: false, reject_constant: false, end_groups: [] });
+    ui.monomers = ui.monomers.map((m) => ({ ...m, selected: ["hydroxy:glycolic-acid", "amino:arginine", "amino:pyroglutamic-acid"].includes(m.id) }));
+    ui.shared = { ...ui.shared, enabled: true, end_groups: [{ name: "Me ester", mass: 14.01565 }, { name: "", mass: 1 }, { name: "x", mass: Number.NaN }] };
+    const api = toApiPolymerSettings(ui, "positive");
+    expect(api.amino_names).toEqual(["Arg", "pGlu"]);
+    expect(api.end_groups).toEqual([{ name: "Me ester", mass: 14.01565 }]);
+  });
+});
 
 describe("mergePolymerMonomerPresets", () => {
   it("names glycolic and lactic acid Glc and Lac, also over the old saved GA/LA, but keeps a chosen abbreviation", () => {

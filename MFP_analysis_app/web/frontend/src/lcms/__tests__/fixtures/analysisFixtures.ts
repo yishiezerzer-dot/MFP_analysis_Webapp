@@ -54,6 +54,12 @@ export function polymerSettingsFixture(partial?: Partial<PolymerUiSettings>): Po
       tol_value: 0.02,
       tol_unit: "Da",
       min_rel_int: 0,
+      end_groups: [],
+      mixed_dimers: false,
+      adduct_fallback: false,
+      max_amino_acids: 0,
+      isotope_check: false,
+      reject_constant: false,
     },
     positive: {
       adduct_mass: PROTON_MASS,

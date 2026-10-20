@@ -20,6 +20,13 @@ export interface PolymerSharedSettings {
   tol_value: number;
   tol_unit: "Da" | "ppm";
   min_rel_int: number;
+  // The one-click pipeline's checks (all off by default).
+  end_groups: Array<{ name: string; mass: number }>;
+  mixed_dimers: boolean;
+  adduct_fallback: boolean;
+  max_amino_acids: number; // 0 = no limit
+  isotope_check: boolean;
+  reject_constant: boolean;
 }
 
 export type PolymerMonomerCategory = "hydroxy" | "amino";
@@ -70,6 +77,7 @@ export const BUILT_IN_POLYMER_MONOMERS: PolymerMonomerPreset[] = [
   { id: "amino:cysteine", category: "amino", name: "Cysteine", abbr: "Cys", mass: 121.019749, selected: false },
   { id: "amino:glutamine", category: "amino", name: "Glutamine", abbr: "Gln", mass: 146.069142, selected: false },
   { id: "amino:glutamic-acid", category: "amino", name: "Glutamic acid", abbr: "Glu", mass: 147.053158, selected: false },
+  { id: "amino:pyroglutamic-acid", category: "amino", name: "Pyroglutamic acid", abbr: "pGlu", mass: 129.042593, selected: false },
   { id: "amino:glycine", category: "amino", name: "Glycine", abbr: "Gly", mass: 75.032028, selected: false },
   { id: "amino:histidine", category: "amino", name: "Histidine", abbr: "His", mass: 155.069477, selected: false },
   { id: "amino:isoleucine", category: "amino", name: "Isoleucine", abbr: "Ile", mass: 131.094629, selected: false },
@@ -102,6 +110,12 @@ export const DEFAULT_POLYMER_SHARED_SETTINGS: PolymerSharedSettings = {
   tol_value: 0.02,
   tol_unit: "Da",
   min_rel_int: 0.01,
+  end_groups: [],
+  mixed_dimers: false,
+  adduct_fallback: false,
+  max_amino_acids: 0,
+  isotope_check: false,
+  reject_constant: false,
 };
 
 export const DEFAULT_POLYMER_UI_SETTINGS: PolymerUiSettings = {
@@ -927,6 +941,8 @@ export function toApiPolymerSettings(
     adduct_formate: polarity === "negative" ? profile.adduct_formate : false,
     adduct_acetate: polarity === "negative" ? profile.adduct_acetate : false,
     custom_adducts: (profile.custom_adducts ?? []).filter((a) => a.enabled),
+    end_groups: (settings.shared.end_groups ?? []).filter((g) => g.name.trim() && Number.isFinite(g.mass)).map((g) => ({ name: g.name.trim(), mass: g.mass })),
+    amino_names: settings.monomers.filter((m) => m.selected && m.category === "amino").map((m) => m.abbr),
   };
 }
 

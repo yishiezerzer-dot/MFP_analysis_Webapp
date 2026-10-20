@@ -6,7 +6,9 @@ import { loadPolymerUiSettings, type Polarity, type PolymerUiSettings } from "..
 import { GroupBox, Modal } from "./DialogControls";
 import {
   PolymerAdductSettings,
+  PolymerCheckSettings,
   PolymerEnableToggle,
+  PolymerEndGroupSettings,
   PolymerMassSettings,
   PolymerMatchingSettings,
   PolymerMonomerSettings,
@@ -34,6 +36,7 @@ const SUB_TABS = [
   { id: "monomers", label: "Monomers" },
   { id: "adducts", label: "Adducts" },
   { id: "masses", label: "Masses & Variants" },
+  { id: "checks", label: "Checks" },
 ] as const;
 
 export function PolymerStudioModal({
@@ -186,7 +189,15 @@ export function PolymerStudioModal({
               <GroupBox title="Variants">
                 <PolymerVariantSettings {...section} />
               </GroupBox>
+              <GroupBox title="End groups">
+                <PolymerEndGroupSettings {...section} />
+              </GroupBox>
             </div>
+          )}
+          {activeSubTab === "checks" && (
+            <GroupBox title="Checks (as in the one-click pipeline)">
+              <PolymerCheckSettings {...section} />
+            </GroupBox>
           )}
         </div>
       </div>

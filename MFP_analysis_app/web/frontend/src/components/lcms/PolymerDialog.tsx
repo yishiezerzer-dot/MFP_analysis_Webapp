@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent } from "react";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import clsx from "clsx";
 import {
   loadPolymerUiSettings,
@@ -636,8 +636,104 @@ export function PolymerVariantSettings(props: PolymerSectionProps) {
           checked={shared.cluster}
           onChange={(cluster) => patchShared({ cluster })}
         />
+        <Check
+          hint="lcms.polyMixedDimers"
+          label={mode === "negative" ? "Mixed dimers of two chains [A+B-H]⁻" : "Mixed dimers of two chains [A+B+H]⁺"}
+          checked={shared.mixed_dimers}
+          onChange={(mixed_dimers) => patchShared({ mixed_dimers })}
+        />
       </div>
     </Hint>
+  );
+}
+
+export function PolymerEndGroupSettings(props: PolymerSectionProps) {
+  const { shared, patchShared } = polymerPatchers(props);
+  const groups = shared.end_groups ?? [];
+  const setGroups = (end_groups: PolymerSharedSettings["end_groups"]) => patchShared({ end_groups });
+  return (
+    <Hint id="lcms.polyEndGroups" className="w-full">
+      <div className="flex flex-col gap-2">
+        {groups.map((g, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              className="input w-40"
+              aria-label={`End group ${i + 1} name`}
+              placeholder="e.g. Me ester"
+              value={g.name}
+              onChange={(e) => setGroups(groups.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+            />
+            <input
+              className="input w-44"
+              type="number"
+              step="any"
+              aria-label={`End group ${i + 1} mass`}
+              placeholder="Δ mass (Da), e.g. 14.0157"
+              value={Number.isFinite(g.mass) ? g.mass : ""}
+              onChange={(e) => setGroups(groups.map((x, j) => (j === i ? { ...x, mass: e.target.valueAsNumber } : x)))}
+            />
+            <button
+              type="button"
+              className="btn-ghost px-1.5"
+              aria-label={`Remove end group ${i + 1}`}
+              onClick={() => setGroups(groups.filter((_, j) => j !== i))}
+            >
+              <X size={15} strokeWidth={1.8} aria-hidden />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="btn-ghost w-fit border border-ink-200 px-2 py-0.5 text-xs"
+          aria-label="Add end group"
+          disabled={groups.length >= 4}
+          onClick={() => setGroups([...groups, { name: "", mass: Number.NaN }])}
+        >
+          <Plus size={15} strokeWidth={1.8} aria-hidden />
+          End group
+        </button>
+      </div>
+    </Hint>
+  );
+}
+
+// The one-click pipeline's checks, for matching a single spectrum by hand.
+export function PolymerCheckSettings(props: PolymerSectionProps) {
+  const { shared, patchShared } = polymerPatchers(props);
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-2">
+        <Check
+          hint="lcms.polyAdductFallback"
+          label="Other adducts only when no [M+H]⁺ / [M−H]⁻ matches"
+          checked={shared.adduct_fallback}
+          onChange={(adduct_fallback) => patchShared({ adduct_fallback })}
+        />
+        <Check
+          hint="lcms.polyIsotopeCheck"
+          label="Hide 1+ labels whose isotopes are 0.5 apart (a 2+ ion)"
+          checked={shared.isotope_check}
+          onChange={(isotope_check) => patchShared({ isotope_check })}
+        />
+        <Check
+          hint="lcms.polyRejectConstant"
+          label="Hide ions present all through the run (solvent, plasticisers)"
+          checked={shared.reject_constant}
+          onChange={(reject_constant) => patchShared({ reject_constant })}
+        />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <NumberSetting
+          hint="lcms.polyMaxAminoAcids"
+          label="Most amino acids per chain (0 = no limit)"
+          value={shared.max_amino_acids}
+          min={0}
+          max={20}
+          step={1}
+          onChange={(value) => patchShared({ max_amino_acids: Math.max(0, Math.round(value ?? 0)) })}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -699,6 +795,12 @@ export function PolymerDialog({
         </GroupBox>
         <GroupBox title="Variants">
           <PolymerVariantSettings {...section} />
+        </GroupBox>
+        <GroupBox title="End groups">
+          <PolymerEndGroupSettings {...section} />
+        </GroupBox>
+        <GroupBox title="Checks (as in the pipeline)">
+          <PolymerCheckSettings {...section} />
         </GroupBox>
       </div>
     </Modal>

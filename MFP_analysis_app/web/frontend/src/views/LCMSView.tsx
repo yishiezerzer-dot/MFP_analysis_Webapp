@@ -17,7 +17,7 @@ import { useStoredState } from "../hooks/useStoredState";
 import { useUndoRedo } from "../hooks/useUndoRedo";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useRegisterFileIngest } from "../context/FileIngestionContext";
-import { buildExpectedProductHits, buildKendrickPoints, eicSourceFile, eicSourceSessionId, loadPolymerUiSettings, savePolymerMonomerPresets, savePolymerUiSettingsDefault, groupFeatureRowsForMatrix, integrateEICPeak, integrateTraceRegion, polymerMonomerText, toApiPolymerSettings, type FeatureMatrixGroupMode, type FeatureMatrixMetric, type IntegratedTraceRegion, type LCMSFeatureRow, type LCMSEICMetadata, type LCMSEICPlot, type PolymerUiSettings } from "../lcms/analysis";
+import { buildExpectedProductHits, buildKendrickPoints, eicSourceFile, eicSourceSessionId, loadPolymerUiSettings, mergePolymerUiSettings, savePolymerMonomerPresets, savePolymerUiSettingsDefault, groupFeatureRowsForMatrix, integrateEICPeak, integrateTraceRegion, polymerMonomerText, toApiPolymerSettings, type FeatureMatrixGroupMode, type FeatureMatrixMetric, type IntegratedTraceRegion, type LCMSFeatureRow, type LCMSEICMetadata, type LCMSEICPlot, type PolymerUiSettings } from "../lcms/analysis";
 import { loadGraphSettingsDefault, mergeGraphSettings, saveGraphSettingsDefault, type GraphSettings, type SpectrumOverlayMode } from "../lcms/settings";
 import { FeatureTableDialog } from "../components/lcms/FeatureTableDialog";
 import { ComparisonMatrixDialog } from "../components/lcms/ComparisonMatrixDialog";
@@ -206,7 +206,8 @@ export function LCMSView() {
   const getPolymerSettingsForSession = useCallback(
     (sid: string | null): PolymerUiSettings => {
       if (sid && polymerSettingsBySessionId[sid]) {
-        return polymerSettingsBySessionId[sid];
+        // Over the defaults, so settings saved before an option existed still get it.
+        return mergePolymerUiSettings(polymerSettingsBySessionId[sid]);
       }
       return loadPolymerUiSettings();
     },
