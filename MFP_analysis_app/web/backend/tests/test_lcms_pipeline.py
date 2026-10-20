@@ -220,15 +220,25 @@ def test_each_isomer_peak_finds_its_own_eic_maximum():
     assert eic_apex_near(rt, np.zeros_like(rt), 13.5, 0.5) is None
 
 
-def test_dimer_ions_count_for_their_species():
-    # G9: 1-Glc + 1-pGlu is seen mostly as [2M+H]⁺ (m/z 375.1) with a smaller [M+H]⁺ (m/z 188.1).
-    ions = [
-        {"text": "1-Glc + 1-pGlu [2M+H]⁺", "mz": 375.1, "intensity": 1000.0, "abs_err": 0.05},
-        {"text": "1-Glc + 1-pGlu [M+H]⁺", "mz": 188.1, "intensity": 230.0, "abs_err": 0.03},
-    ]
-    [cand] = rank_candidates(ions, 1000.0, 0.5, adduct_fallback=True)
-    assert cand["species"] == "1-Glc + 1-pGlu" and len(cand["ions"]) == 2
-    assert PipelineSettings(monomers=[{"name": "Glc", "mass": 76.0}]).dimers is False
-    from app.services.lcms_pipeline import polymer_settings
-    on = PipelineSettings(monomers=[{"name": "Glc", "mass": 76.0}], dimers=True)
-    assert polymer_settings(on, 0.05)["cluster"] is True
+def test_dimers_of_equal_and_different_chains_stand_beside_the_isobaric_chain():
+    # G9 11.86 min: m/z 375.10 is 2-Glc + 1-Glu + 1-pGlu [M+H]⁺ and also 1-Glc + 1-pGlu [2M+H]⁺ (pGlu + H2O = Glu).
+    # 1-Glc + 1-pGlu (188.06) and 2-Glc + 1-pGlu (246.06) are seen as [M+H]⁺; 433.11 is their mixed dimer.
+    from app.services.lcms_pipeline import WindowSpectrum, match_window, polymer_settings
+
+    spec = WindowSpectrum(rt_start=0, rt_end=1, n_scans=1, mz=[188.06, 246.06, 375.10, 433.11],
+                          intensity=[300.0, 250.0, 1000.0, 200.0])
+    settings = PipelineSettings(
+        monomers=[{"name": "Glc", "mass": 76.016044}, {"name": "Glu", "mass": 147.053158}, {"name": "pGlu", "mass": 129.042593}],
+        adducts=["H"], dimers=True,
+    )
+    ranked, _ = match_window(spec, settings)
+    by_species = {c["species"]: c for c in ranked}
+    assert by_species["1-Glc + 1-pGlu (dimer)"]["rep"].text == "1-Glc + 1-pGlu [2M+H]⁺"
+    mixed = by_species["1-Glc + 1-pGlu · 2-Glc + 1-pGlu (dimer)"]
+    assert mixed["rep"].text == "1-Glc + 1-pGlu · 2-Glc + 1-pGlu [A+B+H]⁺" and abs(mixed["rep"].mz - 433.11) < 0.01
+    top, second = ranked[0], ranked[1]  # both readings of the 375 ion, side by side
+    assert "1-Glc + 1-pGlu (dimer)" in {top["species"], second["species"]}
+    assert top["alternatives"] == [second["species"]] and top["species"] in second["alternatives"]
+    off, _ = match_window(spec, settings.model_copy(update={"dimers": False}))
+    assert not any(c.get("form") == "dimer" for c in off)
+    assert polymer_settings(settings, 0.05)["cluster"] is False  # the shared matcher's own 2M option stays off

@@ -37,6 +37,7 @@ export interface StoredSettings {
   endGroups: PipelineEndGroup[];
   charges: "1" | "1,2";
   background: boolean;
+  dimers: boolean;
 }
 
 export const STORED_DEFAULTS: StoredSettings = {
@@ -49,6 +50,7 @@ export const STORED_DEFAULTS: StoredSettings = {
   endGroups: [],
   charges: "1",
   background: true,
+  dimers: false,
 };
 
 const validEndGroups = (groups: PipelineEndGroup[]) =>
@@ -63,6 +65,7 @@ export function buildPipelineSettings(stored: StoredSettings, monomers: Pipeline
     charges: stored.charges === "1,2" ? [1, 2] : [1],
     forms: { linear: stored.linear, cyclic: stored.cyclic, end_groups: validEndGroups(stored.endGroups) },
     background: { enabled: stored.background },
+    dimers: stored.dimers,
     rules: { elution_direction: stored.elution },
   };
 }
@@ -388,6 +391,12 @@ export function PipelineDialog(props: {
             <label className="flex flex-1 items-center gap-2 self-end">
               <input type="checkbox" checked={stored.background} onChange={(e) => setStored({ ...stored, background: e.target.checked })} />
               Subtract background (MS just before and after each peak)
+            </label>
+          </Hint>
+          <Hint id="lcms.pipeline.dimers" className="w-full">
+            <label className="flex flex-1 items-center gap-2">
+              <input type="checkbox" checked={stored.dimers} onChange={(e) => setStored({ ...stored, dimers: e.target.checked })} />
+              Noncovalent dimers ([2M+H]⁺ and mixed [A+B+H]⁺)
             </label>
           </Hint>
         </section>

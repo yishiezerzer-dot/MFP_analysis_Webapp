@@ -115,16 +115,18 @@ describe("pipeline dialog settings", () => {
     expect(s.charges).toEqual([1]);
     expect(s.background).toEqual({ enabled: true });
     expect(s.tolerance_da).toBe(0.5);
+    expect(s.dimers).toBe(false);
   });
 
   it("passes cyclic forms, named end groups and 2+ charges, dropping half-filled end groups", () => {
     const s = buildPipelineSettings(
-      { ...STORED_DEFAULTS, cyclic: true, charges: "1,2", background: false,
+      { ...STORED_DEFAULTS, cyclic: true, charges: "1,2", background: false, dimers: true,
         endGroups: [{ name: " Me ester ", mass: 14.01565 }, { name: "", mass: 1 }, { name: "x", mass: Number.NaN }] },
       [{ name: "Arg", mass: 174.111676 }],
     );
     expect(s.forms).toEqual({ linear: true, cyclic: true, end_groups: [{ name: "Me ester", mass: 14.01565 }] });
     expect(s.charges).toEqual([1, 2]);
     expect(s.background).toEqual({ enabled: false });
+    expect(s.dimers).toBe(true);
   });
 });

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from itertools import combinations_with_replacement
 from typing import Callable, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
@@ -135,7 +136,9 @@ class PipelineSettings(BaseModel):
     align: AlignSettings = Field(default_factory=AlignSettings)
     rules: SanityRules = Field(default_factory=SanityRules)
     max_candidates_per_peak: int = Field(8, ge=1, le=30)
-    dimers: bool = Field(False, description="Also match noncovalent dimers ([2M+H]⁺ / [2M−H]⁻).")
+    dimers: bool = Field(
+        False, description="Also propose noncovalent dimers of chains seen in the same peak: [2M+H]⁺ and mixed [A+B+H]⁺."
+    )
     adduct_fallback: bool = Field(
         True, description="Other adducts (Na, K, Cl, …) only for a peak with no [M+H]⁺/[M−H]⁻ match at all."
     )
@@ -232,6 +235,7 @@ class PipelineLabel(BaseModel):
     eic_apex_rt_min: Optional[float] = None
     constant_ratio: Optional[float] = None  # run-wide median EIC / EIC height at the peak (artifact check)
     half_step_ratio: Optional[float] = None  # peak 0.5/z above the ion / the ion (2+ check)
+    alternatives: List[str] = Field(default_factory=list)  # other species the same ion fits (chain vs dimer)
     full_step_ratio: Optional[float] = None  # peak 1/z above the ion / the ion (first isotope)
     series_support: float = 0.0
     support_members: List[int] = Field(default_factory=list)
@@ -419,8 +423,8 @@ def parse_label(text: str) -> Optional[Dict[str, object]]:
     adduct = re.sub(r"^[+\-]\d*", "", adduct_txt) or "H"
     if re.fullmatch(r"\d*\.\d+", adduct):
         adduct = "custom"
-    # A noncovalent dimer ([2M+H]⁺) is the same compound: its ions count toward the species.
-    species = m["comp"].strip() + (f" {m['variant']}" if m["variant"] else "")
+    core = m["core"]
+    species = m["comp"].strip() + (f" {m['variant']}" if m["variant"] else "") + (" (2M)" if core == "2M" else "")
     return {
         "counts": counts,
         "dp": sum(counts.values()),
@@ -452,7 +456,7 @@ def polymer_settings(settings: PipelineSettings, min_rel_int: float, extra_delta
         "bond_delta": settings.bond_delta,
         "extra_delta": extra_delta,
         "adduct_mass": PROTON,
-        "cluster": settings.dimers,
+        "cluster": False,  # dimers are proposed by the pipeline (dimer_candidates), not the shared matcher
         "tol_value": settings.tolerance_da,
         "tol_unit": "Da",
         "min_rel_int": min_rel_int,
@@ -582,7 +586,71 @@ def match_window(spec: WindowSpectrum, settings: PipelineSettings) -> Tuple[List
         for m in polymer_match_labels(mz, inten, polarity=settings.polarity, settings=poly):
             matches.append({**m, "form": form})
     ranked = rank_candidates(matches, base, settings.tolerance_da, settings.adduct_fallback)
+    if settings.dimers:
+        ranked = with_dimers(ranked, mz, inten, base, settings, detect_rel)
     return ranked[: settings.max_candidates_per_peak], base
+
+
+def _neutral_mass(cand: Dict[str, object], settings: PipelineSettings) -> float:
+    masses = {m.name: m.mass for m in settings.monomers}
+    extra = dict(settings.forms.forms(settings.bond_delta)).get(str(cand.get("form") or "linear"), 0.0)
+    counts: Dict[str, int] = cand["counts"]  # type: ignore[assignment]
+    dp = sum(counts.values())
+    return sum(n * masses[name] for name, n in counts.items()) + (dp - 1) * settings.bond_delta + extra
+
+
+def with_dimers(
+    ranked: List[Dict[str, object]], mz: np.ndarray, inten: np.ndarray, base: float, settings: PipelineSettings, detect_rel: float
+) -> List[Dict[str, object]]:
+    """Add noncovalent dimers of the chains seen as [M±H] in this window: [2M±H] of one chain and
+    [A+B±H] of two different ones, when an ion sits at that m/z. A chain and a dimer that explain the
+    same ion are both kept and point at each other ("alternatives"); the runner-up reading goes right
+    after the top candidate so both are offered in review. Only chains present in the window are
+    paired: any m/z fits some pair of the thousands of possible chains."""
+    sign = 1.0 if settings.polarity == "positive" else -1.0
+    charge_mark, h = ("⁺", "+H") if sign > 0 else ("⁻", "−H")
+    parts = []
+    for cand in ranked:
+        ions: List[Ion] = cand["ions"]  # type: ignore[assignment]
+        if any(i.adduct == "H" and i.charge == 1 and i.rel_intensity >= detect_rel for i in ions):
+            parts.append((_neutral_mass(cand, settings), str(cand["species"]), int(cand["dp"])))  # type: ignore[arg-type]
+    parts.sort()
+    dimers: List[Dict[str, object]] = []
+    for (ma, a, dpa), (mb, b, dpb) in combinations_with_replacement(parts, 2):
+        target = ma + mb + sign * PROTON
+        if mz.size == 0:
+            break
+        i = int(np.argmin(np.abs(mz - target)))
+        err = abs(float(mz[i]) - target)
+        if err > settings.tolerance_da or inten[i] < detect_rel * base:
+            continue
+        same = a == b
+        species = f"{a} (dimer)" if same else f"{a} · {b} (dimer)"
+        text = f"{a} [2M{h}]{charge_mark}" if same else f"{a} · {b} [A+B{h}]{charge_mark}"
+        rel = float(inten[i]) / base if base > 0 else 0.0
+        ion = Ion(text=text, mz=float(mz[i]), intensity=float(inten[i]), rel_intensity=rel, abs_err_da=err, adduct="H", charge=1)
+        dimers.append({
+            "species": species, "series": species, "dp": dpa + dpb, "counts": {}, "variant": "", "form": "dimer",
+            "ions": [ion], "rep": ion, "score": rel * (1.0 - 0.5 * min(1.0, err / settings.tolerance_da)),
+        })
+    if not dimers:
+        return ranked
+    out = ranked + dimers
+    for cand in out:
+        cand["alternatives"] = []
+    for dimer in dimers:
+        obs = dimer["rep"].mz  # type: ignore[union-attr]
+        for cand in ranked:
+            if any(abs(i.mz - obs) < 1e-6 for i in cand["ions"]):  # type: ignore[union-attr]
+                dimer["alternatives"].append(cand["species"])  # type: ignore[union-attr]
+                cand["alternatives"].append(dimer["species"])  # type: ignore[union-attr]
+    out.sort(key=lambda g: (-float(g["score"]), str(g["species"])))
+    alts = out[0]["alternatives"]
+    if alts:
+        partner = next(c for c in out if c["species"] in alts)  # type: ignore[operator]
+        out.remove(partner)
+        out.insert(1, partner)
+    return out
 
 
 ISOTOPE_STEP = 1.003355  # 13C − 12C
@@ -719,6 +787,7 @@ def run_pipeline(
                 eic_apex_rt_min=apex_rt,
                 half_step_ratio=half,
                 full_step_ratio=full,
+                alternatives=list(cand.get("alternatives") or []),  # type: ignore[arg-type]
                 constant_ratio=constant if settings.background.enabled and settings.background.method == "eic" else None,
             )
             labels.append(label)
@@ -858,6 +927,8 @@ def check_labels(peaks: List[UVPeak], labels: List[PipelineLabel], settings: Pip
             hydroxy_acids=sum(n for m, n in lab.counts.items() if kinds.get(m) == "hydroxy_acid"),
             constant_ratio=lab.constant_ratio,
             charge=lab.charge,
+            form=lab.form,
+            alternatives=list(lab.alternatives),
             half_step_ratio=lab.half_step_ratio,
             full_step_ratio=lab.full_step_ratio,
         )

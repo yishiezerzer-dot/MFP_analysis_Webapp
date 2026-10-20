@@ -410,6 +410,7 @@ export interface PipelineSettingsInput {
   max_dp?: number;
   forms?: PipelineForms;
   background?: PipelineBackground;
+  dimers?: boolean;
   rules?: PipelineRules;
   layout?: { orientation?: "vertical" | "horizontal" };
 }
@@ -468,6 +469,7 @@ export interface PipelineLabel {
   counts: Record<string, number>;
   variant: string;
   form: string;
+  alternatives?: string[];
   adduct: string;
   charge: number;
   mz: number;

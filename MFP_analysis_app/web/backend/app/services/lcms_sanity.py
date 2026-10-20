@@ -95,6 +95,8 @@ class LabelFacts:
     amino_acids: int = 0  # amino-acid units in the chain
     hydroxy_acids: int = 0
     constant_ratio: Optional[float] = None  # run-wide median EIC / EIC height at this peak
+    form: str = "linear"  # "dimer" for a noncovalent dimer, which has no series of its own
+    alternatives: List[str] = field(default_factory=list)  # other species the same ion fits (dimer vs chain)
     charge: int = 1
     half_step_ratio: Optional[float] = None  # tallest peak 0.5/z above the ion, relative to the ion
     full_step_ratio: Optional[float] = None  # tallest peak 1/z above the ion (the first isotope)
@@ -208,6 +210,13 @@ def check_charge(label: LabelFacts, rules: SanityRules) -> List[str]:
     return [f"wrong charge: isotope peaks 0.5 apart ({label.half_step_ratio:.0%} of the ion), so this is probably a 2+ ion"]
 
 
+def check_isobaric(label: LabelFacts, rules: SanityRules) -> List[str]:
+    """One ion, two readings (a chain and a noncovalent dimer): only more analysis tells them apart."""
+    if not label.alternatives:
+        return []
+    return [f"two readings: the same ion also fits {' or '.join(label.alternatives)}; choose in review"]
+
+
 def _composition(counts: Dict[str, int]) -> frozenset:
     return frozenset((k, v) for k, v in counts.items() if v > 0)
 
@@ -250,9 +259,13 @@ def series_support(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str
     """
     dps_by_series: Dict[str, Set[int]] = defaultdict(set)
     for lab in labels:
-        dps_by_series[lab.series].add(lab.dp)
+        if lab.form != "dimer":
+            dps_by_series[lab.series].add(lab.dp)
     out: Dict[str, Verdict] = {}
     for lab in labels:
+        if lab.form == "dimer":
+            out[lab.id] = Verdict(series_support=1.0)
+            continue
         window = [d for d in range(lab.dp - 1, lab.dp - 1 - rules.series_lookback, -1) if d >= 1]
         found = [d for d in window if d in dps_by_series[lab.series]]
         verdict = Verdict(series_support=(len(found) / len(window)) if window else 1.0, support_members=found)
@@ -274,7 +287,8 @@ def elution_order(labels: Sequence[LabelFacts], rules: SanityRules) -> Dict[str,
     sign = -1.0 if rules.elution_direction == "decreasing" else 1.0
     by_series: Dict[str, List[LabelFacts]] = defaultdict(list)
     for lab in labels:
-        by_series[lab.series].append(lab)
+        if lab.form != "dimer":
+            by_series[lab.series].append(lab)
     out: Dict[str, List[str]] = {}
     for series, members in by_series.items():
         if len({m.dp for m in members}) < 3:
@@ -391,6 +405,7 @@ def apply_rules(
         reasons += check_chemistry(lab, rules)
         reasons += check_artifact(lab, rules)
         reasons += check_charge(lab, rules)
+        reasons += check_isobaric(lab, rules)
         reasons += neighbours.get(lab.id, [])
         reasons += verdict.reasons
         reasons += order.get(lab.id, [])

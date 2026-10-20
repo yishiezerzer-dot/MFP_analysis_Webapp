@@ -11,6 +11,7 @@ from app.services.lcms_sanity import (
     check_adduct,
     check_artifact,
     check_charge,
+    check_isobaric,
     check_chemistry,
     check_eic,
     check_ion,
@@ -231,3 +232,19 @@ def test_isotopes_half_a_dalton_apart_mean_a_2plus_ion():
     assert reasons == ["wrong charge: isotope peaks 0.5 apart (40% of the ion), so this is probably a 2+ ion"]
     assert reasons[0].startswith(IMPLAUSIBLE)
     assert check_charge(label(charge=2, half_step_ratio=0.4, full_step_ratio=0.1), RULES) == []
+
+
+def test_two_readings_of_one_ion_are_left_to_the_chemist():
+    assert check_isobaric(label(alternatives=[]), RULES) == []
+    assert check_isobaric(label(alternatives=["1-Glc + 1-pGlu (dimer)"]), RULES) == [
+        "two readings: the same ion also fits 1-Glc + 1-pGlu (dimer); choose in review"
+    ]
+    assert not check_isobaric(label(alternatives=["x"]), RULES)[0].startswith(IMPLAUSIBLE)
+
+
+def test_dimers_are_not_held_to_series_rules():
+    dimer = label(id="d", species="1-Glc + 1-pGlu (dimer)", series="1-Glc + 1-pGlu (dimer)", dp=4, form="dimer")
+    assert series_support([dimer], RULES)["d"].reasons == []
+    rts = {2: 4.0, 3: 5.0, 4: 3.5}
+    labs = [label(id=f"x{n}", dp=n, ms_rt_min=rt, series="S", form="dimer") for n, rt in rts.items()]
+    assert elution_order(labs, RULES) == {}
