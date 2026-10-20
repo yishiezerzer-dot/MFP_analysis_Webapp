@@ -72,6 +72,7 @@ def test_a_hump_on_a_big_peaks_tail_is_not_a_distinct_peak():
     sharp = next(p for p in peaks if abs(p.rt_min - 14.5) < 0.05)
     assert hump.rise_frac < 0.3 < sharp.rise_frac
     assert hump.sharpness_rel < 0.5 < sharp.sharpness_rel
+    assert not hump.clear_edge  # the tail never falls to half the hump's height nearby
 
 
 def test_other_adducts_only_when_the_peak_has_no_protonated_match():
@@ -251,3 +252,16 @@ def test_studio_can_drop_ions_present_all_through_the_run():
     labels = [{"mz": 391.28, "text": "plasticiser"}, {"mz": 149.04, "text": "2-GA [M+H]⁺"}]
     kept = drop_constant_ions(state, labels, polarity="positive", rt_min=4.0, half_window_min=0.5)
     assert [lab["text"] for lab in kept] == ["2-GA [M+H]⁺"]
+
+
+def test_overlapping_peaks_and_peaks_on_a_flank_still_have_a_clear_edge():
+    # G14 19.68/19.80 min: two similar peaks that look like one peak with two bumps; the dip between
+    # them is shallow, but each falls to half its height on its outer side.
+    t = np.arange(0, 30, 0.0067)
+    y = gaussians(t, [19.68, 19.80], width=0.05, heights=[262.0, 331.0])
+    pair = [p for p in pick_uv_peaks(t, y)[0] if 19.6 < p.rt_min < 19.9]
+    assert len(pair) == 2 and all(p.clear_edge for p in pair)
+    # G12 19.97/20.08 min: a small pair on the flank of a 332 mAU peak; it rises from the baseline on its left.
+    y = gaussians(t, [19.97, 20.08, 20.22], width=0.04, heights=[85.0, 92.0, 332.0])
+    pair = [p for p in pick_uv_peaks(t, y)[0] if 19.9 < p.rt_min < 20.15]
+    assert len(pair) == 2 and all(p.clear_edge for p in pair)

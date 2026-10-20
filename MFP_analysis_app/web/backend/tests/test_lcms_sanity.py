@@ -63,6 +63,8 @@ def test_uv_peak_must_be_distinct():
     assert check_peak(peak(rise_frac=0.1, sharpness_rel=2.0), RULES) == []
     reasons = check_peak(peak(rise_frac=0.1, sharpness_rel=0.2), RULES)
     assert reasons == ["not a distinct peak: a broad bump rising 10% above its surroundings, 0.2× as sharp as a typical peak"]
+    # ... unless it falls to half its height close by on one side (overlapping pairs, peaks on a flank).
+    assert check_peak(peak(rise_frac=0.1, sharpness_rel=0.2, clear_edge=True), RULES) == []
 
 
 def test_ion_at_least_five_percent_of_base_peak():

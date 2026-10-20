@@ -72,6 +72,7 @@ class PeakFacts:
     prominence_rel: float
     rise_frac: float = 1.0  # prominence / height above the run's baseline
     sharpness_rel: float = 1.0  # (prominence / width) / the run's median
+    clear_edge: bool = False  # falls to half its height close by on at least one side
 
 
 @dataclass
@@ -130,7 +131,7 @@ def check_peak(peak: PeakFacts, rules: SanityRules) -> List[str]:
         reasons.append(f"UV peak too broad ({peak.width_min:.2f} min, max {rules.max_width_min:g})")
     if peak.prominence_rel < rules.min_prominence_rel:
         reasons.append(f"UV peak prominence {peak.prominence_rel:.1%} of the largest (min {rules.min_prominence_rel:.1%})")
-    if peak.rise_frac < rules.min_rise_frac and peak.sharpness_rel < rules.min_sharpness_rel:
+    if peak.rise_frac < rules.min_rise_frac and peak.sharpness_rel < rules.min_sharpness_rel and not peak.clear_edge:
         reasons.append(
             f"not a distinct peak: a broad bump rising {peak.rise_frac:.0%} above its surroundings, "
             f"{peak.sharpness_rel:.1f}× as sharp as a typical peak"

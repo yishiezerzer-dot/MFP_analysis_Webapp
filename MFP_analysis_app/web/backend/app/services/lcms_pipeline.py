@@ -194,6 +194,7 @@ class UVPeak(BaseModel):
     prominence_rel: float
     rise_frac: float = 1.0  # prominence / height above the run's baseline: how distinct the peak is
     sharpness_rel: float = 1.0  # (prominence / FWHM) / the run's median: broad bumps are ≪ 1
+    clear_edge: bool = False  # falls to half its height close by on at least one side
     n_scans: int = 0
     base_peak_intensity: float = 0.0
     reasons: List[str] = Field(default_factory=list)
@@ -323,6 +324,20 @@ def robust_noise(signal: np.ndarray) -> float:
     return float(1.4826 * np.median(np.abs(d - np.median(d))) / np.sqrt(2.0))
 
 
+EDGE_MIN_WINDOW_MIN = 0.2  # "close by" for the clear-edge test: max(this, 3 × FWHM)
+
+
+def _clear_edge(rt: np.ndarray, y: np.ndarray, i: int, floor: float, window_min: float) -> bool:
+    """The signal falls to half the peak's height (above the baseline) within window_min on a side.
+
+    Two overlapping peaks, or a peak on a taller one's flank, still drop clearly on their free side;
+    a bump on a tail or a ripple on a plateau does not drop anywhere close."""
+    half = floor + 0.5 * (float(y[i]) - floor)
+    left = y[(rt >= rt[i] - window_min) & (rt < rt[i])]
+    right = y[(rt > rt[i]) & (rt <= rt[i] + window_min)]
+    return bool((left.size and left.min() <= half) or (right.size and right.min() <= half))
+
+
 def pick_uv_peaks(
     rt_min: np.ndarray,
     signal: np.ndarray,
@@ -391,6 +406,7 @@ def pick_uv_peaks(
                 prominence=float(prom),
                 prominence_rel=float(prom / max_prom) if max_prom > 0 else 0.0,
                 rise_frac=float(min(1.0, prom / max(float(y[i]) - floor, 1e-12))),
+                clear_edge=_clear_edge(rt, y, int(i), floor, max(EDGE_MIN_WINDOW_MIN, 3 * width)),
             )
         )
     sharp = np.array([p.prominence / max(p.width_min, step) for p in peaks])
@@ -936,7 +952,7 @@ def check_labels(peaks: List[UVPeak], labels: List[PipelineLabel], settings: Pip
     ]
     peak_facts = [
         PeakFacts(id=p.id, rt_min=p.rt_min, sn=p.sn, width_min=p.width_min, prominence_rel=p.prominence_rel, rise_frac=p.rise_frac,
-                  sharpness_rel=p.sharpness_rel)
+                  sharpness_rel=p.sharpness_rel, clear_edge=p.clear_edge)
         for p in peaks
     ]
     for p, pf in zip(peaks, peak_facts):
