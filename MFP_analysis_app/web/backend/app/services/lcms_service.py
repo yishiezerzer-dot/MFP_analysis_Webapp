@@ -5,6 +5,7 @@ subsequent requests can fetch spectra without re-parsing the whole file.
 """
 from __future__ import annotations
 
+import re
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -825,49 +826,194 @@ def polymer_match_labels(
         if abs(abs(cluster_adduct_mass) - h) <= 0.01:
             cluster_adduct_mass = sign * abs(cluster_adduct_mass)
 
-    best_by_peak = poly_match.compute_polymer_best_by_peak_sorted(
-        mz_s,
-        int_s,
-        monomer_names=[name for name, _mass in monomers],
-        monomer_masses=[mass for _name, mass in monomers],
-        charges=_parse_polymer_charges(str(settings.get("charges") or "1")),
-        max_dp=max(1, min(200, int(poly_match.setting_float(settings, "max_dp", 12)))),
-        bond_delta=poly_match.setting_float(settings, "bond_delta", -18.010565),
-        extra_delta=poly_match.setting_float(settings, "extra_delta", 0.0),
-        polarity=polarity,
-        base_adduct_mass=adduct_mass,
-        enable_decarb=bool(settings.get("decarb")),
-        enable_oxid=bool(settings.get("oxid")),
-        enable_h2o_loss=bool(settings.get("h2o_loss")),
-        enable_cluster=bool(settings.get("cluster")),
-        cluster_adduct_mass=cluster_adduct_mass,
-        enable_na=bool(settings.get("adduct_na")),
-        enable_k=bool(settings.get("adduct_k")),
-        enable_cl=bool(settings.get("adduct_cl")),
-        enable_formate=bool(settings.get("adduct_formate")),
-        enable_acetate=bool(settings.get("adduct_acetate")),
-        custom_adducts=settings.get("custom_adducts"),
-        tol_value=poly_match.setting_float(settings, "tol_value", 0.02),
-        tol_unit=str(settings.get("tol_unit") or "Da"),
-        min_rel_int=poly_match.setting_float(settings, "min_rel_int", 0.01),
-        allow_variant_combo=True,
-    )
-    labels: List[Dict[str, Any]] = []
-    kind_order = ["poly", "h2o", "ox", "decarb", "oxdecarb", "2m"]
-    for peak_i, kinds in best_by_peak.items():
-        ordered = [(kind, kinds[kind]) for kind in kind_order if kind in kinds]
-        if not ordered:
-            ordered = list(kinds.items())
-        for kind, (abs_err, text, mz_act, inten_act) in ordered:
-            labels.append(
-                {
-                    "mz": float(mz_act),
-                    "intensity": float(inten_act),
-                    "text": str(text),
-                    "kind": str(kind),
-                    "abs_err": float(abs_err),
-                    "source": "polymer",
-                    "peak_index": int(peak_i),
-                }
-            )
+    def match(extra_delta: float) -> List[Dict[str, Any]]:
+        best_by_peak = poly_match.compute_polymer_best_by_peak_sorted(
+            mz_s,
+            int_s,
+            monomer_names=[name for name, _mass in monomers],
+            monomer_masses=[mass for _name, mass in monomers],
+            charges=_parse_polymer_charges(str(settings.get("charges") or "1")),
+            max_dp=max(1, min(200, int(poly_match.setting_float(settings, "max_dp", 12)))),
+            bond_delta=poly_match.setting_float(settings, "bond_delta", -18.010565),
+            extra_delta=extra_delta,
+            polarity=polarity,
+            base_adduct_mass=adduct_mass,
+            enable_decarb=bool(settings.get("decarb")),
+            enable_oxid=bool(settings.get("oxid")),
+            enable_h2o_loss=bool(settings.get("h2o_loss")),
+            enable_cluster=bool(settings.get("cluster")),
+            cluster_adduct_mass=cluster_adduct_mass,
+            enable_na=bool(settings.get("adduct_na")),
+            enable_k=bool(settings.get("adduct_k")),
+            enable_cl=bool(settings.get("adduct_cl")),
+            enable_formate=bool(settings.get("adduct_formate")),
+            enable_acetate=bool(settings.get("adduct_acetate")),
+            custom_adducts=settings.get("custom_adducts"),
+            tol_value=poly_match.setting_float(settings, "tol_value", 0.02),
+            tol_unit=str(settings.get("tol_unit") or "Da"),
+            min_rel_int=poly_match.setting_float(settings, "min_rel_int", 0.01),
+            allow_variant_combo=True,
+        )
+        found: List[Dict[str, Any]] = []
+        kind_order = ["poly", "h2o", "ox", "decarb", "oxdecarb", "2m"]
+        for peak_i, kinds in best_by_peak.items():
+            ordered = [(kind, kinds[kind]) for kind in kind_order if kind in kinds]
+            if not ordered:
+                ordered = list(kinds.items())
+            for kind, (abs_err, text, mz_act, inten_act) in ordered:
+                found.append(
+                    {
+                        "mz": float(mz_act),
+                        "intensity": float(inten_act),
+                        "text": str(text),
+                        "kind": str(kind),
+                        "abs_err": float(abs_err),
+                        "source": "polymer",
+                        "peak_index": int(peak_i),
+                        "_extra": extra_delta,
+                    }
+                )
+        return found
+
+    labels = match(poly_match.setting_float(settings, "extra_delta", 0.0))
+    for group in settings.get("end_groups") or []:
+        name, mass = str((group or {}).get("name") or "").strip(), (group or {}).get("mass")
+        if name and isinstance(mass, (int, float)):
+            for lab in match(float(mass)):
+                lab["text"] = str(lab["text"]).replace(" [", f" ({name}) [", 1)
+                labels.append(lab)
+    labels = _pipeline_checks(labels, mz_s, int_s, monomers, settings, adduct_mass)
+    for lab in labels:
+        lab.pop("_extra", None)
     return labels
+
+
+# ------------------------------------------------------------------ the pipeline's checks, for Polymer Studio
+# Optional (all off by default): mixed dimers, other adducts only without [M±H], an amino-acid limit per
+# chain and the 2+ isotope check. They post-process the shared matcher's labels; the matcher is unchanged.
+
+_LABEL_ADDUCT = re.compile(r"\[(?:2?M|A\+B)([^\]]*)\]")
+_LABEL_CHARGE = re.compile(r"\]([²³⁴⁵⁶⁷⁸⁹]?)[⁺⁻]\s*$")
+_COUNT = re.compile(r"(?:^|\s)(\d+)-([A-Za-z][\w]*)")
+_ISOTOPE_STEP = 1.003355
+
+
+def _label_protonated(text: str) -> bool:
+    m = _LABEL_ADDUCT.search(text)
+    return bool(m) and m.group(1).replace("−", "-") in ("+H", "-H")
+
+
+def _label_charge(text: str) -> int:
+    m = _LABEL_CHARGE.search(text)
+    return int(m.group(1).translate(str.maketrans("²³⁴⁵⁶⁷⁸⁹", "23456789"))) if m and m.group(1) else 1
+
+
+def _label_counts(composition: str) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for n, name in _COUNT.findall(composition):
+        counts[name] = counts.get(name, 0) + int(n)
+    return counts
+
+
+def _tolerance_da(settings: Dict[str, Any], mz: float) -> float:
+    tol = poly_match.setting_float(settings, "tol_value", 0.02)
+    return tol * mz / 1e6 if str(settings.get("tol_unit") or "Da").lower() == "ppm" else tol
+
+
+def _near(mz_s: np.ndarray, int_s: np.ndarray, target: float, tol: float) -> Tuple[float, float]:
+    """(m/z, intensity) of the tallest stick within tol of target, or (nan, 0)."""
+    lo, hi = np.searchsorted(mz_s, [target - tol, target + tol])
+    if hi <= lo:
+        return float("nan"), 0.0
+    i = lo + int(np.argmax(int_s[lo:hi]))
+    return float(mz_s[i]), float(int_s[i])
+
+
+def _mixed_dimer_labels(
+    labels: List[Dict[str, Any]], mz_s: np.ndarray, int_s: np.ndarray, monomers: List[Tuple[str, float]],
+    settings: Dict[str, Any], adduct_mass: float,
+) -> List[Dict[str, Any]]:
+    """[A+B±H] of two different chains both seen as [M±H] in this spectrum (same-chain dimers are the
+    matcher's own 2M option)."""
+    masses = dict(monomers)
+    bond = poly_match.setting_float(settings, "bond_delta", -18.010565)
+    base = float(int_s.max()) if int_s.size else 0.0
+    min_rel = poly_match.setting_float(settings, "min_rel_int", 0.01)
+    chains: Dict[str, float] = {}
+    for lab in labels:
+        text = str(lab["text"])
+        if lab.get("kind") != "poly" or "[M" not in text or not _label_protonated(text) or _label_charge(text) != 1:
+            continue
+        composition = text.split(" [")[0]
+        counts = _label_counts(composition)
+        if not counts or any(name not in masses for name in counts):
+            continue
+        dp = sum(counts.values())
+        chains[composition] = sum(n * masses[name] for name, n in counts.items()) + (dp - 1) * bond + float(lab.get("_extra", 0.0))
+    ordered = sorted(chains.items(), key=lambda kv: kv[1])
+    sign, mark = ("+", "⁺") if adduct_mass > 0 else ("−", "⁻")
+    out: List[Dict[str, Any]] = []
+    for i, (a, ma) in enumerate(ordered):
+        for b, mb in ordered[i + 1:]:
+            target = ma + mb + adduct_mass
+            mz_obs, inten = _near(mz_s, int_s, target, _tolerance_da(settings, target))
+            if inten <= 0 or inten < min_rel * base:
+                continue
+            out.append({
+                "mz": mz_obs, "intensity": inten, "text": f"{a} · {b} [A+B{sign}H]{mark}", "kind": "dimer",
+                "abs_err": abs(mz_obs - target), "source": "polymer",
+                "peak_index": int(np.searchsorted(mz_s, mz_obs)),
+            })
+    return out
+
+
+def _looks_2plus(lab: Dict[str, Any], mz_s: np.ndarray, int_s: np.ndarray) -> bool:
+    """A 1+ label whose ion has a strong peak half a Dalton up (and less at one Dalton) is a 2+ ion."""
+    if _label_charge(str(lab["text"])) != 1:
+        return False
+    ion = float(lab.get("intensity") or 0.0)
+    if ion <= 0:
+        return False
+    _, half = _near(mz_s, int_s, float(lab["mz"]) + _ISOTOPE_STEP / 2, 0.15)
+    _, full = _near(mz_s, int_s, float(lab["mz"]) + _ISOTOPE_STEP, 0.15)
+    return half >= 0.25 * ion and half > full
+
+
+def _pipeline_checks(
+    labels: List[Dict[str, Any]], mz_s: np.ndarray, int_s: np.ndarray, monomers: List[Tuple[str, float]],
+    settings: Dict[str, Any], adduct_mass: float,
+) -> List[Dict[str, Any]]:
+    if settings.get("mixed_dimers"):
+        labels = labels + _mixed_dimer_labels(labels, mz_s, int_s, monomers, settings, adduct_mass)
+    if settings.get("adduct_fallback") and any(_label_protonated(str(lab["text"])) for lab in labels):
+        labels = [lab for lab in labels if _label_protonated(str(lab["text"]))]
+    max_aa = int(poly_match.setting_float(settings, "max_amino_acids", 0))
+    if max_aa > 0:
+        amino = {str(n) for n in settings.get("amino_names") or []}
+
+        def plausible(lab: Dict[str, Any]) -> bool:
+            parts = str(lab["text"]).split(" [")[0].split(" · ")
+            return all(sum(n for name, n in _label_counts(p).items() if name in amino) <= max_aa for p in parts)
+
+        labels = [lab for lab in labels if plausible(lab)]
+    if settings.get("isotope_check"):
+        labels = [lab for lab in labels if not _looks_2plus(lab, mz_s, int_s)]
+    return labels
+
+
+def drop_constant_ions(
+    state: LCMSSessionState, labels: List[Dict[str, Any]], *, polarity: Optional[str], rt_min: float,
+    half_window_min: float = 0.5, max_ratio: float = 0.5, tolerance_da: float = 0.5,
+) -> List[Dict[str, Any]]:
+    """Drop labels whose ion is present all through the run (run-wide median EIC at least max_ratio of
+    its height near rt_min): solvent and plasticiser ions, as the pipeline's artifact check."""
+    kept = []
+    for lab in labels:
+        eic = extracted_ion_chromatogram(state, float(lab["mz"]), tolerance=tolerance_da, tolerance_unit="da", polarity=polarity)
+        rt = np.asarray(eic["rt_min"], float)
+        inten = np.asarray(eic["intensity"], float)
+        near = np.abs(rt - rt_min) <= half_window_min
+        height = float(inten[near].max()) if near.any() else 0.0
+        if height <= 0 or float(np.median(inten)) / height < max_ratio:
+            kept.append(lab)
+    return kept

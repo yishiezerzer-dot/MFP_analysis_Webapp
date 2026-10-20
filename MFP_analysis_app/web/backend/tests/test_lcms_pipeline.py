@@ -242,3 +242,12 @@ def test_dimers_of_equal_and_different_chains_stand_beside_the_isobaric_chain():
     off, _ = match_window(spec, settings.model_copy(update={"dimers": False}))
     assert not any(c.get("form") == "dimer" for c in off)
     assert polymer_settings(settings, 0.05)["cluster"] is False  # the shared matcher's own 2M option stays off
+
+
+def test_studio_can_drop_ions_present_all_through_the_run():
+    from app.services.lcms_service import drop_constant_ions
+
+    state = open_example()
+    labels = [{"mz": 391.28, "text": "plasticiser"}, {"mz": 149.04, "text": "2-GA [M+H]⁺"}]
+    kept = drop_constant_ions(state, labels, polarity="positive", rt_min=4.0, half_window_min=0.5)
+    assert [lab["text"] for lab in kept] == ["2-GA [M+H]⁺"]

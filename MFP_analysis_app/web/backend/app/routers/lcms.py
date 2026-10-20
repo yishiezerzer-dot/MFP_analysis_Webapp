@@ -32,6 +32,7 @@ from ..services.lcms_service import (
     attach_uv_from_csv,
     clear_uv,
     detect_uv_peaks,
+    drop_constant_ions,
     extracted_ion_chromatogram,
     fetch_spectrum_at_rt,
     find_mz_across_scans,
@@ -289,6 +290,10 @@ def get_spectrum(
                     polarity=meta.get("polarity"),
                     settings=settings,
                 )
+                if settings.get("reject_constant"):
+                    polymer_labels = drop_constant_ions(
+                        state, polymer_labels, polarity=meta.get("polarity"), rt_min=float(meta["rt_min"])
+                    )
         except PolymerSearchTooLarge as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except json.JSONDecodeError:
@@ -361,6 +366,11 @@ def get_region_spectrum(sid: str, body: RegionSpectrumRequest) -> Dict[str, Any]
                 polarity=body.polarity,
                 settings=body.polymer_settings,
             )
+            if body.polymer_settings.get("reject_constant"):
+                polymer_labels = drop_constant_ions(
+                    state, polymer_labels, polarity=body.polarity, rt_min=(float(body.rt_min) + float(body.rt_max)) / 2,
+                    half_window_min=max(0.5, (float(body.rt_max) - float(body.rt_min)) / 2),
+                )
         payload["polymer_labels"] = polymer_labels
         return payload
     except LCMSLoadError as exc:
